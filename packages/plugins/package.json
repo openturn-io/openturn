@@ -18,9 +18,9 @@
     "postpack": "node ../../scripts/postpack.mjs"
   },
   "dependencies": {
-    "@openturn/core": "workspace:*",
-    "@openturn/gamekit": "workspace:*",
-    "@openturn/json": "workspace:*"
+    "@openturn/core": "^0.1.0",
+    "@openturn/gamekit": "^0.1.0",
+    "@openturn/json": "^0.1.0"
   },
   "license": "Apache-2.0",
   "repository": {

@@ -18,11 +18,11 @@
     "postpack": "node ../../scripts/postpack.mjs"
   },
   "dependencies": {
-    "@openturn/bridge": "workspace:*",
-    "@openturn/core": "workspace:*",
-    "@openturn/inspector": "workspace:*",
-    "@openturn/react": "workspace:*",
-    "@openturn/replay": "workspace:*",
+    "@openturn/bridge": "^0.1.0",
+    "@openturn/core": "^0.1.0",
+    "@openturn/inspector": "^0.1.0",
+    "@openturn/react": "^0.1.0",
+    "@openturn/replay": "^0.1.0",
     "@xyflow/react": "^12.10.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

@@ -18,11 +18,11 @@
     "postpack": "node ../../scripts/postpack.mjs"
   },
   "dependencies": {
-    "@openturn/core": "workspace:*",
-    "@openturn/json": "workspace:*",
-    "@openturn/manifest": "workspace:*",
-    "@openturn/protocol": "workspace:*",
-    "@openturn/server": "workspace:*",
+    "@openturn/core": "^0.1.0",
+    "@openturn/json": "^0.1.0",
+    "@openturn/manifest": "^0.1.0",
+    "@openturn/protocol": "^0.1.0",
+    "@openturn/server": "^0.1.0",
     "@tailwindcss/vite": "^4.2.2",
     "@vitejs/plugin-react": "^6.0.1",
     "tailwindcss": "^4.2.2",

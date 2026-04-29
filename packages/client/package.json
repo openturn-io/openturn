@@ -18,8 +18,8 @@
     "postpack": "node ../../scripts/postpack.mjs"
   },
   "dependencies": {
-    "@openturn/json": "workspace:*",
-    "@openturn/protocol": "workspace:*"
+    "@openturn/json": "^0.1.0",
+    "@openturn/protocol": "^0.1.0"
   },
   "license": "Apache-2.0",
   "repository": {

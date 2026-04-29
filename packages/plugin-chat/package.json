@@ -19,9 +19,9 @@
     "postpack": "node ../../scripts/postpack.mjs"
   },
   "dependencies": {
-    "@openturn/core": "workspace:*",
-    "@openturn/gamekit": "workspace:*",
-    "@openturn/plugins": "workspace:*"
+    "@openturn/core": "^0.1.0",
+    "@openturn/gamekit": "^0.1.0",
+    "@openturn/plugins": "^0.1.0"
   },
   "peerDependencies": {
     "react": "^19.2.0",
