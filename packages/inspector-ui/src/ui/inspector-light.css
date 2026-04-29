@@ -1,0 +1,68 @@
+/* Light-DOM layout for the inspector shell — game surface stays here so host app CSS applies. */
+
+.ot-inspector-outer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  --ot-replay-border: #3d5299;
+}
+
+.ot-inspector__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ot-inspector__surface {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.ot-inspector__surface > * {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.ot-inspector__surface[data-replay="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border: 2px solid var(--ot-replay-border);
+  border-radius: 4px;
+  z-index: 50;
+}
+
+.ot-inspector-shadow-host {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  min-width: 0;
+}
+
+.ot-inspector-resizable {
+  flex-shrink: 0;
+  height: 100%;
+  min-height: 0;
+}
+
+.ot-inspector-resizable .ot-inspector-shadow-host {
+  width: 100%;
+}
+
+.ot-inspector-dock-slot {
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+}

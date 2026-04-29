@@ -1,0 +1,41 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "battleship-dev",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "--filter", "@openturn/example-battleship-app", "dev"],
+      "port": 3006
+    },
+    {
+      "name": "tic-tac-toe-dev",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "--filter", "@openturn/example-tic-tac-toe-app", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "paper-scissors-rock-dev",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "--filter", "@openturn/example-paper-scissors-rock-app", "dev"],
+      "port": 3003
+    },
+    {
+      "name": "tic-tac-toe-multiplayer-dev",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "--filter", "@openturn/example-tic-tac-toe-multiplayer-app", "dev"],
+      "port": 3005
+    },
+    {
+      "name": "tic-tac-toe-with-chat-dev",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "--filter", "@openturn/example-tic-tac-toe-with-chat-app", "dev"],
+      "port": 3007
+    },
+    {
+      "name": "splendor-dev",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "--filter", "@openturn/example-splendor-app", "dev"],
+      "port": 3008
+    }
+  ]
+}

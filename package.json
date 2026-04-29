@@ -1,0 +1,41 @@
+{
+  "name": "openturn",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openturn-io/openturn.git"
+  },
+  "homepage": "https://github.com/openturn-io/openturn#readme",
+  "bugs": {
+    "url": "https://github.com/openturn-io/openturn/issues"
+  },
+  "packageManager": "bun@1.3.9",
+  "workspaces": [
+    "packages/*",
+    "examples/*/*/*"
+  ],
+  "scripts": {
+    "demo": "bun run ./scripts/demo.ts",
+    "check:runtimes": "bun run ./scripts/enforce-runtime-boundaries.ts",
+    "build": "bun run --filter './packages/*' --if-present build",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "bun run build && changeset publish",
+    "test": "bun run --workspaces --if-present test",
+    "typecheck": "bun run --workspaces --if-present typecheck",
+    "typecheck:worker": "bun run check:runtimes && bun run --filter '@openturn/json' --if-present typecheck && bun run --filter '@openturn/manifest' --if-present typecheck && bun run --filter '@openturn/core' --if-present typecheck && bun run --filter '@openturn/gamekit' --if-present typecheck && bun run --filter '@openturn/plugins' --if-present typecheck && bun run --filter '@openturn/protocol' --if-present typecheck && bun run --filter '@openturn/client' --if-present typecheck && bun run --filter '@openturn/server' --if-present typecheck && bun run --filter '@openturn/replay' --if-present typecheck && bun run --filter '@openturn/example-paper-scissors-rock-game' --if-present typecheck && bun run --filter '@openturn/example-paper-scissors-rock-core-game' --if-present typecheck && bun run --filter '@openturn/example-tic-tac-toe-game' --if-present typecheck && bun run --filter '@openturn/example-tic-tac-toe-core-game' --if-present typecheck && bun run --filter '@openturn/example-tic-tac-toe-with-chat-game' --if-present typecheck && bun run --filter '@openturn/example-interrupt-reaction-core-game' --if-present typecheck && bun run --filter '@openturn/example-pig-dice-game' --if-present typecheck && bun run --filter '@openturn/example-trigger-trace-game' --if-present typecheck && bun run --filter '@openturn/example-battleship-game' --if-present typecheck && bun run --filter '@openturn/example-persistent-wins-core-game' --if-present typecheck && bun run --filter '@openturn/example-persistent-wins-game' --if-present typecheck && bun run --filter '@openturn/example-card-discovery-game' --if-present typecheck && bun run --filter '@openturn/example-splendor-game' --if-present typecheck && bun run --filter '@openturn/example-splendor-bots' --if-present typecheck",
+    "typecheck:browser": "bun run check:runtimes && bun run --filter '@openturn/bridge' --if-present typecheck && bun run --filter '@openturn/react' --if-present typecheck && bun run --filter '@openturn/plugin-chat' --if-present typecheck && bun run --filter '@openturn/inspector-ui' --if-present typecheck && bun run --filter '@openturn/example-paper-scissors-rock-app' --if-present typecheck && bun run --filter '@openturn/example-paper-scissors-rock-core-app' --if-present typecheck && bun run --filter '@openturn/example-tic-tac-toe-app' --if-present typecheck && bun run --filter '@openturn/example-tic-tac-toe-replay-viewer-app' --if-present typecheck && bun run --filter '@openturn/example-tic-tac-toe-multiplayer-app' --if-present typecheck && bun run --filter '@openturn/example-tic-tac-toe-with-chat-app' --if-present typecheck && bun run --filter '@openturn/example-interrupt-reaction-core-app' --if-present typecheck && bun run --filter '@openturn/example-battleship-app' --if-present typecheck",
+    "typecheck:bun": "bun run check:runtimes && bun run --filter '@openturn/deploy' --if-present typecheck && bun run --filter '@openturn/cli' --if-present typecheck",
+    "typecheck:packages": "bun run --filter '@openturn/json' --if-present typecheck && bun run --filter '@openturn/manifest' --if-present typecheck && bun run --filter '@openturn/core' --if-present typecheck && bun run --filter '@openturn/gamekit' --if-present typecheck && bun run --filter '@openturn/plugins' --if-present typecheck && bun run --filter '@openturn/protocol' --if-present typecheck && bun run --filter '@openturn/client' --if-present typecheck && bun run --filter '@openturn/server' --if-present typecheck && bun run --filter '@openturn/replay' --if-present typecheck && bun run --filter '@openturn/bridge' --if-present typecheck && bun run --filter '@openturn/react' --if-present typecheck && bun run --filter '@openturn/plugin-chat' --if-present typecheck && bun run --filter '@openturn/inspector' --if-present typecheck && bun run --filter '@openturn/inspector-ui' --if-present typecheck && bun run --filter '@openturn/deploy' --if-present typecheck",
+    "typecheck:examples": "bun run --filter '@openturn/example-*' --if-present typecheck"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.10",
+    "@types/bun": "^1.3.2",
+    "expect-type": "^1.3.0",
+    "jsdom": "^29.0.1",
+    "typescript": "^6.0.2"
+  }
+}

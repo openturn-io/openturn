@@ -1,0 +1,103 @@
+---
+title: Model hidden information with player views
+description: Keep secrets in `G` and filter them at the view layer. A worked pattern from battleship.
+sidebarTitle: Hidden info
+---
+
+Hidden information — cards in your hand, a fog of war, a secret fleet placement — lives in `G`, the authoritative state. The engine decides who sees what when it computes player views. The hosted server sends each client only their view, so opponents never receive the secret bytes.
+
+## The rule
+
+- **Store everything in `G`.** The server needs the full state to validate moves.
+- **Never expose secrets in `views.public`.** Spectators and the default path read this.
+- **Filter secrets in `views.player`.** Each seat gets its own projection.
+
+## A battleship sketch
+
+From [`examples/games/battleship`](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/battleship):
+
+```ts
+interface PlayerGameData {
+  board: readonly (readonly BoardCell[])[];  // placement + hits
+  fleet: FleetMap;                             // ship positions
+  ready: boolean;
+  shotsReceived: readonly Shot[];
+}
+
+interface BattleshipState {
+  players: PlayerRecord<typeof PLAYERS, PlayerGameData>;
+  lastShot: Shot | null;
+}
+```
+
+The authoritative state contains every player's fleet positions. The server needs them to decide "hit" or "miss" when someone fires.
+
+## Public view: everyone can see this
+
+```ts
+views: {
+  public: ({ G }) => ({
+    players: Object.fromEntries(
+      PLAYERS.map((id) => [id, {
+        ready: G.players[id].ready,
+        shotsReceived: G.players[id].shotsReceived,   // visible: opponents already know where they fired
+      }]),
+    ),
+    lastShot: G.lastShot,
+  }),
+},
+```
+
+No fleet positions, no unfired cells. Just what any observer can legitimately know (that a player is ready, and which shots have landed).
+
+## Player view: you see your own fleet
+
+```ts
+views: {
+  player: ({ G }, self) => ({
+    myFleet: G.players[self.id].fleet,                        // private: my ships
+    myBoard: G.players[self.id].board,
+    opponents: Object.fromEntries(
+      PLAYERS.filter((id) => id !== self.id).map((id) => [id, {
+        ready: G.players[id].ready,
+        shotsReceived: G.players[id].shotsReceived,           // public
+        // no fleet, no board
+      }]),
+    ),
+    lastShot: G.lastShot,
+  }),
+},
+```
+
+`views.player` is called once per seat. Each player's response only includes *their own* fleet. The hosted server sends the right response to each client.
+
+## Rules of thumb
+
+- **If in doubt, leave it out of `views.public`.** Adding something later is easier than noticing it leaked.
+- **Use `computed` for counts.** Show "opponent has 3 cards" via a computed value (`opponentHandSize`), not the hand itself.
+- **Beware of array references.** Passing `G.players[id].fleet` into the public view exposes it. Destructure first.
+
+## Local testing
+
+Because local sessions run the same reducer, you can unit-test the player view:
+
+```ts
+import { createLocalSession } from "@openturn/core";
+import { battleship } from "./battleship";
+
+const session = createLocalSession(battleship, {
+  match: { players: battleship.playerIDs },
+  seed: "test",
+});
+// ...place ships...
+const viewForZero = session.getPlayerView("0");
+const viewForOne = session.getPlayerView("1");
+
+expect(viewForZero).not.toHaveProperty("opponents.1.fleet");
+expect(viewForOne).not.toHaveProperty("opponents.0.fleet");
+```
+
+## Related
+
+- [Concepts: selectors and player views](/concepts/selectors-and-player-views) explains the model.
+- [Reference: react](/reference/react) covers `useMatch().state.getPlayerView(...)` and the hosted player snapshot.

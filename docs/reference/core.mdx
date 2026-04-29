@@ -1,0 +1,342 @@
+---
+title: "@openturn/core"
+description: The canonical authoring surface and runtime. `defineGame`, events, states, transitions, `createLocalSession`.
+sidebarTitle: Core
+---
+
+Worker-safe. The engine and the authoring API. Every other package builds on this.
+
+## Install
+
+```bash
+bun add @openturn/core
+```
+
+## Authoring
+
+### `defineGame(definition)`
+
+Declare an authored game. Capacity (`maxPlayers` or `playerIDs`, plus
+`minPlayers`) lives on the definition; the actual seated subset is supplied
+per-session at `createLocalSession` / `createLocalMatch` time.
+
+```ts
+// Common case — unnamed seats. Framework generates IDs "0",..,"N-1".
+export const game = defineGame({
+  maxPlayers: 2,
+  // minPlayers: 2,                  // optional; defaults to maxPlayers
+  events: { /* defineEvent<T>()... */ },
+  initial: "play",
+  setup: () => ({ /* G */ }),
+  states: { /* state configs */ },
+  transitions: ({ transition }) => [ /* transition configs */ ],
+  selectors: { /* ({ G, ... }) => JsonValue */ },
+  views: {
+    public: ({ G }) => ({ /* ... */ }),
+    player: ({ G }, playerID) => ({ /* ... */ }),
+  },
+});
+
+// Variable-player game — declare a range.
+export const partyGame = defineGame({
+  maxPlayers: 4,
+  minPlayers: 2,                     // lobby seats 2–4 players
+  // ...
+});
+
+// Named seats — opt in via `playerIDs`. Player ID type narrows to the union.
+export const chess = defineGame({
+  playerIDs: ["white", "black"] as const,
+  // ...
+});
+```
+
+- **`maxPlayers`** declares the seat pool size. The framework auto-generates
+  IDs `"0",..,"N-1"` and exposes them as `game.playerIDs` at runtime; the
+  player ID *type* (`PlayerIDOf<typeof game>`) narrows to the same literal
+  union (`"0" | "1" | ... | "${N-1}"`). Use this for the common case.
+- **`playerIDs`** (alternative to `maxPlayers`) declares an explicit tuple for
+  named seats. The player ID type narrows to the tuple's element union.
+  Pass exactly one of `maxPlayers` or `playerIDs`.
+- **`minPlayers`** is the lower bound for `lobby:start`. Defaults to the pool
+  size (every seat must be filled). Set lower for variable-player games.
+
+A session's `match.players` is a non-empty subset of `game.playerIDs`,
+validated at session start. Gamekit's `defineGame` wraps this and outputs the
+same `GameDefinition<...>` shape.
+
+### `defineEvent<TPayload>()`
+
+Declare an event with a typed payload.
+
+```ts
+events: {
+  placeMark: defineEvent<{ row: number; col: number }>(),
+  concede: defineEvent(),  // no payload
+}
+```
+
+### `defineTransition(options)` / `defineTransitions(builder)`
+
+Build transition configs. Most of the time you use the `transitions: ({ transition }) => [...]` builder form, which gives you a typed `transition()` helper.
+
+```ts
+transitions: ({ transition }) => [
+  transition("placeMark", {
+    from: "play",
+    to: "play",
+    turn: "increment",
+    label: "placeMark:continue",
+    resolve: ({ G, event, playerID }) => {
+      // Not-matched sentinel (try the next branch): return null, undefined, or false.
+      // Invalid dispatch (reject the event): return rejectTransition(code, details?).
+      // Matched: return { G?, enqueue?, profile?, result?, turn? }.
+    },
+  }),
+]
+```
+
+A resolver receives `GameEventContext` — `{ G, event, playerID, match, position, derived, rng, turn, now, actionID }` — and returns one of:
+
+- `null`, `undefined`, or `false` — this branch does not match. The engine tries the next branch with the same `from`/`event`.
+- `rejectTransition(code, details?)` — the event is invalid. The dispatcher gets `{ ok: false, error: code, details }`.
+- `GameTransitionResult` — `{ G?, enqueue?, profile?, result?, turn? }`. The branch matches and the engine commits this snapshot fragment.
+
+Exactly one branch must return a `GameTransitionResult` for a given `(state, event)` pair. If multiple do, the engine raises `ambiguous_transition`. If none do (and none rejected), the event is silently dropped as `no_match`.
+
+### `GameTransitionResult` fields
+
+- `G?` — next authoritative state. Omit to reuse the current `G`.
+- `enqueue?` — array of `{ kind, payload }` events to run through the reducer after this step commits. See [reducers and queued events](/concepts/reducers-and-queued-events).
+- `profile?` — `ProfileCommitDeltaMap` applied atomically with the transition. Keys must be seated players.
+- `result?` — terminal result. Setting this (to anything non-`null`) ends the match and triggers `profile.commit`.
+- `turn?` — `"increment"` to bump `position.turn`, `"preserve"` (default) to keep it.
+
+### `rejectTransition(reason, details?)`
+
+Return from a resolver to reject the event. The dispatcher gets `{ ok: false, error, details }`.
+
+```ts
+return rejectTransition("occupied", { row, col });
+```
+
+### `roster`
+
+Helpers for roster-shaped records:
+
+```ts
+import { roster } from "@openturn/core";
+
+const scores = roster.record(match, 0);
+// scores is { "0": 0, "1": 0 }, correctly typed
+```
+
+## Running matches
+
+### `createLocalSession(game, options)`
+
+Run a match in-process. Returns a `LocalGameSession<TGame>`.
+
+```ts
+const session = createLocalSession(game, { match, seed?, now? });
+
+session.applyEvent(playerID, eventName, payload);  // dispatch
+session.getState();                                 // current snapshot
+session.getPlayerView(playerID);                    // seat-specific view
+session.getReplayData();                            // for @openturn/replay
+session.subscribe(listener);                        // reactive updates
+session.reset?();                                   // optional reset
+```
+
+See [how-to: run a local session](/how-to/run-a-local-session).
+
+### `createLocalSessionFromSnapshot(game, options)`
+
+Warm-start a session from a previously captured snapshot (e.g. a decoded save envelope) instead of running `setup`. Use `LocalGameSessionFromSnapshotOptions` to pass the snapshot, match, seed, initialNow, and the action log to resume from.
+
+### `GAME_QUEUE_SEMANTICS`
+
+Constant describing the event-queue semantics the engine guarantees (FIFO per dispatch, reducer-style drain). Exported for inspector/debug surfaces that render queue state.
+
+## Graph and validation
+
+### `compileGameGraph(game)`
+
+Produces a `GameGraph` — the nodes and edges of your state machine — for inspector rendering.
+
+### `validateGameDefinition(game)` / `getGameValidationReport(game)`
+
+Check the game for authoring mistakes (missing states, unreachable transitions, ambiguous branches). `validateGameDefinition` throws `InvalidGameDefinitionError` when fatal diagnostics are present; `getGameValidationReport` returns a `GameValidationReport` unconditionally.
+
+```ts
+interface GameValidationReport {
+  diagnostics: readonly GameValidationDiagnostic[];
+  summary: GameValidationReportSummary;
+}
+
+interface GameValidationDiagnostic {
+  code: GameValidationCode;
+  severity: GameValidationSeverity;   // "error" | "warning" | "info"
+  message: string;
+  // …code-specific fields (node, event, transitionIndex, etc.)
+}
+```
+
+### `InvalidGameDefinitionError`
+
+Thrown by `validateGameDefinition` (and surfaced at `createLocalSession` construction) when the game fails validation. Exposes `.report: GameValidationReport` for structured inspection.
+
+### `getGameControlMeta(game, snapshot)` / `getGameControlSummary(game, snapshot)`
+
+Compute control metadata (pending targets, current node info) for a snapshot. Used by inspector and hosted runtimes.
+
+### `collectGamePendingTargets(game, snapshot)` / `describeGamePendingTargets(game, snapshot)`
+
+Lower-level pending-target inspection used by `getGameControlMeta`. `collectGamePendingTargets` returns the set of node IDs the engine could currently transition into; `describeGamePendingTargets` produces human-readable `GamePendingTargetSummary` entries (target node, matched event, label) for inspector UIs.
+
+## Profiles
+
+Optional persistent per-player state. See [concepts: persistent profiles](/concepts/persistent-profiles) for the model and [how-to: persist player state](/how-to/persist-player-state) for the recipe.
+
+### `defineProfile<T>(config)`
+
+Declare a profile config. Attach it to a game via the `profile` field on `defineGame`.
+
+```ts
+const profile = defineProfile<{ wins: number }>({
+  schemaVersion: "1",
+  default: { wins: 0 },
+  parse: (data) => normalize(data),
+  commit: ({ profile, result }) =>
+    result === null
+      ? {}
+      : profile.inc(result as string, "wins", 1),
+});
+```
+
+- `schemaVersion: string` — bumped when the profile shape changes.
+- `default: T` — shape a first-time player gets on hydration.
+- `parse?: (data) => T` — runs on every hydrated profile; throw or return a normalized value.
+- `migrate?: (args: { fromVersion; data }) => T` — optional upcast when the stored `schemaVersion` differs.
+- `commit?: (ctx) => ProfileCommitDeltaMap` — pure function called once when the match terminates.
+
+`commit` returns `{ [playerID]: ProfileDelta }`. Keys must be seated players (unseated entries are silently dropped).
+
+### Delta grammar
+
+```ts
+type ProfileOp =
+  | { op: "set";    path: (string | number)[]; value: ReplayValue }
+  | { op: "inc";    path: (string | number)[]; value: number }
+  | { op: "push";   path: (string | number)[]; value: ReplayValue }
+  | { op: "remove"; path: (string | number)[] };
+
+type ProfileDelta = readonly ProfileOp[];
+```
+
+- `set` writes a JSON value. Empty path replaces the root.
+- `inc` treats missing numbers as 0 (safe to award something from nothing).
+- `push` appends; target must be an array.
+- `remove` deletes an array index or object key.
+
+### `applyProfileDelta(data, delta)`
+
+Pure function. Returns `{ ok: true, data }` or a typed rejection with `error` in `type_mismatch`, `out_of_range`, `invalid_container`, `missing_path`, `empty_path`, `invalid_delta`.
+
+### `validateProfileDelta(delta)`
+
+Type guard. Checks shape without applying.
+
+### `computeProfileCommit(profile, ctx)`
+
+Invokes `profile.commit` with `{ match, profile, profiles, result }` and filters the result to seated players. The `profile` parameter passed into `commit(ctx)` is a bound `ProfileMutation` — a path-based helper with `inc`, `set`, `push`, `remove`, and `update` for draft-style multi-op edits. Used by `@openturn/server` at settlement time.
+
+### `applyProfileCommit(input)`
+
+Pure function. Given `{ match, profile, profilesBefore, result }` (`ApplyProfileCommitInput`), runs the game's `profile.commit` against a hydrated profile map (defaults fill in missing entries) and applies each op. Returns `ApplyProfileCommitOutput = { commitDelta, profilesAfter, rejections }`. Use this when you want the applied post-commit profiles in one step; `computeProfileCommit` is the lower-level variant that only produces the delta.
+
+### `parseProfileData(profile, data)`
+
+Runs the profile config's `parse`/`migrate` pipeline against an untrusted JSON value. Returns the normalized profile data. Used when hydrating profiles from an external store.
+
+### `restrictDeltaMapToPlayers(delta, players)`
+
+Filters a `ProfileCommitDeltaMap` down to the seated players. `@openturn/server` applies this before forwarding deltas to `onSettle` / `onActionProfileCommit`, but you can call it directly for test harnesses or alternative hosts.
+
+### Draft mutation helpers
+
+The `profile` namespace has exactly two entry points. Use `profile.bind` inside `commit` (where the helper is already bound for you), and `profile.update` when you have a profiles map in hand and want to record a single player's delta.
+
+```ts
+import { profile } from "@openturn/core";
+
+// Bound inside commit — helper is pre-wired to the hydrated profiles map.
+commit: ({ profile, result }) => profile.inc(result.winner, "wins", 1),
+
+// Standalone — pass the profiles map yourself.
+const map = profile.update(profiles, "0", (p) => {
+  p.$inc("wins", 1);
+  p.badges.push("first-win");
+});
+```
+
+- `profile.bind(profiles)` — returns a bound `ProfileMutation` with `inc`, `push`, `set`, `remove`, and `update`. This is what `commit(ctx)` receives as `ctx.profile`.
+- `profile.update(profiles, playerID, recipe)` — Immer-style draft recipe for one player. Returns a one-key `ProfileCommitDeltaMap`, or `{}` if the recipe records nothing.
+
+Inside a recipe, the draft proxy supports `$inc(key, delta)` for retry-correct counters, `$remove(key)` / `delete`, array `push`/`pop`/`shift`/`splice(i,n)`, and index assignment. `sort`, `reverse`, `unshift`, `fill`, `copyWithin`, and inserting `splice` throw — rebuild the array and assign it back.
+
+Types: `ProfileMutation`, `Draft`, `DraftObject`, `DraftArray`.
+
+### `MatchInput.profiles`
+
+Optional field on the match input. When the game declares `profile`, `createLocalSession` auto-hydrates missing entries from `profile.default` and runs `parse` before `setup`.
+
+```ts
+createLocalSession(game, {
+  match: { players, profiles: { "0": { wins: 2 }, "1": { wins: 5 } } },
+});
+```
+
+## Runtime helpers
+
+### `createRng(seed, snapshot?) => DeterministicRng`
+
+Deterministic RNG for replay-safe randomness. Every move context gets `rng: DeterministicRng` so resolvers call `rng.int(...)`/`rng.pick(...)` instead of `Math.random`. The engine records RNG state in the snapshot. See [how-to: handle randomness](/how-to/handle-randomness).
+
+### `roundRobin`, `resolveRoundRobinTurn`
+
+Turn resolvers for round-robin games. `resolveRoundRobinTurn(players, turnNumber) => { currentPlayer, index, players, turn }`. `gamekit`'s `turn.roundRobin()` uses these under the hood.
+
+### `deadline.after(context, durationMs)`
+
+Computes `context.now + durationMs`. Deterministic deadline math using recorded replay time.
+
+### `resolveTimeValue(context, value)`
+
+Resolve a `TimeValue` against a `TimeContext` to an absolute timestamp (ms). `TimeValue` is either a literal `number`, a `{ after: number }` offset from `context.now`, or `null` for "no deadline". Use this when you author timeout-bearing transitions and need to read author-supplied deadlines as concrete numbers.
+
+### Types
+
+`DeterministicRng`, `RngSnapshot`, `TurnContext`, `TurnPlayers`, `TimeContext`, `TimeValue`.
+
+## Key types
+
+- **`AnyGame`** — type-erased `GameDefinition`. Use as a constraint in generics.
+- **`GameDefinition<State, Events, Result, Players, Node, Public, Player>`** — the shape `defineGame` returns. Includes `playerIDs` (the full pool tuple) and `minPlayers` as first-class fields.
+- **`PlayerIDOf<TGame>`** — `GamePlayers<TGame>[number]`; the union of player IDs the game can seat.
+- **`GameSnapshot`** — `{ G, position, derived, match, meta }`.
+- **`GameBatch`** — the result of dispatching one event; contains every step (actions + internal events) that ran.
+- **`GameStep`** — one atomic step within a batch.
+- **`GameDispatchMap<TGame>`** — the typed `{ eventName: (payload) => Promise<GameSuccessResult | GameErrorResult> }` map session callers use. Surfaced as `session.dispatch` and as `match.state.dispatch` in `@openturn/react`.
+- **`GameSuccessResult` / `GameErrorResult` / `GameErrorCode`** — the shapes a dispatch resolves to. `GameErrorCode` is the `string` union of built-in rejection codes (`"no_match"`, `"ambiguous_transition"`, `"game_over"`, `"inactive_player"`, `"invalid_event"`, `"stale_revision"`, …) plus any custom codes you return from `rejectTransition(code)`.
+- **`LocalGameSession`** — the return type of `createLocalSession`.
+- **`ReplayValue` / `Serializable<T>`** — JSON-compatibility helpers.
+- **`PlayerID` / `PlayerList` / `PlayerRecord`** — roster utilities.
+- **`DeepReadonly<T>`** — recursive `readonly` wrapper used on snapshots/views passed to author callbacks.
+- **`ProfileMutation` / `Draft` / `DraftObject` / `DraftArray`** — types for the mutation helper passed to `commit`.
+
+## See also
+
+- [Concepts: mental model](/concepts/mental-model) for the authoring contract.
+- [Concepts: events, states, transitions](/concepts/events-states-transitions) for the primitives.
+- [How-to: author with core](/how-to/author-with-core) for the recipe.

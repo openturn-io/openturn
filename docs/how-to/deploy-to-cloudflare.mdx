@@ -1,0 +1,106 @@
+---
+title: Deploy to Cloudflare
+description: Build your openturn project into a Cloudflare Worker bundle and ship it with `openturn deploy`.
+sidebarTitle: Deploy
+---
+
+Openturn deployments run on Cloudflare Workers and Durable Objects. Your authored game compiles into a Worker script that instantiates one Durable Object per room. `openturn build` produces the bundle; `openturn deploy` uploads it.
+
+## Project layout
+
+You need the same three files as [tutorial: tic-tac-toe multiplayer](/tutorials/tic-tac-toe-multiplayer):
+
+- `app/game.ts` — exports `game` and `match`.
+- `app/page.tsx` — the React entry point.
+- `app/openturn.ts` — metadata with `runtime: "multiplayer"`.
+
+### The `openturn.ts` metadata
+
+```ts
+export const metadata = {
+  name: "Tic Tac Toe Multiplayer",
+  runtime: "multiplayer",
+  multiplayer: {
+    gameKey: "tic-tac-toe-multiplayer",   // stable identifier for this game
+    schemaVersion: "1",                    // bump to reset persisted rooms
+  },
+};
+```
+
+`gameKey` is the identifier the cloud control plane uses to route play URLs. `schemaVersion` lets you force-reset persisted rooms when you change `G` in an incompatible way.
+
+## Build
+
+```bash
+openturn build app
+```
+
+This produces, by default, `.openturn/deploy/`:
+
+- Static assets (`index.html`, client JS, CSS).
+- `entry.<hash>.js` — the client bundle Vite emitted.
+- `worker.js` + `openturn.worker-meta.json` — the Cloudflare Worker script and its Durable Object bindings.
+- `openturn.manifest.json` — a manifest summarizing the build.
+
+Inspect the manifest:
+
+```bash
+cat .openturn/deploy/openturn.manifest.json
+```
+
+Fields of interest:
+
+- `deploymentID`, `projectID`, `runtime` — identifiers.
+- `entry` — the JS entry the HTML shell loads.
+- `assets`, `styles` — static files.
+- `multiplayer.gameKey`, `multiplayer.schemaVersion`, `multiplayer.digest` — hash of the server bundle, used for versioning rooms.
+- `build.openturnPackages` — the resolved `@openturn/*` versions baked in.
+
+## Log in
+
+```bash
+openturn login --token <your-cloud-token>
+```
+
+This writes the token to `~/.openturn/cloud-auth.json`. The default cloud URL is baked into the CLI; pass `--url` to override for a staging environment.
+
+## Deploy
+
+```bash
+openturn deploy app
+```
+
+The CLI:
+
+1. Builds the project (equivalent to `openturn build app`).
+2. Uploads the static bundle and Worker script to the cloud control plane.
+3. Registers or updates the deployment under the `gameKey` from `openturn.ts`.
+4. Prints the play URL — a URL that encodes the backend in a fragment, so any browser can open it and join a room.
+
+You can pass a project slug or display name explicitly:
+
+```bash
+openturn deploy app --project my-tic-tac-toe --name "Tic Tac Toe"
+```
+
+## Play URL fragments
+
+Deployed apps read `window.location.hash` for a `HOSTED_FRAGMENT_KEY` value (encoded JSON from `@openturn/bridge`). Share the full play URL — the fragment is what tells the React app how to find the hosted backend.
+
+## Schema versioning
+
+If you change `G` in a way the reducer no longer accepts old action logs for, bump `schemaVersion` in `app/openturn.ts`. Deployed rooms with the old version are closed on next restart; new rooms start fresh.
+
+You do not need to bump `schemaVersion` for additive changes (new optional fields, new moves that do not invalidate old sequences).
+
+## Debugging a deploy
+
+- **`openturn_deploy_error`** — the cloud returned an error. The CLI prints the JSON body.
+- **Play URL opens to "missing_hosted_backend"** — the page loaded without the fragment. Share the exact URL the CLI printed, or ensure your hosting environment preserves URL fragments.
+- **Moves fail with `unauthorized`** — the player's room token expired. Refresh the page; `@openturn/bridge` handles token refresh automatically after that.
+
+## Related
+
+- [How-to: run a local hosted stack](/how-to/run-local-hosted) for the localhost equivalent.
+- [Reference: deploy](/reference/deploy) documents the manifest and build pipeline.
+- [Reference: cli](/reference/cli) for the full CLI flag surface.

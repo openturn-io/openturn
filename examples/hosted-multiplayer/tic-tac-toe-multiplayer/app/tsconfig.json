@@ -1,0 +1,14 @@
+{
+  "extends": "../../../../tsconfig.browser.json",
+  "compilerOptions": {
+    "composite": true,
+    "jsx": "react-jsx"
+  },
+  "include": [
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "src/**/*.d.ts"
+  ]
+}

@@ -1,0 +1,244 @@
+---
+title: "@openturn/protocol"
+description: The wire protocol between hosted clients and the authoritative runtime. Zod-validated, JSON-only.
+sidebarTitle: Protocol
+---
+
+Worker-safe. Defines every message that flows between a hosted client and the server. Shared by `@openturn/client`, `@openturn/server`, and the generated Cloudflare Worker.
+
+You import this package when you write custom transport (your own WebSocket server, a relay, a test harness). Typical app code does not.
+
+## Install
+
+```bash
+bun add @openturn/protocol
+```
+
+## Client-to-server messages
+
+### `ClientAction<TEvent, TPayload>`
+
+A player action dispatch.
+
+```ts
+interface ClientAction<TEvent, TPayload> {
+  type: "action";
+  matchID: MatchID;
+  playerID: ProtocolPlayerID;
+  event: TEvent;             // event name
+  payload: TPayload;
+  clientActionID: string;    // client-generated, unique per dispatch
+  baseRevision?: Revision;   // the client's last observed revision
+}
+```
+
+### `SyncRequest`
+
+Request a full snapshot of the match (used on initial connect).
+
+```ts
+interface SyncRequest {
+  type: "sync";
+  matchID: MatchID;
+  playerID: ProtocolPlayerID;
+}
+```
+
+### `ResyncRequest`
+
+Request a resync since a specific revision (used after reconnect).
+
+```ts
+interface ResyncRequest {
+  type: "resync";
+  matchID: MatchID;
+  playerID: ProtocolPlayerID;
+  sinceRevision: Revision;
+}
+```
+
+### `SaveRequest`
+
+Ask the server to produce a save envelope for the current match.
+
+```ts
+interface SaveRequest {
+  type: "save-request";
+  matchID: MatchID;
+  playerID: string;
+  clientRequestID: string;
+}
+```
+
+### `ProtocolClientMessage`
+
+Discriminated union of `ClientAction | SyncRequest | ResyncRequest | SaveRequest`.
+
+## Server-to-client messages
+
+### `MatchSnapshot<TPublicState, TResult>`
+
+Full match state — the observer shape. No `type` discriminator; snapshots are routed as server messages directly.
+
+```ts
+interface MatchSnapshot<TPublicState, TResult> {
+  matchID: MatchID;
+  revision: Revision;
+  G: TPublicState;
+  log: readonly ProtocolActionRecord[];
+  position: ProtocolRuntimeState;   // { turn, activePlayers, currentNode, ... }
+  derived: ProtocolDerivedState;    // { selectors, control, metadata }
+  result: TResult;
+}
+```
+
+### `PlayerViewSnapshot<TPublicState, TResult>`
+
+Extends `MatchSnapshot` with `playerID`. `G` is the player-scoped view (hidden fields stripped).
+
+### `BatchApplied<TPublicState, TResult>`
+
+One batch of steps committed by the runtime.
+
+```ts
+interface BatchApplied<TPublicState, TResult> {
+  type: "batch_applied";
+  matchID: MatchID;
+  revision: Revision;
+  snapshot: MatchSnapshot<TPublicState, TResult> | PlayerViewSnapshot<TPublicState, TResult>;
+  steps: readonly ProtocolStep<TPublicState, TResult>[];
+  ackClientActionID?: string;   // echoes the client_actionID that produced this batch
+  branch?: ProtocolHistoryBranch;
+}
+```
+
+### `ActionRejected`
+
+```ts
+interface ActionRejected {
+  type: "action_rejected";
+  matchID: MatchID;
+  clientActionID: string;
+  error: ProtocolErrorCode;
+  detail?: ProtocolErrorDetail;
+  details?: ProtocolValue;
+  event?: string;
+  reason?: string;
+  revision?: Revision;
+}
+```
+
+### `SaveReady` / `SaveError`
+
+Responses to `SaveRequest`.
+
+```ts
+interface SaveReady {
+  type: "save-ready";
+  matchID: MatchID;
+  clientRequestID: string;
+  saveID: string;
+  downloadURL?: string;
+}
+interface SaveError {
+  type: "save-error";
+  matchID: MatchID;
+  clientRequestID: string;
+  reason: string;
+}
+```
+
+### `ProtocolServerMessage<TPublicState, TResult>`
+
+Union: `MatchSnapshot | PlayerViewSnapshot | BatchApplied | ActionRejected | SaveReady | SaveError`.
+
+### `ProtocolErrorCode`
+
+```ts
+type ProtocolErrorCode =
+  | "ambiguous_transition"
+  | "game_over"
+  | "inactive_player"
+  | "invalid_event"
+  | "invalid_transition_result"
+  | "non_serializable_args"
+  | "stale_revision"
+  | "unauthorized"
+  | "unknown_event"
+  | "unknown_match"
+  | "unknown_player";
+```
+
+## Replay-adjacent types
+
+- `ProtocolStep`, `ProtocolEventRecord`, `ProtocolActionRecord`, `ProtocolInternalEventRecord`, `ProtocolQueuedEventRecord`
+- `ProtocolObservedTransition`, `ProtocolTransitionCandidateEvaluation`, `ProtocolTransitionFamilyEvaluation`
+- `ProtocolGraph`, `ProtocolGraphNode`, `ProtocolGraphEdge`
+- `ProtocolDerivedState`, `ProtocolControlMeta`, `ProtocolRuntimeState`, `ProtocolHistoryBranch`
+
+All are JSON-compatible and have matching `*Schema` exports for runtime validation.
+
+## Zod schemas
+
+Every type has a `*Schema` counterpart, used both internally and by consumers that need runtime validation of untrusted input.
+
+**Messages:** `ClientActionSchema`, `SyncRequestSchema`, `ResyncRequestSchema`, `SaveRequestSchema`, `ProtocolClientMessageSchema`, `BatchAppliedSchema`, `ActionRejectedSchema`, `SaveReadySchema`, `SaveErrorSchema`, `ProtocolServerMessageSchema`.
+
+**Snapshots:** `MatchSnapshotSchema`, `PlayerViewSnapshotSchema`.
+
+**Runtime bodies:** `ProtocolStepSchema`, `ProtocolObservedTransitionSchema`, `ProtocolEventRecordSchema`, `ProtocolActionRecordSchema`, `ProtocolInternalEventRecordSchema`, `ProtocolQueuedEventRecordSchema`, `ProtocolTransitionCandidateEvaluationSchema`, `ProtocolTransitionFamilyEvaluationSchema`.
+
+**Derived / control:** `ProtocolControlMetaSchema`, `ProtocolControlMetadataEntrySchema`, `ProtocolDerivedStateSchema`, `ProtocolRuntimeStateSchema`, `ProtocolHistoryBranchSchema`.
+
+## Parse and stringify helpers
+
+```ts
+parseProtocolClientMessage(value): ProtocolClientMessage
+parseProtocolClientMessageText(text): ProtocolClientMessage
+stringifyProtocolClientMessage(message): string
+
+parseProtocolServerMessage<TPublic, TResult>(value): ProtocolServerMessage<TPublic, TResult>
+parseProtocolServerMessageText<TPublic, TResult>(text): ProtocolServerMessage<TPublic, TResult>
+stringifyProtocolServerMessage<TPublic, TResult>(message): string
+```
+
+## Converting from core
+
+Helpers for translating core runtime values into protocol shapes:
+
+- `protocolizeGameSnapshot(snapshot, options)`
+- `protocolizeGameStep(step)`
+- `protocolizeGameActionRecord(record)`
+- `protocolizeGameEventRecord(event)`
+- `protocolizeGameObservedTransition(transition)`
+- `protocolizeGameGraph(graph)`
+- `protocolizeValue(value)`
+
+These are the functions `@openturn/server` uses when producing messages.
+
+## Core scalars and identifiers
+
+- `MatchID` — stable per-room identifier (`string`).
+- `Revision` — monotonic counter the server advances per committed batch (`number`).
+- `ProtocolPlayerID` — protocol-scoped `PlayerID` (`string`).
+- `ProtocolValue` — `JsonValue` alias for every payload that crosses the wire.
+- `ProtocolErrorDetail` — structured detail emitted alongside an `ActionRejected.error`.
+
+## Lobby protocol
+
+Re-exports from `./lobby`:
+
+**Types:** `LobbyPhase`, `LobbySeat`, `LobbyCloseReason`, `LobbyRejectionReason`, `LobbyClientMessage`, `LobbyServerMessage`, `LobbyClose`, `LobbyClosedMessage`, `LobbyLeaveSeat`, `LobbyRejectedMessage`, `LobbySetReady`, `LobbyStart`, `LobbySetTargetCapacity`, `LobbyStateMessage`, `LobbyTakeSeat`, `LobbyTransitionToGameMessage`.
+
+`LobbyStateMessage` carries `{ minPlayers, maxPlayers, targetCapacity }` describing the room's player range. `LobbySetTargetCapacity` is host-only and mutates `targetCapacity` within `[minPlayers, maxPlayers]`. New rejection reasons: `target_below_min`, `target_above_max`, `bad_target`.
+
+**Schemas:** `LobbyClientMessageSchema`, `LobbyServerMessageSchema`, `LobbyClosedMessageSchema`, `LobbyPhaseSchema`, `LobbyRejectedMessageSchema`, `LobbySeatSchema`, `LobbyStateMessageSchema`, `LobbyTransitionToGameMessageSchema`.
+
+**Helpers:** `parseLobbyClientMessage`, `parseLobbyClientMessageText`, `parseLobbyServerMessage`, `parseLobbyServerMessageText`, `stringifyLobbyClientMessage`, `stringifyLobbyServerMessage`, `isLobbyClientMessageText`.
+
+Used by `LobbyRuntime` on the server and `useRoom()` on the client.
+
+## See also
+
+- [Reference: server](/reference/server) — the authoritative producer of these messages.
+- [Reference: client](/reference/client) — the consumer on the browser side.

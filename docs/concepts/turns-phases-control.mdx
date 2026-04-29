@@ -1,0 +1,107 @@
+---
+title: Turns, phases, and control
+description: How the engine tracks whose turn it is and which seats are allowed to act.
+sidebarTitle: Turns
+---
+
+Openturn has one monotonic turn counter and two ways to think about "whose turn it is." Understanding both avoids most active-player bugs.
+
+## The turn counter
+
+`position.turn` starts at `1`. Every transition that returns `turn: "increment"` bumps it by one. Transitions that return `turn: "preserve"` (or omit it) leave it alone. That is the entire turn model.
+
+The counter is not a player ID. It is an integer. You project it onto your roster yourself, usually with round-robin.
+
+## Active players
+
+A state (core) or phase (gamekit) declares which seats can dispatch events while it is current:
+
+```ts
+// core
+states: {
+  play: {
+    activePlayers: ({ match, position }) =>
+      [match.players[(position.turn - 1) % match.players.length]!],
+  },
+},
+
+// gamekit
+phases: {
+  plan: {
+    activePlayers: ({ G }) => PLAYERS.filter((id) => G.submissions[id] === null),
+  },
+},
+```
+
+The engine calls `activePlayers` on every snapshot. When a player dispatches an event, the engine rejects it with `inactive_player` if their ID is not in the current list. If you need all seats to be active in a phase, return the full roster.
+
+## Round-robin out of the box
+
+Most turn-based games cycle through players in order. `@openturn/core` ships `roundRobin` and `resolveRoundRobinTurn` for exactly that, and gamekit calls them for you when you set `turn: turn.roundRobin()`:
+
+```ts
+import { turn } from "@openturn/gamekit";
+
+defineGame({
+  maxPlayers: 2,
+  turn: turn.roundRobin(),
+  // gamekit will set activePlayers to [currentRoundRobinPlayer] for every phase
+});
+```
+
+You only need to write your own `activePlayers` when the game is not round-robin (simultaneous moves, elimination, bidding rounds).
+
+## The `turn` context
+
+Inside gamekit moves, views, and phases you receive a `turn` context with the resolved seat:
+
+```ts
+interface TurnContext<TPlayers> {
+  currentPlayer: TPlayers[number];
+  index: number;
+  players: readonly TPlayers[number][];
+  turn: number;
+}
+```
+
+- `turn.currentPlayer` — resolved from the current turn counter and turn policy.
+- `turn.index` — zero-based index into the roster.
+- `turn.players` — the full roster.
+- `turn.turn` — the same integer as `position.turn`.
+
+## Control metadata
+
+Each state can emit a `control` value and `metadata` entries. These are arbitrary JSON the engine surfaces in `snapshot.derived`. UIs use them to label "playing," "won," "drawn," or anything else that is more specific than a state name.
+
+```ts
+states: {
+  won: {
+    activePlayers: () => [],
+    control: () => ({ status: "won" }),
+    label: "Winner",
+    metadata: ({ G }) => [{ key: "winnerMark", value: getWinner(G.board) }],
+  },
+},
+```
+
+Terminal states typically return no active players, which is how the engine knows the match is over.
+
+## `activePlayers` vs. `pendingTargets`
+
+The control summary exposes two related but distinct fields:
+
+- **`activePlayers`** answers "whose event will the engine accept right now?" It is derived from the *current* state's `activePlayers` function. If you are not in the list, your dispatch is rejected with `inactive_player`.
+- **`pendingTargets`** answers "which seats are structurally reachable from this point in the ancestry?" It is a static projection of the game graph — not a speculative runtime simulation. Inspector UIs use it to hint at which seats the match is *about* to visit; it is not a promise.
+
+A concrete example: in a two-phase "bid, then reveal" game, while you are in the bid phase, `activePlayers` might be only seats that have not yet submitted, while `pendingTargets` includes every seat that can still act somewhere downstream. A client UI will grey out seats that are not in `activePlayers` but still show them as participants based on `pendingTargets`.
+
+Rule of thumb: gate your dispatches on `activePlayers`; build your roster UI off `pendingTargets`.
+
+## Simultaneous moves
+
+If multiple players can act in parallel (planning phases, bidding, simultaneous submissions), return the full list of eligible seats from `activePlayers` and keep the move's permission check narrow. See [how-to: handle simultaneous moves](/how-to/handle-simultaneous-moves) for the full pattern with rock-paper-scissors.
+
+## What to read next
+
+- [Selectors and player views](/concepts/selectors-and-player-views) on projecting state for a specific audience.
+- [Gamekit: the move-first layer](/concepts/gamekit) for the higher-level turn DSL.

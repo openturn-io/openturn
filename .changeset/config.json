@@ -1,0 +1,32 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.0.0/schema.json",
+  "changelog": "@changesets/cli/changelog",
+  "commit": false,
+  "fixed": [
+    [
+      "@openturn/bot",
+      "@openturn/bridge",
+      "@openturn/cli",
+      "@openturn/client",
+      "@openturn/core",
+      "@openturn/deploy",
+      "@openturn/gamekit",
+      "@openturn/inspector",
+      "@openturn/inspector-ui",
+      "@openturn/json",
+      "@openturn/lobby",
+      "@openturn/manifest",
+      "@openturn/plugin-chat",
+      "@openturn/plugins",
+      "@openturn/protocol",
+      "@openturn/react",
+      "@openturn/replay",
+      "@openturn/server"
+    ]
+  ],
+  "linked": [],
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": ["@openturn/example-*"]
+}

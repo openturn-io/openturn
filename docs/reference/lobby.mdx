@@ -1,0 +1,455 @@
+---
+title: "@openturn/lobby"
+description: Unified lobby surface — protocol extensions, runtime helpers, React UI, bot registry, and bot supervisors. One package, five subpath exports, both local single-device and hosted multiplayer.
+sidebarTitle: Lobby
+---
+
+The lobby package owns every per-room lobby surface in openturn — wire protocol, server runtime, React UI, bot registry, and bot supervisors. A single `<LobbyWithBots>` component renders against an in-memory channel for local single-device play and against a WebSocket channel for hosted multiplayer; the same `LobbyRuntime` powers both. Game authors plug a typed `BotRegistry` into `defineGame` once and per-seat bot dropdowns appear automatically.
+
+## Install
+
+```bash
+bun add @openturn/lobby
+```
+
+The package depends on `@openturn/core`, `@openturn/protocol`, `@openturn/server`, `@openturn/client`, and `@openturn/bot`. React is a peer dep — only the `./react` subpath touches the DOM.
+
+## Subpath exports
+
+```ts
+import { /* … */ } from "@openturn/lobby";              // umbrella (registry + supervisor types)
+import { /* … */ } from "@openturn/lobby/registry";     // BotRegistry, defineBotRegistry, attachBots
+import { /* … */ } from "@openturn/lobby/protocol";     // discriminated LobbySeat, message types
+import { /* … */ } from "@openturn/lobby/runtime";      // LobbyRuntime re-export + bot-aware env
+import { /* … */ } from "@openturn/lobby/react";        // <LobbyWithBots>, useLocalLobbyChannel, ...
+import { /* … */ } from "@openturn/lobby/supervisor";   // createLocalBotSupervisor, createHostedBotSupervisor
+```
+
+`./registry`, `./protocol`, `./runtime`, and `./supervisor` are written without DOM globals so worker-runtime packages (cloud Durable Objects, the OSS dev server) can import them without pulling React.
+
+## `@openturn/lobby/registry`
+
+Typed bot catalog. The registry is the single source of truth that the lobby UI, the server runtime, the deployment manifest, and the supervisor all read from.
+
+### `defineBotRegistry(entries)`
+
+```ts
+import { defineBotRegistry } from "@openturn/lobby/registry";
+import { randomBot, makeMinimaxBot } from "./bots";
+
+export const ticTacToeBotRegistry = defineBotRegistry([
+  { botID: "random",       label: "Random",         difficulty: "easy", bot: randomBot },
+  { botID: "minimax-easy", label: "Minimax · easy", difficulty: "easy", bot: makeMinimaxBot({ depth: 2 }) },
+  { botID: "minimax-hard", label: "Minimax · hard", difficulty: "hard", bot: makeMinimaxBot({ depth: 9 }) },
+]);
+```
+
+Validates `botID` uniqueness at definition time. Different difficulties are distinct bot instances each with their own `botID` — there is no runtime-tunable param.
+
+### `BotDescriptor<TGame>`
+
+```ts
+interface BotDescriptor<TGame> {
+  readonly botID: string;        // stable wire identifier; unique within the registry
+  readonly label: string;        // shown in lobby dropdowns
+  readonly description?: string;
+  readonly difficulty?: "easy" | "medium" | "hard" | "expert";
+  readonly bot: Bot<TGame>;      // pre-built Bot instance from @openturn/bot
+}
+```
+
+### `BotRegistry<TGame>`
+
+```ts
+interface BotRegistry<TGame> {
+  readonly entries: ReadonlyArray<BotDescriptor<TGame>>;
+}
+```
+
+### `findBot(registry, botID)`
+
+```ts
+const descriptor = findBot(ticTacToeBotRegistry, "minimax-hard");
+// descriptor.bot — the underlying Bot<TGame> instance
+```
+
+Returns `null` when the `botID` is unknown. Used by the lobby UI to render labels and by the supervisor to wire the chosen bot into the session.
+
+### `attachBots(game, registry)`
+
+```ts
+import { attachBots } from "@openturn/lobby/registry";
+import { ticTacToe } from "./game";
+import { ticTacToeBotRegistry } from "./bots";
+
+export const ticTacToeWithBots = attachBots(ticTacToe, ticTacToeBotRegistry);
+```
+
+Returns a copy of `game` with the registry attached at `game.bots`. The engine ignores this field — the lobby runtime, the deploy step, and the supervisor read it as the single source of truth for "what bots can occupy a seat in this game".
+
+Why a helper instead of inlining `defineGame({ bots })`: registries usually live in a sibling package that imports the game's types, which would create a circular package dep if the game also imported the registry. Keep the cycle one-way — the game stays bot-free, and the bots package re-exports a `gameWithBots` value built via this helper.
+
+### `buildKnownBots(registry)`
+
+```ts
+const knownBots = buildKnownBots(ticTacToeBotRegistry);
+// ReadonlyMap<botID, { label, description?, difficulty? }>
+```
+
+Builds the `LobbyEnv.knownBots` map the runtime accepts at construction time. Used internally by `useLocalLobbyChannel` and by the OSS dev server when wiring a `LobbyRuntime` for a game with `bots` set.
+
+## `@openturn/lobby/protocol`
+
+Wire-protocol extensions layered on `@openturn/protocol/lobby`. Additive and back-compat — pre-`@openturn/lobby` clients/servers parse new messages with default `[]` for `availableBots` and `playerAssignments`.
+
+### `LobbySeat` (discriminated union)
+
+```ts
+type LobbySeat =
+  | { kind: "open";  seatIndex: number }
+  | { kind: "human"; seatIndex: number; userID: string; userName: string | null;
+      ready: boolean; connected: boolean }
+  | { kind: "bot";   seatIndex: number; botID: string; label: string };
+```
+
+Replaces the old flat `{ userID | null, ready, … }` shape. Existing code that destructures `seat.userID` must narrow on `seat.kind` first.
+
+### `LobbyAvailableBot`
+
+```ts
+interface LobbyAvailableBot {
+  botID: string;
+  label: string;
+  description?: string;
+  difficulty?: "easy" | "medium" | "hard" | "expert";
+}
+```
+
+Broadcast on `lobby:state.availableBots` so non-host clients can render labels for bot seats without bundling the registry.
+
+### Client → server messages (host-only)
+
+```ts
+interface LobbyAssignBot { type: "lobby:assign_bot"; seatIndex: number; botID: string }
+interface LobbyClearSeat { type: "lobby:clear_seat"; seatIndex: number }
+```
+
+`clearSeat` works on any seat kind — the host can use it to kick a human or remove a bot.
+
+### `LobbyTransitionToGameMessage.playerAssignments`
+
+```ts
+playerAssignments: ReadonlyArray<{
+  seatIndex: number;
+  playerID: string;
+  kind: "human" | "bot";
+  botID?: string;        // present iff kind === "bot"
+}>
+```
+
+Carries the full seat→player map at transition time. The supervisor uses this to wire bots into the freshly-started session.
+
+### Rejection reasons
+
+New values added to `LobbyRejectionReason`:
+
+- `seat_has_bot` — `take_seat` on a bot-occupied seat.
+- `seat_has_human` — `assign_bot` on a human-occupied seat.
+- `unknown_bot` — `assign_bot` with a `botID` not in `LobbyEnv.knownBots`.
+
+## `@openturn/lobby/runtime`
+
+The server-side state machine. Re-exports `LobbyRuntime` from `@openturn/server` and adds bot-aware `LobbyEnv`. Worker-safe.
+
+### `LobbyEnv`
+
+```ts
+interface LobbyEnv {
+  hostUserID: string;
+  /** Lower bound for `start()`. Static across the room's lifetime. */
+  minPlayers: number;
+  /** Upper bound on `targetCapacity`. Equals `playerIDs.length`. Static. */
+  maxPlayers: number;
+  /**
+   * Initial effective seat count. Defaults to `maxPlayers`. Mutable at runtime
+   * via `setTargetCapacity()`; the in-memory current value is persisted in
+   * `LobbyPersistedState.targetCapacity`.
+   */
+  targetCapacity?: number;
+  /** Maximal player roster. `playerIDs.length === maxPlayers`. */
+  playerIDs: readonly string[];
+  knownBots?: ReadonlyMap<string, {
+    label: string;
+    description?: string;
+    difficulty?: "easy" | "medium" | "hard" | "expert";
+  }>;
+}
+```
+
+When `knownBots` is set, `lobby:state.availableBots` is populated from it and `lobby:assign_bot` is validated against it. Construct via [`buildKnownBots(registry)`](#buildknownbots-registry).
+
+### `LobbyRuntime` methods
+
+```ts
+class LobbyRuntime {
+  takeSeat(userID: string, userName: string | null, seatIndex: number): LobbyApplyResult;
+  leaveSeat(userID: string): LobbyApplyResult;
+  setReady(userID: string, ready: boolean): LobbyApplyResult;
+  assignBot(hostUserID: string, seatIndex: number, botID: string): LobbyApplyResult;
+  clearSeat(hostUserID: string, seatIndex: number): LobbyApplyResult;  // host-only; bot OR human
+  setTargetCapacity(hostUserID: string, targetCapacity: number): LobbyApplyResult;  // host-only
+  start(hostUserID: string): LobbyStartResult;
+  close(hostUserID: string): LobbyApplyResult;
+}
+```
+
+Behaviour:
+
+- `takeSeat()` rejects `seat_out_of_range` when `seatIndex >= targetCapacity`, `seat_has_bot` when the seat is bot-occupied.
+- `setReady()` ignores bot seats (they read as always ready).
+- `setTargetCapacity()` rejects `target_below_min`, `target_above_max`, or `bad_target`. Lowering capacity evicts seats whose `seatIndex >= targetCapacity` (humans become unseated; bots are removed).
+- `start()` requires seated count `>= minPlayers` and every human ready. Bots count toward the seated total. Returns `LobbyStartResult` with the assignments map for actually-seated players.
+- `dropUser()` / `pruneToConnected()` leave bot seats untouched.
+
+### `LobbyStartAssignment`
+
+```ts
+type LobbyStartAssignment =
+  | { kind: "human"; seatIndex: number; playerID: string; userID: string;  botID: null }
+  | { kind: "bot";   seatIndex: number; playerID: string; userID: null;    botID: string };
+```
+
+Returned from `runtime.start(...)` and used to construct the `lobby:transition_to_game` payload.
+
+## `@openturn/lobby/react`
+
+The UI surface. All exports require React 19+ (peer dep).
+
+### `<Lobby>` and `<LobbyWithBots>`
+
+Two components over the same `LobbyView`:
+
+- `<Lobby>` — the round-table seat list with claim/leave/ready/start. No bot affordances. Use this when the game has no `BotRegistry` or you want the legacy UI.
+- `<LobbyWithBots>` — `<Lobby>` with each seat replaced by `<LobbySeatControl>`, which adds an "Assign bot ▾" dropdown on open seats and a "🤖 Bot · {label}" chip on bot seats (with a "Clear" link for host viewers).
+
+```tsx
+import { LobbyWithBots, useLobbyChannel, buildLobbyView } from "@openturn/lobby/react";
+
+function MyLobby({ token, websocketURL }: { token: string; websocketURL: string }) {
+  const channel = useLobbyChannel({ websocketURL, token });
+  const view = buildLobbyView({ channel, userID: /* … */ });
+  return <LobbyWithBots lobby={view} title="My game" />;
+}
+```
+
+`<LobbyWithBots>` reads the bot catalog from `lobby.availableBots` — apps don't have to thread the registry into the UI.
+
+### `useLocalLobbyChannel(options)`
+
+In-memory `LobbyChannelHandle` for single-device play. No WebSocket, no token. Renders the same `<LobbyWithBots>` UI.
+
+```tsx
+import { useLocalLobbyChannel } from "@openturn/lobby/react";
+import { ticTacToe } from "./game";
+import { ticTacToeBotRegistry } from "./bots";
+
+const channel = useLocalLobbyChannel({
+  game: ticTacToe,
+  hostUserID: "local-host",
+  hostUserName: "You",
+  registry: ticTacToeBotRegistry,
+  onTransitionToGame: ({ assignments }) => {
+    // build a LocalGameSession + attach bots, e.g. via useBotAttachOnTransition
+  },
+});
+```
+
+```ts
+interface UseLocalLobbyChannelOptions<TGame> {
+  game: TGame;
+  hostUserID: string;
+  hostUserName?: string;
+  registry?: BotRegistry<TGame>;
+  /** Default: `game.minPlayers`. */
+  minPlayers?: number;
+  /**
+   * Initial host-chosen capacity in `[game.minPlayers, game.playerIDs.length]`.
+   * Defaults to `game.playerIDs.length`.
+   */
+  initialTargetCapacity?: number;
+  autoSeatIndex?: number | null;  // default 0; null disables auto-seat
+  autoReady?: boolean;        // default true
+  onTransitionToGame?: (input: {
+    roomID: string;
+    assignments: ReadonlyArray<LobbyStartAssignment>;
+  }) => void;
+}
+```
+
+The local channel runs `LobbyRuntime` in-process, auto-seats the host on mount (single user in local play), and emits a synthetic `lobby:transition_to_game` on `start()` with empty `roomToken`/`websocketURL`.
+
+### `useLobbyChannel(options)`
+
+Hosted (WebSocket-backed) channel. Already-existing API — re-exported here so apps can write `import { useLobbyChannel } from "@openturn/lobby/react"` regardless of whether they target local or hosted play.
+
+### `buildLobbyView({ channel, userID, … })`
+
+Adapts a `LobbyChannelHandle` into a flat `LobbyView` consumable by `<Lobby>` / `<LobbyWithBots>`. Adds `assignBot(seatIndex, botID)` and `clearSeat(seatIndex)` action callbacks alongside the existing `takeSeat` / `leaveSeat` / `setReady` / `start`.
+
+### `useBotAttachOnTransition(options)`
+
+Wires `attachLocalBots` into a freshly-created session as soon as `channel.transition` arrives. Returns a bot-aware session facade — **drive your game UI with the facade**, not the raw session.
+
+```tsx
+import { useBotAttachOnTransition } from "@openturn/lobby/react";
+
+function MyGame({ channel, session }) {
+  const facade = useBotAttachOnTransition({
+    channel,
+    game: ticTacToe,
+    registry: ticTacToeBotRegistry,
+    session,    // your raw LocalGameSession; pass null until you've built it
+  });
+  // Drive the loop with `facade ?? session` — facade is non-null only
+  // when at least one bot seat exists.
+}
+```
+
+Returns `null` until both the transition has arrived and the session is provided. Cleans up bot runners on unmount or transition reset.
+
+For app code that already uses `createOpenturnBindings({ runtime: "local" })` and wants bot moves to flow through the same `matchStore` (so the inspector timeline tracks them), wire bots manually via a small `useEffect` keyed on `snapshot` instead — see [How-to: play against bots](/how-to/play-against-bots#inspector-aware-bot-driver) for the pattern.
+
+### `<LobbySeatControl>`
+
+The per-seat dropdown component used internally by `<LobbyWithBots>`. Exposed for apps that want to keep the round-table chrome but customise behaviour.
+
+```ts
+interface LobbySeatControlProps {
+  seat: LobbySeat;
+  isMine: boolean;
+  isHost: boolean;
+  enabled: boolean;
+  availableBots: ReadonlyArray<LobbyAvailableBot>;
+  onTakeSeat(): void;
+  onLeaveSeat(): void;
+  onAssignBot(botID: string): void;
+  onClearSeat(): void;
+}
+```
+
+## `@openturn/lobby/supervisor`
+
+Two implementations of one shape: connect bot seats to a freshly-started match.
+
+### `BotSupervisor`
+
+```ts
+interface BotSupervisor {
+  start(assignments: ReadonlyArray<BotSeatAssignment>): Promise<void>;
+  stop(): void;
+}
+
+interface BotSeatAssignment {
+  seatIndex: number;
+  playerID: string;
+  botID: string;
+  hostedTransition?: {        // required by createHostedBotSupervisor
+    roomToken: string;
+    tokenExpiresAt: number;
+    websocketURL: string;
+  };
+}
+```
+
+`start()` is one-shot — calling twice throws. `stop()` is idempotent.
+
+### `createLocalBotSupervisor(options)`
+
+In-process supervisor. Calls `attachLocalBots` once per assignment when `start()` runs. After start, `supervisor.getSession()` returns the bot-aware facade.
+
+```ts
+import { createLocalBotSupervisor } from "@openturn/lobby/supervisor";
+import { createLocalSession } from "@openturn/core";
+
+const session = createLocalSession(ticTacToe, { match: { players: ticTacToe.playerIDs } });
+const supervisor = createLocalBotSupervisor({
+  session,
+  game: ticTacToe,
+  registry: ticTacToeBotRegistry,
+});
+
+await supervisor.start([
+  { seatIndex: 1, playerID: "1", botID: "minimax-hard" },
+]);
+
+// Drive the loop with the facade, NOT the raw session.
+const facade = supervisor.getSession();
+facade.applyEvent("0", "placeMark", { row: 1, col: 1 });
+```
+
+Throws `unknown botID "..."` if the assignment references a `botID` not in the registry.
+
+### `createHostedBotSupervisor(options)`
+
+Per-bot-seat `HostedClient` supervisor. Used by the OSS dev server and the cloud Durable Object. Each bot seat opens its own connection back to the room using its own short-lived token.
+
+```ts
+const supervisor = createHostedBotSupervisor({
+  game: ticTacToe,
+  registry: ticTacToeBotRegistry,
+  // optional — replace the default WebSocket factory with an in-process socket
+  // shim when running inside a worker that can't open external sockets.
+  createSocket: (url) => myInProcessSocket(url),
+});
+
+await supervisor.start([
+  {
+    seatIndex: 1,
+    playerID: "1",
+    botID: "minimax-hard",
+    hostedTransition: { roomToken, tokenExpiresAt, websocketURL },
+  },
+]);
+```
+
+The host (dev server or cloud DO) is responsible for minting per-bot-seat tokens after `LobbyRuntime.start()` returns — they never reach client browsers.
+
+For the cloud Durable Object case, a third pattern — **direct in-DO dispatch** — avoids opening WebSocket-to-self connections; see the [Cloud DO bot driver section in `@openturn/server`](/reference/server#bot-driver-in-the-durable-object) for that variant. `createHostedBotSupervisor` is the right choice when bots run in a separate process from the room (the standard sidecar topology).
+
+## Game-author hooks
+
+`@openturn/lobby` adds **one** optional, engine-inert field to `GameDefinition`:
+
+```ts
+bots?: BotRegistry<any>;
+```
+
+Set it via `attachBots(game, registry)` (preferred) or by passing `bots` directly to `defineGame`. The engine never reads this field. The lobby runtime, the deploy step, and the supervisor all do.
+
+## Manifest integration
+
+When a deployment is built, `@openturn/deploy` extracts `game.bots.entries` into `manifest.multiplayer.availableBots` so the cloud lobby UI can render dropdowns without bundling the registry. The cloud Durable Object reads the manifest at room-construction time and feeds it into `LobbyEnv.knownBots`.
+
+## Migration from `@openturn/react`
+
+`@openturn/react` re-exports the lobby surface from `@openturn/lobby/react` for back-compat. Existing code that imports `useLobbyChannel`, `buildLobbyView`, or `<Lobby>` from `@openturn/react` continues to work unchanged.
+
+For new code, prefer `@openturn/lobby/react`:
+
+```ts
+// Old (still works, marked @deprecated):
+import { Lobby, useLobbyChannel } from "@openturn/react";
+
+// New canonical home:
+import { LobbyWithBots, useLobbyChannel, useLocalLobbyChannel } from "@openturn/lobby/react";
+```
+
+The discriminated `LobbySeat` shape is the only typed-union breaking change. Code that destructured `seat.userID` directly must narrow on `seat.kind === "human"` first.
+
+## Related
+
+- [How-to: build a lobby](/how-to/build-a-lobby) — wire `<LobbyWithBots>` end-to-end.
+- [How-to: play against bots](/how-to/play-against-bots) — pick bots in the lobby UI.
+- [Concepts: AI bots](/concepts/bots) — design rationale for the bot layer.
+- [Reference: `@openturn/bot`](/reference/bot) — bot authoring and runner API.
+- [Reference: `@openturn/server`](/reference/server) — `LobbyRuntime` and the in-DO `BotDriver`.

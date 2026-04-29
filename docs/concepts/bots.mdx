@@ -1,0 +1,105 @@
+---
+title: AI bots
+description: How `@openturn/bot` plugs computer-controlled players into a game without coupling to engine internals — author a `decide` function, attach to a seat, the runner handles the rest.
+sidebarTitle: Bots
+---
+
+A bot is a player whose moves come from code instead of a human. The bot layer exists so the rest of openturn doesn't have to know that. The engine sees a dispatch from seat `"1"`; it doesn't care whether a person clicked a square or a function returned an action. That separation is the whole design.
+
+## The contract
+
+A bot is a function over views:
+
+```ts
+defineBot({
+  name: "random",
+  decide: ({ legalActions, rng }) => rng.pick(legalActions),
+});
+```
+
+`decide` receives what the seat is allowed to know — the same `getPlayerView` that a human client would render — plus pre-enumerated legal moves and a deterministic RNG. It returns a `LegalAction`. That is the entire bot.
+
+The same shape supports four very different bots without changing:
+
+- **Random** — pick uniformly from `legalActions`.
+- **Heuristic** — score each `LegalAction`, return the highest.
+- **Search-based (MCTS / minimax)** — call `simulate(action)` to dry-run candidates, recurse on the resulting snapshot, return the best root move.
+- **LLM-backed** — `await` a model call, parse the response, return a matching `LegalAction`. Pass `signal` into the HTTP client so a superseded thought is cancelled.
+
+If your `decide` body changes shape across these four, you are doing more work than necessary.
+
+## Why bots are not plugins
+
+Openturn already has [`@openturn/plugins`](/concepts/gamekit). Plugins are in-engine state mutators: they declare a slice on `G.plugins`, expose moves, and execute synchronously inside the reducer. They are the right tool for chat, scoreboards, deck ownership, and any cross-cutting state.
+
+Bots are different. A bot runs **outside** the reducer, **after** a snapshot exists, and produces an event to feed back in. It is closer to a player client than to a piece of game logic. Conflating the two would push turn ownership into the plugin layer and break determinism — `decide` may take seconds (an LLM call), and a synchronous reducer cannot await that.
+
+The bot package therefore sits next to plugins, not inside them. The only thing the engine knows about bots is one optional field on `GameDefinition`: `legalActions?: (context, playerID) => readonly LegalAction[]`. The engine never reads it. The bot runtime does.
+
+## Plug-and-play means three things
+
+1. **No game changes are required.** A game without `legalActions` still works — the bot supplies its own enumerator. Authors who want to ship bots add the hook once per game (~5 lines for tic-tac-toe) and every bot benefits.
+2. **No engine changes are required.** The runner consumes only the public session API: `applyEvent`, `getState`, `getPlayerView`. Bots compose with replays, the inspector, hosted multiplayer, and React bindings without any of those packages knowing the bot exists.
+3. **Same bot, two transports.** A `LocalSessionHost` adapts a `LocalGameSession`; a `HostedClientHost` adapts a `HostedClient`. Both implement the same `BotHost` interface, so `attachLocalBot` and `attachHostedBot` differ only in the host they construct. The bot itself is unchanged.
+
+## The runner
+
+`attachLocalBot` does three things:
+
+1. Wraps the session in a notification bus so dispatches from any seat — bot or human — fan out to every attached bot's host.
+2. Creates a `BotHost` over that bus pinned to one seat.
+3. Subscribes the runner to the host. On every change, if the seat is now active and no decision is in flight, the runner fires `decide` in a microtask.
+
+When `decide` is awaiting and a new snapshot arrives — typically because the opponent reconnected and a re-sync arrived — the runner aborts `signal` and queues a fresh decision once the in-flight one settles. After `decide` resolves, the runner re-checks `position.turn` against the snapshot it captured at the start; a stale decision is dropped before dispatch.
+
+Invalid moves do not mutate state, so dispatch failure is recoverable: `onError` fires and the runner waits for the next change to retry. The `simulate` helper is just a clone-and-applyEvent that returns the resulting snapshot — search algorithms can run thousands of rollouts inside a single `decide` call without disturbing the live session.
+
+## Determinism
+
+Bots inherit the engine's determinism by default:
+
+- `context.rng` is forked from `snapshot.meta.rng` plus a salt that includes the bot name, the seat, and the turn number. Two bots on the same snapshot get different streams; the same bot on the same snapshot always gets the same stream.
+- `simulate` rehydrates a session from the snapshot, which resumes RNG from `meta.rng`. MCTS rollouts that fork from a fixed seed produce the same trees every time.
+
+A bot whose `decide` is a pure function of `(view, legalActions, rng)` makes a match fully reproducible: rerun with the same seed and the same bots and you get bit-identical replays. LLM bots break this guarantee — pass `temperature: 0` and the same model snapshot if reproducibility matters.
+
+## Cloud deployment
+
+There are three places a cloud bot could live:
+
+| Where | Latency | Isolation | Recommended |
+| --- | --- | --- | --- |
+| Inside the room worker | Lowest | None — third-party code in a trusted process | No |
+| External WebSocket client (sidecar) | One network hop | Full process boundary | **Yes** |
+| Inside a human's browser tab | Free CPU | Tied to a tab staying open | No |
+
+The recommended topology runs bots as **separate processes that connect to the room as a player**, using exactly the `HostedClient` protocol a human browser uses. Failure modes reduce to "the bot disconnected" — the same recovery path the room already has for humans. Slow LLM calls don't stall the room's event loop. Bots scale independently of room workers.
+
+A `BotSupervisor` service watches lobbies for matches with a `botSeats` config, spawns a `HostedClient` per (room, seat), and runs `attachHostedBot` against the room URL. The room worker is unaffected; only the lobby data model gains a `botSeats` field.
+
+`@openturn/lobby/supervisor` ships both halves of this:
+
+- `createLocalBotSupervisor` — in-process, for single-device React apps and CLIs. Wraps `attachLocalBots` and exposes a `getSession()` accessor for the bot-aware facade.
+- `createHostedBotSupervisor` — opens a `HostedClient` per bot seat. The host (cloud Durable Object or OSS dev server) mints per-bot-seat tokens and feeds them in. Standard sidecar topology.
+
+The cloud Durable Object embeds `createHostedBotSupervisor` directly inside the room DO so bot moves dispatch through the same authoritative path humans do — see [Reference: `@openturn/lobby`](/reference/lobby#openturnlobbysupervisor) for the full API and [How-to: play against bots](/how-to/play-against-bots) for the wiring.
+
+## Choosing a bot in the lobby
+
+Before a match starts, players can pick which bot fills which empty seat — Random, Minimax · easy, Minimax · hard — from a typed `BotRegistry`. The same `<LobbyWithBots>` component renders the dropdown for both local single-device play and hosted multiplayer; the choice flows through `lobby:assign_bot` to the server, lands in `LobbyStartAssignment.botID`, and the supervisor wires the corresponding `Bot<TGame>` instance into the freshly-started session.
+
+The registry is engine-inert metadata: `defineGame({ bots })` (or `attachBots(game, registry)`) carries it through, but the engine never reads it. Only the lobby runtime, the deploy step, and the supervisor do. See [How-to: play against bots](/how-to/play-against-bots) for the registration + UI wiring.
+
+## Limitations
+
+- **`simulate` is local-only.** Hosted hosts do not see the full server-side snapshot. A bot connecting over the network must rely on `view`, `legalActions`, and pure-view heuristics. Search-based bots run server-side or as in-process bots in the CLI.
+- **`legalActions` enumeration is the author's responsibility.** The framework cannot infer which `(event, payload)` combinations are valid because move-arg payloads are opaque types to the engine. Add the hook to `defineGame` once and every bot benefits.
+- **Per-decision deadline only.** The runner enforces `thinkingBudgetMs` via a `DeadlineToken` you check inside `decide`, but it does not kill a runaway `decide`. A misbehaving bot stays in flight until it returns or the abort signal fires (which it will when the next snapshot lands). For untrusted code, run bots in a Worker or a separate process.
+
+## Related
+
+- [Reference: `@openturn/bot`](/reference/bot) — full API surface.
+- [Reference: `@openturn/lobby`](/reference/lobby) — bot registry + supervisors + lobby UI.
+- [How-to: add an AI bot to a game](/how-to/add-a-bot) — practical guide.
+- [How-to: play against bots in the lobby](/how-to/play-against-bots) — per-seat bot dropdowns.
+- [Tutorial: tic-tac-toe with bots](/tutorials/tic-tac-toe-bot) — end-to-end walkthrough including the example minimax bot.

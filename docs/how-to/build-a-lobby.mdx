@@ -1,0 +1,176 @@
+---
+title: Build a lobby
+description: Use `LobbyRuntime` on the server and `<LobbyWithBots>` (or `<OpenturnProvider>` + `useRoom`) on the client to run a pre-game lobby with seat assignment and optional bot dropdowns.
+sidebarTitle: Lobby
+---
+
+Most multiplayer games need a pre-game step: a lobby where players join, pick seats, optionally pick a bot for an empty seat, and wait for a quorum. Openturn ships a `LobbyRuntime` that handles this lifecycle; the unified `@openturn/lobby` package exposes it on the client (local single-device or hosted) without boilerplate.
+
+If you want **per-seat bot dropdowns** (let players pick "Random" vs "Minimax · hard" before the match starts), see [How-to: play against bots](/how-to/play-against-bots) — the same `<LobbyWithBots>` component covers both lobbies-without-bots and lobbies-with-bots; you opt into bots by setting `game.bots` via `attachBots(game, registry)`.
+
+## What the lobby does
+
+- Track joined players by user ID.
+- Enforce a player range — `[game.minPlayers, game.playerIDs.length]` — declared on the game, with a host-mutable `targetCapacity` inside that range.
+- Assign player IDs to users in a stable order.
+- Broadcast lobby snapshots to everyone in the room.
+- Sign game tokens and hand off to the match when ready.
+
+## Declaring a player range
+
+Set `maxPlayers` (or `playerIDs` for named seats) and optional `minPlayers` on your `defineGame` config. The framework generates default IDs `"0",..,"N-1"` from `maxPlayers`.
+
+```ts
+import { defineGame } from "@openturn/gamekit";
+
+// Fixed 2-player game — minPlayers defaults to maxPlayers.
+export const ticTacToe = defineGame({
+  maxPlayers: 2,
+  // ...
+});
+
+// 2–4 player game. Lobby seats up to 4; host can lower the target to 2 or 3.
+export const partyGame = defineGame({
+  maxPlayers: 4,
+  minPlayers: 2,
+  // ...
+});
+
+// Named seats (e.g. chess) — opt in via playerIDs.
+export const chess = defineGame({
+  playerIDs: ["white", "black"] as const,
+  // ...
+});
+```
+
+When the match starts, the session's `match.players` is the seated subset (preserving seat order), so existing logic like `match.players.includes(playerID)` and `roundRobin(match.players, ...)` cycles only the players who actually joined. Author your `setup` against the runtime `match` parameter so per-player state matches the seated count.
+
+## Server side: `LobbyRuntime`
+
+The `openturn dev` server and the generated Cloudflare Worker both instantiate a `LobbyRuntime` per room. You rarely touch this directly, but here is the shape:
+
+```ts
+import { LobbyRuntime } from "@openturn/server";
+
+const lobby = new LobbyRuntime({
+  hostUserID: "host_user",
+  minPlayers: 2,
+  maxPlayers: 4,
+  // Optional: defaults to maxPlayers. Host mutates via setTargetCapacity().
+  targetCapacity: 4,
+  playerIDs: ["0", "1", "2", "3"],
+});
+
+lobby.takeSeat("alice", "Alice", 0);
+lobby.setReady("alice", true);
+lobby.takeSeat("bob", "Bob", 1);
+lobby.setReady("bob", true);
+
+// Host narrows the room to a 2-player match before starting.
+lobby.setTargetCapacity("host_user", 2);
+
+const result = lobby.start("host_user");
+if (result.ok) {
+  // result.assignments is the seat→playerID map for actually-seated players.
+}
+```
+
+Mutation methods:
+
+- `takeSeat(userID, userName, seatIndex)` / `leaveSeat(userID)`
+- `setReady(userID, ready)`
+- `assignBot(hostUserID, seatIndex, botID)` / `clearSeat(hostUserID, seatIndex)` (host-only)
+- `setTargetCapacity(hostUserID, targetCapacity)` (host-only) — mutates within `[minPlayers, maxPlayers]`. Lowering evicts seats whose `seatIndex >= targetCapacity` (humans become unseated; bots are removed).
+- `start(hostUserID)` — succeeds when seated count is in `[minPlayers, targetCapacity]` and every human is ready. Bots count toward the seated total and skip the ready check.
+- `close(hostUserID)` / `dropUser(userID)`
+
+Lobby snapshots include: seats, host user, ready state, `minPlayers`, `maxPlayers`, `targetCapacity`, available bots. React binds to this via `buildLobbyView`.
+
+## Client side: two integration paths
+
+The lobby UI lives in [`@openturn/lobby/react`](/reference/lobby#openturnlobbyreact). `@openturn/react` re-exports it for back-compat, but new code should import from `@openturn/lobby/react` directly.
+
+### Path A — `<OpenturnProvider>` + `useRoom` (hosted multiplayer with built-in bridge)
+
+```tsx
+import { createOpenturnBindings } from "@openturn/react";
+import { LobbyWithBots } from "@openturn/lobby/react";
+import { myGame } from "./game";
+
+const { OpenturnProvider, useRoom } = createOpenturnBindings(myGame, {
+  runtime: "multiplayer",
+});
+
+export function App() {
+  return (
+    <OpenturnProvider>
+      <Room />
+    </OpenturnProvider>
+  );
+}
+
+function Room() {
+  const room = useRoom();
+
+  if (room.phase === "missing_backend") return <p>Open me through a play URL.</p>;
+  if (room.lobby !== null) {
+    return (
+      <LobbyWithBots
+        lobby={room.lobby}
+        title="My Game"
+      />
+    );
+  }
+  if (room.game !== null) return <GameBoard match={room.game} />;
+  return <p>{room.phase}</p>;
+}
+```
+
+`room.phase` walks `idle → connecting → lobby → transitioning → game`. `room.lobby` is a `LobbyView`; `room.game` is a `HostedMatchState`.
+
+`<LobbyWithBots />` is the standard round-table UI plus per-seat bot dropdowns. If your game has no `BotRegistry`, the dropdowns simply don't appear — the component degrades to plain seat claim/leave/ready/start. Use plain `<Lobby>` (also from `@openturn/lobby/react`) if you want to skip bot affordances entirely.
+
+If you want to build your own UI, `room.lobby` has all the fields you need: `seats` (a discriminated union of `open | human | bot`), `playerID`, `isHost`, `canStart`, `availableBots`, `minPlayers`/`maxPlayers`/`targetCapacity`, and the action callbacks (`takeSeat`, `leaveSeat`, `setReady`, `assignBot`, `clearSeat`, `setTargetCapacity`, `start`).
+
+For variable-player games, `<LobbyWithBots>` automatically renders a host-only capacity picker (`−` / `+` buttons) when `minPlayers < maxPlayers`. The picker is hidden for fixed-size games.
+
+### Path B — `useLobbyChannel` directly (custom shells)
+
+For custom lobby UIs without the hosted match wrapper, use `useLobbyChannel`:
+
+```tsx
+import { useLobbyChannel, buildLobbyView, LobbyWithBots } from "@openturn/lobby/react";
+
+const channel = useLobbyChannel({ websocketURL, token });
+const view = buildLobbyView({ channel, userID });
+return <LobbyWithBots lobby={view} title="My Game" />;
+```
+
+Use this when the lobby is the whole UI and there is no subsequent game phase (matchmaking queue, waiting room with chat).
+
+### Path C — `useLocalLobbyChannel` for single-device play
+
+The same `<LobbyWithBots>` UI runs against an in-memory `LobbyRuntime` for single-device local play — no WebSocket, no token. Useful when you want one human to set up a match against bots before kicking off `createLocalSession`:
+
+```tsx
+import { useLocalLobbyChannel, LobbyWithBots, buildLobbyView } from "@openturn/lobby/react";
+
+const channel = useLocalLobbyChannel({
+  game: myGameWithBots,
+  match: myMatch,
+  hostUserID: "local-host",
+  registry: myBotRegistry,
+  onTransitionToGame: ({ assignments }) => { /* build LocalGameSession + attach bots */ },
+});
+const view = buildLobbyView({ channel, userID: "local-host" });
+```
+
+See [How-to: play against bots](/how-to/play-against-bots) for the full local + bot wiring.
+
+## Related
+
+- [Tutorial: tic-tac-toe multiplayer](/tutorials/tic-tac-toe-multiplayer) uses `useRoom()` end to end.
+- [Reference: lobby](/reference/lobby) — full `@openturn/lobby` API surface.
+- [Reference: server](/reference/server) for `LobbyRuntime` options.
+- [Reference: protocol](/reference/protocol) for the lobby wire protocol.
+- [How-to: play against bots](/how-to/play-against-bots) — wire per-seat bot dropdowns.

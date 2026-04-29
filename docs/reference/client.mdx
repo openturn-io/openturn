@@ -1,0 +1,145 @@
+---
+title: "@openturn/client"
+description: WebSocket client for a hosted openturn match. Connect, dispatch, sync, resync.
+sidebarTitle: Client
+---
+
+Worker-safe. The transport half that talks to `@openturn/server`. Most React apps use it indirectly through `@openturn/react`'s `<OpenturnProvider>` (with `runtime: "multiplayer"` bindings) plus `useMatch` / `useRoom`. Import it directly when you are writing a non-React UI or a server-side bot.
+
+## Install
+
+```bash
+bun add @openturn/client
+```
+
+## Creating a client
+
+### `createHostedClient(options)`
+
+```ts
+const client = createHostedClient({
+  playerID,
+  roomID,
+  getRoomToken: async () => token,
+  createSocketURL: (ctx) => "wss://...",  // optional
+  transport: customTransport,              // optional; default uses WebSocket
+  retainBatchHistory: false,               // optional
+});
+```
+
+Returns a `HostedClient<TPublicState, TResult>`. `HostedClientOptions` extends `HostedConnectionDescriptor` — the connection fields live at the top level.
+
+### `HostedConnectionDescriptor`
+
+```ts
+interface HostedConnectionDescriptor {
+  playerID: string;
+  roomID: MatchID;
+  getRoomToken: () => Promise<string>;
+  createSocketURL?: (ctx: { playerID: string; roomID: MatchID; token: string }) => string;
+}
+```
+
+### `HostedClientOptions<TPublicState, TResult>`
+
+```ts
+interface HostedClientOptions<TPublicState, TResult> extends HostedConnectionDescriptor {
+  transport?: HostedTransport;
+  retainBatchHistory?: boolean;
+}
+```
+
+## Client API
+
+### `HostedClient<TPublicState, TResult>`
+
+```ts
+interface HostedClient<TPublicState, TResult> {
+  connect(): Promise<void>;
+  disconnect(code?: number, reason?: string): void;
+  dispatchEvent(
+    event: string,
+    payload: ProtocolValue,
+    options?: HostedDispatchOptions,
+  ): Promise<HostedDispatchOutcome<TPublicState, TResult>>;
+  requestSync(): void;
+  requestResync(sinceRevision?: Revision): void;
+  getState(): HostedClientState<TPublicState, TResult>;
+  getBatchHistory(): readonly BatchApplied<TPublicState, TResult>[];
+  getInitialSnapshot(): HostedSnapshot<TPublicState, TResult> | null;
+  subscribe(listener: () => void): () => void;
+}
+```
+
+`getInitialSnapshot()` returns the first `MatchSnapshot`/`PlayerViewSnapshot` received after connect — useful for reproducing the exact server state before any batches were applied.
+
+`dispatchEvent` returns a promise that resolves with the real outcome once the server acks or rejects the action. If the connection drops while the action is in flight, the promise resolves with `{ ok: false, error: "disconnected" }`.
+
+```ts
+type HostedDispatchOutcome<TPublicState, TResult> =
+  | { ok: true; clientActionID: string; batch: BatchApplied<TPublicState, TResult> }
+  | {
+      ok: false;
+      clientActionID: string;
+      error: ProtocolErrorCode | string;
+      details?: ProtocolValue;
+      event?: string;
+      reason?: string;
+      revision?: Revision;
+    };
+```
+
+## Client state
+
+### `HostedClientState<TPublicState, TResult>`
+
+```ts
+interface HostedClientState<TPublicState, TResult> {
+  status: HostedConnectionStatus;
+  snapshot: HostedSnapshot<TPublicState, TResult> | null;
+  error: string | null;
+  lastBatch: BatchApplied<TPublicState, TResult> | null;
+  lastEvent: ProtocolServerMessage<TPublicState, TResult> | null;
+  lastAcknowledgedActionID: string | null;
+}
+```
+
+`lastEvent` is the most recent raw server message the client processed — handy for debugging or driving telemetry without re-subscribing to every batch.
+
+Rejections are surfaced through the `dispatchEvent` promise, not through state — handle them at the call site.
+
+### `HostedConnectionStatus`
+
+`"idle" | "authorizing" | "connecting" | "connected" | "disconnected" | "error"`.
+
+### `HostedSnapshot<TPublicState, TResult>`
+
+Union: `MatchSnapshot | PlayerViewSnapshot`. The server sends the player variant; observer/spectator clients see `MatchSnapshot`.
+
+### `HostedDispatchOptions`
+
+Optional per-dispatch options: `clientActionID`, `baseRevision`.
+
+## Transport
+
+### `HostedSocket` / `HostedTransport`
+
+Abstract over the underlying WebSocket. You can implement your own `HostedTransport` to route over a non-WebSocket channel (for tests, for integration with another socket layer). The default uses `globalThis.WebSocket`.
+
+### `HostedSocketEventMap`
+
+The events a socket can raise: `open`, `message`, `close`, `error`.
+
+## Re-exports
+
+For convenience, `@openturn/client` re-exports the protocol types you typically need:
+
+```ts
+export type { BatchApplied, MatchSnapshot, PlayerViewSnapshot, ProtocolValue };
+```
+
+## See also
+
+- [Reference: bridge](/reference/bridge) for the iframe↔shell wire that `@openturn/react` uses to resolve the connection descriptor inside a hosted shell.
+- [Reference: server](/reference/server) for the producer on the other end.
+- [Reference: react](/reference/react) for the hooks (`useMatch`, `useRoom`) that wrap this client for most apps.

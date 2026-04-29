@@ -1,0 +1,108 @@
+---
+title: Run a local session
+description: Use `createLocalSession` to run a game in-process — in tests, CLIs, or anywhere React is overkill.
+sidebarTitle: Local session
+---
+
+`createLocalSession(game, options)` is the lowest-level way to run an openturn match. It is a reducer wrapped in a subscribable handle. Everything else (React bindings, hosted server, replay materialization) sits on top of it.
+
+## Create
+
+```ts
+import { createLocalSession } from "@openturn/core";
+import { myGame } from "./game";
+
+const session = createLocalSession(myGame, {
+  match: { players: myGame.playerIDs },   // seated subset for this session
+  seed: "optional-deterministic-seed",
+  now: 0,
+});
+```
+
+- `match` is required. `match.players` is the seated subset for this session — a non-empty subset of the game's player pool (`game.playerIDs`). For variable-player games (e.g. `maxPlayers: 4, minPlayers: 2`), seat fewer players by passing `players: ["0", "1"]` etc.
+- `seed` (optional) is a string used by `@openturn/core`'s RNG. Omit it and the session generates one. Fix it for reproducible tests.
+- `now` (optional) is the initial time in milliseconds, used when transitions read `context.now`. Defaults to `0`.
+
+## Read state
+
+```ts
+const snapshot = session.getState();
+console.log(snapshot.G);              // authoritative state
+console.log(snapshot.position);       // { name, turn }
+console.log(snapshot.derived);        // activePlayers, selectors, control
+console.log(snapshot.meta.result);    // null while the match is live
+```
+
+`snapshot` is the same shape every part of openturn uses. See [concepts: authoritative state and snapshots](/concepts/authoritative-state).
+
+## Apply events
+
+```ts
+const result = session.applyEvent("0", "placeMark", { row: 0, col: 0 });
+if (result.ok) {
+  console.log(result.batch);          // steps applied, including internal events
+} else {
+  console.log(result.error);          // "inactive_player" | "invalid_event" | ...
+}
+```
+
+The first argument is the player ID, the second is the event name, the rest is the payload.
+
+Gamekit moves show up by the move name you gave them (`placeMark` above), because gamekit emits one core event per move.
+
+## Read player views
+
+```ts
+const myView = session.getPlayerView("0");
+```
+
+The engine runs your `views.player` with that player ID. If you only defined `views.public`, `getPlayerView` returns the public shape.
+
+## Snapshot the replay data
+
+```ts
+const replayData = session.getReplayData();
+```
+
+`replayData` contains everything needed to reconstruct the match elsewhere: the match roster, the seed, the initial time, and the full action log. Hand it to `@openturn/replay`'s `createSavedReplayFromSession` to produce a portable envelope.
+
+## Subscribe to changes
+
+```ts
+const unsubscribe = session.subscribe(() => {
+  render(session.getState());
+});
+// ...
+unsubscribe();
+```
+
+The React binding (`createOpenturnBindings`) uses the same subscription under the hood.
+
+## Use in tests
+
+```ts
+import { test, expect } from "bun:test";
+import { createLocalSession } from "@openturn/core";
+import { ticTacToe } from "./game";
+
+test("player 0 wins on a row", () => {
+  const session = createLocalSession(ticTacToe, {
+    match: { players: ticTacToe.playerIDs },
+    seed: "test",
+  });
+  session.applyEvent("0", "placeMark", { row: 0, col: 0 });
+  session.applyEvent("1", "placeMark", { row: 1, col: 0 });
+  session.applyEvent("0", "placeMark", { row: 0, col: 1 });
+  session.applyEvent("1", "placeMark", { row: 2, col: 0 });
+  session.applyEvent("0", "placeMark", { row: 0, col: 2 });
+  expect(session.getState().meta.result).toEqual({ winner: "0" });
+});
+```
+
+Fixing `seed` makes the test deterministic across machines.
+
+## Related
+
+- [Reference: core](/reference/core) for the `LocalGameSession` API.
+- [How-to: bind a game to React](/how-to/bind-to-react) for the React wrapper.
+- [How-to: capture replays](/how-to/capture-replays) for exporting the action log.

@@ -1,0 +1,85 @@
+---
+title: Local vs hosted architecture
+description: How the same game definition drives a single-process session and a Durable Object-backed multiplayer room.
+sidebarTitle: Local vs hosted
+---
+
+An openturn game definition is a pure value. It does not know whether it will run locally in a browser tab or authoritatively inside a Cloudflare Durable Object. That is the whole point: you author once, and the runtime is chosen by the React app at bindings-creation time.
+
+## Two ways to run a match
+
+**Local session** — `createLocalSession(game, { match })` from `@openturn/core` runs the reducer in your current process. The React binding `createOpenturnBindings(game, { runtime: "local", match })` wires the same session into a subscribable store and exposes hooks. Good for:
+
+- Local-only games (tic-tac-toe on the same device).
+- Tests and dev loops.
+- CLI and single-player UIs.
+
+**Hosted match** — `createRoomRuntime({ deployment, roomID })` from `@openturn/server` runs the same reducer inside a server. Clients connect over WebSocket using `@openturn/client`, and React apps use `createOpenturnBindings(game, { runtime: "multiplayer" })` plus `<OpenturnProvider>` to consume `useRoom` (or `useMatch` if you don't need lobby/bridge). Good for:
+
+- Real multiplayer.
+- Authoritative rules (server rejects illegal moves).
+- Per-player views (server sends each client only their slice).
+
+## One provider, every environment
+
+The `OpenturnProvider` is zero-prop in normal app code. The runtime declared in `createOpenturnBindings` plus the URL fragment injected by the host shell determine what happens:
+
+```tsx
+<OpenturnProvider />
+```
+
+- **`runtime: "local"`** → renders an in-process session backed by the `match` you passed to `createOpenturnBindings`.
+- **`runtime: "multiplayer"`** → reads the `#openturn-bridge=…` URL fragment. `openturn dev` injects it locally; openturn-cloud injects it in production. Same fragment shape, same code path.
+
+You write one component. It runs unchanged in dev and prod.
+
+## The stack, top to bottom
+
+```
+┌─────────────────────────────────────────────┐
+│ React UI (@openturn/react, browser)         │
+│   createOpenturnBindings(game, { runtime }) │
+│   <OpenturnProvider />                      │
+│   useMatch / useRoom                        │
+├─────────────────────────────────────────────┤
+│ Transport                                   │
+│   Local: createLocalSession                 │
+│   Hosted: @openturn/client over WebSocket   │
+│   Backend resolver: @openturn/bridge        │
+├─────────────────────────────────────────────┤
+│ Wire protocol (@openturn/protocol)          │
+│   ClientAction / BatchApplied / SyncRequest │
+├─────────────────────────────────────────────┤
+│ Authoritative runtime                       │
+│   Local: in-process reducer                 │
+│   Hosted: @openturn/server RoomRuntime      │
+│           in a Durable Object               │
+├─────────────────────────────────────────────┤
+│ Game definition (@openturn/core + gamekit)  │
+│   defineGame({ playerIDs, ...machine })     │
+│   Pure value. Worker-safe. JSON-only.       │
+└─────────────────────────────────────────────┘
+```
+
+Only the transport row changes between local and hosted. Everything below it is the same code.
+
+## File layout for a cloud-ready game
+
+The CLI and deploy pipeline expect three files under `app/`:
+
+- `app/game.ts` — re-exports `game` from your worker package.
+- `app/page.tsx` — the React entry. For local games this is a thin renderer (the host shell wraps it in `<OpenturnProvider>`). For multiplayer games it usually wraps the experience in its own provider plus a `useRoom` lobby.
+- `app/openturn.ts` — metadata: `name`, `runtime: "local" | "multiplayer"`, and for multiplayer the `gameKey` and `schemaVersion`.
+
+The same shape works for local (`runtime: "local"`) and multiplayer (`runtime: "multiplayer"`). `openturn build` produces the right Worker bundle based on the metadata, and the React `createOpenturnBindings` call mirrors the same runtime declaration.
+
+## Local hosted dev
+
+For multiplayer development, `openturn dev` runs a Bun server that mounts your game in `@openturn/server`, persists rooms in SQLite, and accepts WebSocket connections. The dev shell hosts your bundle in an iframe and injects the same `#openturn-bridge=…` fragment that openturn-cloud injects in production — your React app sees no difference between dev and prod, so a single `<OpenturnProvider />` works in both.
+
+See [how-to: run a local hosted stack](/how-to/run-local-hosted) and [how-to: deploy to Cloudflare](/how-to/deploy-to-cloudflare).
+
+## What to read next
+
+- [Tutorial: tic-tac-toe multiplayer](/tutorials/tic-tac-toe-multiplayer) takes the local tic-tac-toe through the full hosted stack.
+- [Reference: server](/reference/server), [client](/reference/client), and [connect](/reference/bridge) document the transport surfaces.

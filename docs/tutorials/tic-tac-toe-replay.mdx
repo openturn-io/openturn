@@ -1,0 +1,162 @@
+---
+title: Tic-tac-toe replay viewer
+description: Capture a tic-tac-toe match to JSON with `@openturn/replay`, load it in a viewer app, and inspect every frame with the inspector.
+sidebarTitle: Replay
+---
+
+Deterministic replay is one of openturn's core guarantees: an action log plus a seed reproduces the exact match. This tutorial captures a tic-tac-toe match, persists it as JSON, and builds a viewer that loads replays and replays them locally.
+
+It reuses the `@my/tic-tac-toe-game` package from [tutorial 1](/tutorials/tic-tac-toe-gamekit).
+
+Reference code: [`examples/replays/tic-tac-toe-replay-viewer`](https://github.com/openturn-io/openturn/tree/main/openturn/examples/replays/tic-tac-toe-replay-viewer).
+
+## 1. Capture a replay from a local match
+
+`@openturn/replay` turns any local session's action log into a serializable envelope.
+
+### From the React app
+
+In the React component from tutorial 1, add a "download replay" button:
+
+```tsx
+import { createSavedReplayFromSession, serializeSavedReplay } from "@openturn/replay";
+
+const view = useMatch();
+if (view.mode !== "local") throw new Error("download requires a local match");
+const { replayData } = view.state;
+
+function onDownload() {
+  const envelope = createSavedReplayFromSession({
+    gameID: "example/tic-tac-toe",
+    playerID: "0",
+    session: { getReplayData: () => replayData },
+    metadata: { label: "Tic-tac-toe replay" },
+  });
+  const blob = new Blob([serializeSavedReplay(envelope)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  Object.assign(document.createElement("a"), { href: url, download: "replay.json" }).click();
+  URL.revokeObjectURL(url);
+}
+```
+
+`replayData` is exposed on the local `match.state`. It carries the initial bootstrap, the seed, the initial time, and the action log. `createSavedReplayFromSession` wraps it into a versioned envelope.
+
+### From the CLI
+
+If you also ran the CLI variant, pass `--save-replay <path>`:
+
+```bash
+bun --filter @my/tic-tac-toe-cli demo -- --save-replay out.json
+```
+
+Both paths produce the same JSON shape, so the viewer can load either.
+
+## 2. Build a viewer app
+
+A replay viewer is just another local-runtime openturn app that, instead of letting the player click, replays a loaded action log.
+
+### `app/app/openturn.ts`
+
+```ts
+export const metadata = { name: "Tic Tac Toe Replay Viewer", runtime: "local" };
+```
+
+### `app/app/page.tsx`
+
+Same shape as before — it renders a React component.
+
+### `app/src/components/TicTacToeReplayViewer.tsx`
+
+```tsx
+import { useState } from "react";
+import { createOpenturnBindings } from "@openturn/react";
+import { parseSavedReplay, type SavedReplayEnvelope } from "@openturn/replay";
+import { ticTacToe } from "@my/tic-tac-toe-game";
+
+const { useMatch } = createOpenturnBindings(ticTacToe, {
+  runtime: "local",
+  match: { players: ticTacToe.playerIDs },
+});
+
+function useLocalMatch() {
+  const view = useMatch();
+  if (view.mode !== "local") throw new Error("replay viewer requires a local match");
+  return view.state;
+}
+
+export function TicTacToeReplayViewer() {
+  const match = useLocalMatch();
+  const [loaded, setLoaded] = useState(false);
+
+  async function onPickFile(file: File) {
+    const envelope = parseSavedReplay(await file.text());
+    if (envelope.gameID !== "example/tic-tac-toe") {
+      alert(`Unknown replay game: ${envelope.gameID}`);
+      return;
+    }
+    match.reset();
+    replayActions(match.dispatch, envelope);
+    setLoaded(true);
+  }
+
+  return (
+    <>
+      {!loaded && (
+        <input type="file" accept="application/json" onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void onPickFile(file);
+        }} />
+      )}
+      <Board snapshot={match.snapshot} />
+    </>
+  );
+}
+
+function replayActions(
+  dispatch: ReturnType<typeof useLocalMatch>["dispatch"],
+  envelope: SavedReplayEnvelope<typeof ticTacToe.playerIDs>,
+) {
+  for (const action of envelope.actions) {
+    // The dispatch map is keyed by event name. We index by the recorded
+    // event string and forward the recorded playerID + payload.
+    const fn = dispatch[action.event as keyof typeof dispatch];
+    fn(action.playerID, action.payload);
+  }
+}
+```
+
+The viewer runs a fresh local session, resets it, and re-dispatches the recorded actions in order. Because the authored game is deterministic, the resulting `snapshot` on each step is byte-identical to the original match.
+
+## 3. Browse frames with inspector
+
+For an interactive timeline, drop in the `ReplayInspector` returned by `@openturn/inspector-ui`'s `createInspector`. It gives you a timeline, state diff viewer, and graph highlight:
+
+```tsx
+import { createOpenturnBindings } from "@openturn/react";
+import { createInspector } from "@openturn/inspector-ui";
+import { ticTacToe } from "@my/tic-tac-toe-game";
+
+const bindings = createOpenturnBindings(ticTacToe, {
+  runtime: "local",
+  match: { players: ticTacToe.playerIDs },
+});
+const { ReplayInspector } = createInspector(bindings);
+
+export function TicTacToeReplayInspector({ envelope }) {
+  return <ReplayInspector replayEnvelope={envelope} />;
+}
+```
+
+The inspector materializes the envelope internally with `materializeSavedReplay`, then renders the timeline, frame diffs, and graph highlights.
+
+## What you learned
+
+- `@openturn/replay` serializes matches into a versioned JSON envelope.
+- Replaying is just re-dispatching the recorded actions against a fresh session.
+- `@openturn/inspector-ui` turns a timeline into an interactive inspector with no extra code.
+
+## What to do next
+
+- [Tutorial: tic-tac-toe with core](/tutorials/tic-tac-toe-core) rewrites the same game using `@openturn/core` directly.
+- [How-to: debug with inspector](/how-to/debug-with-inspector) is the full inspector walkthrough.
+- [How-to: capture replays](/how-to/capture-replays) is the condensed recipe.

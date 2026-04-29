@@ -1,0 +1,1262 @@
+@import "./shadcn.css";
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@source "../";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+/* Shadow-root chrome host: flex column for panels and dock; viewport sizing lives on light-DOM .ot-inspector-outer */
+.ot-inspector {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex: 1;
+  font-family: var(--ot-font-sans);
+  font-size: 12px;
+  color: var(--ot-text);
+  line-height: 1.5;
+}
+
+.ot-inspector--dock-host {
+  flex: 0 0 auto;
+  height: auto;
+  min-height: 0;
+}
+
+/* Side panels — width comes from the resizable rail in light DOM */
+.ot-inspector__panel {
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+  background: var(--ot-bg);
+  border-color: var(--ot-border);
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.ot-inspector__panel--left {
+  border-right: 1px solid var(--ot-border);
+}
+
+.ot-inspector__panel--right {
+  border-left: 1px solid var(--ot-border);
+}
+
+.ot-inspector__panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--ot-border);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ot-text-muted);
+  position: sticky;
+  top: 0;
+  background: var(--ot-bg);
+  z-index: 2;
+}
+
+.ot-inspector__panel-section {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--ot-border);
+}
+
+.ot-inspector__panel-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ot-text-dim);
+  margin-bottom: 6px;
+}
+
+/* Bottom dock */
+.ot-inspector__dock {
+  background: var(--ot-bg);
+  border-top: 1px solid var(--ot-border);
+  padding: 0;
+  flex: 0 0 auto;
+}
+
+.ot-inspector__dock[data-collapsed="true"] {
+  padding: 0;
+}
+
+.ot-inspector__dock-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 24px;
+  background: var(--ot-bg-raised);
+  border: none;
+  border-bottom: 1px solid var(--ot-border);
+  color: var(--ot-text-dim);
+  cursor: pointer;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  transition: color 0.15s, background 0.15s;
+}
+
+.ot-inspector__dock-toggle:hover {
+  background: var(--ot-bg-hover);
+  color: var(--ot-text-muted);
+}
+
+/* Timeline track */
+.ot-inspector__timeline {
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ot-inspector__timeline-track {
+  flex: 1;
+  position: relative;
+  height: 24px;
+  display: flex;
+  align-items: center;
+}
+
+.ot-inspector__timeline-rail {
+  width: 100%;
+  height: 4px;
+  background: var(--ot-bg-surface);
+  border-radius: 2px;
+  position: relative;
+  cursor: pointer;
+}
+
+.ot-inspector__timeline-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: var(--ot-accent-dim);
+  border-radius: 2px;
+  transition: width 0.1s ease-out;
+}
+
+.ot-inspector__timeline-markers {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.ot-inspector__timeline-marker {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.ot-inspector__timeline-marker:hover {
+  transform: translate(-50%, 0) scale(1.4);
+}
+
+.ot-inspector__timeline-marker--action {
+  background: var(--ot-accent);
+}
+
+.ot-inspector__timeline-marker--internal {
+  background: var(--ot-yellow);
+  width: 4px;
+  height: 4px;
+}
+
+.ot-inspector__timeline-marker--active {
+  background: #fff;
+  box-shadow: 0 0 0 2px var(--ot-accent);
+  width: 8px;
+  height: 8px;
+  z-index: 1;
+}
+
+.ot-inspector__timeline-rev {
+  font-family: var(--ot-font);
+  font-size: 10px;
+  color: var(--ot-text-dim);
+  min-width: 36px;
+  text-align: right;
+}
+
+/* Playback controls */
+.ot-inspector__controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 12px 8px;
+}
+
+/*
+ * Dock tool buttons use shadcn `outline`, whose dark theme sets `bg-input/30`.
+ * Tailwind merge + utility order can still leave muted backgrounds; data attrs +
+ * these rules guarantee the selected / live / playing emphasis reads clearly.
+ */
+.ot-inspector .ot-inspector__controls > [data-slot="button"][data-ot-accent="true"] {
+  background-color: var(--ot-accent-dim) !important;
+  border-color: var(--ot-accent) !important;
+  color: #fff !important;
+}
+
+.ot-inspector .ot-inspector__controls > [data-slot="button"][data-ot-accent="true"]:hover {
+  background-color: color-mix(in srgb, var(--ot-accent-dim) 82%, var(--ot-accent)) !important;
+}
+
+.ot-inspector .ot-inspector__controls > [data-slot="button"][data-ot-accent="true"] svg {
+  color: #fff !important;
+}
+
+.ot-inspector .ot-inspector__controls > [data-slot="button"][data-ot-live="true"] {
+  background-color: #16a34a !important;
+  border-color: #22c55e !important;
+  color: #fff !important;
+}
+
+.ot-inspector .ot-inspector__controls > [data-slot="button"][data-ot-live="true"]:hover {
+  background-color: #15803d !important;
+  border-color: #4ade80 !important;
+}
+
+.ot-inspector__control-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--ot-radius);
+  border: 1px solid var(--ot-border);
+  background: var(--ot-bg-raised);
+  color: var(--ot-text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+  transition: all 0.12s;
+}
+
+.ot-inspector__control-btn:hover {
+  background: var(--ot-bg-hover);
+  color: var(--ot-text);
+  border-color: var(--ot-border-active);
+}
+
+.ot-inspector__control-btn--active {
+  background: var(--ot-accent-dim);
+  border-color: var(--ot-accent);
+  color: #fff;
+}
+
+.ot-inspector__control-btn--live {
+  font-size: 10px;
+  font-weight: 600;
+  width: auto;
+  padding: 0 10px;
+  letter-spacing: 0.04em;
+}
+
+.ot-inspector__control-btn--live[data-live="true"] {
+  background: #16a34a;
+  border-color: #22c55e;
+  color: #fff;
+}
+
+.ot-inspector__speed-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 4px;
+  border: 1px solid var(--ot-border);
+  background: var(--ot-bg-raised);
+  color: var(--ot-text-dim);
+  cursor: pointer;
+  font-family: var(--ot-font);
+  font-size: 10px;
+  transition: all 0.12s;
+}
+
+.ot-inspector__speed-btn:hover {
+  background: var(--ot-bg-hover);
+  color: var(--ot-text);
+}
+
+.ot-inspector__speed-btn--active {
+  background: var(--ot-accent-dim);
+  border-color: var(--ot-accent);
+  color: #fff;
+}
+
+/* Mode badge */
+.ot-inspector__mode-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ot-inspector__mode-badge--live {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--ot-green);
+}
+
+.ot-inspector__mode-badge--replay {
+  background: rgba(108, 140, 255, 0.15);
+  color: var(--ot-accent);
+}
+
+/* Frame list */
+.ot-inspector__frame-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ot-inspector__frame-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  transition: background 0.1s, border-color 0.1s;
+  font-size: 11px;
+}
+
+.ot-inspector__frame-item:hover {
+  background: var(--ot-bg-hover);
+}
+
+.ot-inspector__frame-item--selected {
+  background: var(--ot-bg-surface);
+  border-left-color: var(--ot-accent);
+}
+
+.ot-inspector__frame-rev {
+  font-family: var(--ot-font);
+  font-size: 10px;
+  color: var(--ot-text-dim);
+  min-width: 24px;
+}
+
+.ot-inspector__frame-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ot-inspector__frame-badge--action {
+  background: rgba(108, 140, 255, 0.18);
+  color: var(--ot-accent);
+}
+
+.ot-inspector__frame-badge--internal {
+  background: rgba(251, 191, 36, 0.18);
+  color: var(--ot-yellow);
+}
+
+.ot-inspector__frame-badge--initial {
+  background: rgba(52, 211, 153, 0.18);
+  color: var(--ot-green);
+}
+
+.ot-inspector__frame-event {
+  font-family: var(--ot-font);
+  color: var(--ot-text);
+  font-size: 11px;
+}
+
+.ot-inspector__frame-player {
+  color: var(--ot-text-dim);
+  font-size: 10px;
+  margin-left: auto;
+}
+
+/* Event log toolbar (search + filter chips) */
+.ot-inspector__event-log-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--ot-border);
+}
+
+/* Filter chips */
+.ot-inspector__filter-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid var(--ot-border);
+  background: var(--ot-bg-surface);
+  color: var(--ot-text-dim);
+  cursor: pointer;
+  font-family: var(--ot-font-sans);
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  transition: all 0.12s;
+}
+
+.ot-inspector__filter-chip:hover {
+  background: var(--ot-bg-hover);
+  color: var(--ot-text-muted);
+}
+
+.ot-inspector__filter-chip--active {
+  background: var(--ot-accent-dim);
+  border-color: var(--ot-accent);
+  color: #fff;
+}
+
+.ot-inspector__filter-chip--active:hover {
+  background: color-mix(in srgb, var(--ot-accent-dim) 82%, var(--ot-accent));
+  color: #fff;
+}
+
+/* Turn groups */
+.ot-inspector__turn-group {
+  list-style: none;
+  border-bottom: 1px solid var(--ot-border);
+}
+
+.ot-inspector__turn-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: var(--ot-bg-raised);
+  color: var(--ot-text-muted);
+  cursor: pointer;
+  font-family: var(--ot-font-sans);
+  font-size: 10px;
+  text-align: left;
+  transition: background 0.1s;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.ot-inspector__turn-header:hover {
+  background: var(--ot-bg-hover);
+}
+
+.ot-inspector__turn-header--active {
+  border-left: 2px solid var(--ot-accent);
+  padding-left: 8px;
+}
+
+.ot-inspector__turn-header-label {
+  font-weight: 700;
+  color: var(--ot-text);
+  white-space: nowrap;
+}
+
+.ot-inspector__turn-header-summary {
+  color: var(--ot-text-dim);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ot-inspector__turn-header-count {
+  margin-left: auto;
+  color: var(--ot-text-dim);
+  font-family: var(--ot-font);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.ot-inspector__turn-frames {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Internal frame rows get an indent */
+.ot-inspector__frame-item--internal {
+  padding-left: 28px;
+}
+
+/* Graph edge label (from -> to) on internal rows */
+.ot-inspector__frame-edge {
+  color: var(--ot-text-dim);
+  font-family: var(--ot-font);
+  font-size: 9px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* Dimmed event name for internal steps */
+.ot-inspector__frame-event--internal {
+  color: var(--ot-text-dim);
+}
+
+/* Diff count badge */
+.ot-inspector__diff-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 14px;
+  min-width: 14px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: rgba(108, 140, 255, 0.14);
+  color: var(--ot-accent);
+  font-family: var(--ot-font);
+  font-size: 8px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* Legacy search (kept for backward compat if used elsewhere) */
+.ot-inspector__search {
+  display: flex;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--ot-border);
+}
+
+.ot-inspector__search input {
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: var(--ot-radius);
+  border: 1px solid var(--ot-border);
+  background: var(--ot-bg-surface);
+  color: var(--ot-text);
+  font-size: 11px;
+  font-family: var(--ot-font-sans);
+  outline: none;
+  transition: border-color 0.12s;
+}
+
+.ot-inspector__search input::placeholder {
+  color: var(--ot-text-dim);
+}
+
+.ot-inspector__search input:focus {
+  border-color: var(--ot-accent-dim);
+}
+
+/* Code view */
+.ot-inspector__code-block {
+  overflow-x: auto;
+}
+
+.ot-inspector__code-block pre,
+.ot-inspector__code-block--fallback {
+  font-family: var(--ot-font);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ot-text);
+  white-space: pre;
+  margin: 0;
+  background: transparent !important;
+  word-break: normal;
+  overflow: visible;
+}
+
+.ot-inspector__code-block code {
+  display: block;
+  min-width: max-content;
+}
+
+.ot-inspector__code-block--fallback {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Diff view */
+.ot-inspector__diff-entry {
+  display: flex;
+  gap: 8px;
+  padding: 3px 0;
+  font-family: var(--ot-font);
+  font-size: 11px;
+  border-bottom: 1px solid var(--ot-border);
+}
+
+.ot-inspector__diff-path {
+  color: var(--ot-text-muted);
+  min-width: 80px;
+  flex-shrink: 0;
+}
+
+.ot-inspector__diff-before {
+  color: var(--ot-red);
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+.ot-inspector__diff-after {
+  color: var(--ot-green);
+}
+
+.ot-inspector__diff-arrow {
+  color: var(--ot-text-dim);
+}
+
+/* Transition view */
+.ot-inspector__transition {
+  font-family: var(--ot-font);
+  font-size: 11px;
+}
+
+.ot-inspector__transition-row {
+  display: flex;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.ot-inspector__transition-label {
+  color: var(--ot-text-dim);
+  min-width: 70px;
+}
+
+.ot-inspector__transition-value {
+  color: var(--ot-text);
+}
+
+/* Evaluation view */
+.ot-inspector__eval-family {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--ot-border);
+}
+
+.ot-inspector__eval-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ot-text);
+  margin-bottom: 4px;
+}
+
+.ot-inspector__eval-candidate {
+  display: flex;
+  gap: 6px;
+  padding: 2px 0 2px 12px;
+  font-family: var(--ot-font);
+  font-size: 10px;
+}
+
+.ot-inspector__eval-matched {
+  color: var(--ot-green);
+}
+
+.ot-inspector__eval-skipped {
+  color: var(--ot-text-dim);
+}
+
+.ot-inspector__panel--graph {
+  flex-basis: 640px;
+  width: 640px;
+}
+
+.ot-inspector__panel--graph-expanded {
+  flex-basis: 100%;
+  width: 100%;
+}
+
+.ot-inspector__panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ot-inspector__graph-panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  background:
+    radial-gradient(circle at top, rgba(108, 140, 255, 0.08), transparent 44%),
+    linear-gradient(180deg, rgba(12, 14, 20, 0.98), rgba(15, 17, 23, 1));
+}
+
+.ot-graph-handoff {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--ot-border);
+  background:
+    linear-gradient(180deg, rgba(18, 21, 30, 0.98), rgba(14, 17, 24, 0.98));
+}
+
+.ot-graph-handoff__metric {
+  min-width: 0;
+}
+
+.ot-graph-handoff__label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--ot-text-dim);
+  font-family: var(--ot-font);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ot-graph-handoff__value {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(89, 97, 119, 0.18);
+  color: #eef2ff;
+  font-family: var(--ot-font);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ot-graph-handoff__value--same {
+  background: rgba(108, 140, 255, 0.18);
+  color: #dbe5ff;
+}
+
+.ot-graph-handoff__value--pass {
+  background: rgba(52, 211, 153, 0.16);
+  color: #b8f3db;
+}
+
+.ot-graph-handoff__value--shared {
+  background: rgba(251, 191, 36, 0.16);
+  color: #f8e39b;
+}
+
+.ot-graph-handoff__value--terminal {
+  background: rgba(248, 113, 113, 0.14);
+  color: #f3b1b1;
+}
+
+.ot-inspector__graph-canvas {
+  flex: 1;
+  overflow: auto;
+  padding: 0;
+}
+
+.ot-inspector__graph-canvas--panel {
+  height: 100%;
+}
+
+.ot-inspector__graph-canvas .react-flow {
+  background: transparent;
+}
+
+.ot-graph-node {
+  width: 220px;
+  min-height: 86px;
+  padding: 12px 14px;
+  border: 1px solid rgba(89, 97, 119, 0.7);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(28, 31, 43, 0.96), rgba(18, 21, 30, 0.96));
+  box-shadow:
+    0 18px 30px rgba(0, 0, 0, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  color: var(--ot-text);
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+
+.ot-graph-node:hover {
+  transform: translateY(-1px);
+  border-color: rgba(135, 154, 255, 0.78);
+  box-shadow:
+    0 22px 34px rgba(0, 0, 0, 0.34),
+    0 0 0 1px rgba(108, 140, 255, 0.12);
+}
+
+.ot-graph-node__eyebrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-family: var(--ot-font);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ot-text-muted);
+}
+
+.ot-graph-node__badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.ot-graph-node__badge {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(89, 97, 119, 0.22);
+  color: #c4cae0;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.ot-graph-node__title {
+  font-family: var(--ot-font);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #f3f6ff;
+}
+
+.ot-graph-node__players {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.ot-graph-node__player-chip {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(108, 140, 255, 0.16);
+  color: #dbe5ff;
+  font-family: var(--ot-font);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.ot-graph-node__ownership-note {
+  margin-top: 8px;
+  color: #f0b7b7;
+  font-family: var(--ot-font);
+  font-size: 10px;
+}
+
+.ot-graph-node__path {
+  margin-top: 6px;
+  color: var(--ot-text-muted);
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ot-graph-node--current {
+  border-color: rgba(108, 140, 255, 0.92);
+  box-shadow:
+    0 0 0 1px rgba(108, 140, 255, 0.28),
+    0 18px 40px rgba(43, 73, 170, 0.3);
+}
+
+.ot-graph-node--current .ot-graph-node__badge {
+  background: rgba(108, 140, 255, 0.2);
+  color: #dbe5ff;
+}
+
+.ot-graph-node--pending {
+  border-color: rgba(251, 191, 36, 0.82);
+  box-shadow:
+    0 0 0 1px rgba(251, 191, 36, 0.14),
+    0 14px 28px rgba(126, 93, 8, 0.18);
+}
+
+.ot-graph-node--pending .ot-graph-node__badge {
+  background: rgba(251, 191, 36, 0.16);
+  color: #f7df8d;
+}
+
+.ot-graph-node--initial .ot-graph-node__title::before {
+  content: "●";
+  margin-right: 8px;
+  color: var(--ot-green);
+}
+
+.ot-graph-node--warning {
+  border-color: rgba(248, 113, 113, 0.7);
+}
+
+.ot-graph-node--warning:hover {
+  border-color: rgba(248, 113, 113, 0.9);
+}
+
+.ot-graph-node--ownership-single {
+  box-shadow:
+    inset 0 0 0 1px rgba(108, 140, 255, 0.08),
+    0 18px 30px rgba(0, 0, 0, 0.26);
+}
+
+.ot-graph-node--ownership-shared {
+  border-color: rgba(251, 191, 36, 0.75);
+  box-shadow:
+    0 18px 30px rgba(0, 0, 0, 0.26),
+    0 0 0 1px rgba(251, 191, 36, 0.12);
+}
+
+.ot-graph-node--ownership-shared .ot-graph-node__player-chip {
+  background: rgba(251, 191, 36, 0.16);
+  color: #f8e39b;
+}
+
+.ot-graph-node--ownership-none {
+  border-color: rgba(248, 113, 113, 0.58);
+}
+
+.ot-graph-node__badge--warning {
+  background: rgba(248, 113, 113, 0.2) !important;
+  color: var(--ot-red) !important;
+}
+
+/* Compound group node */
+.ot-graph-compound {
+  border: 1.5px dashed rgba(89, 97, 119, 0.5);
+  border-radius: 18px;
+  background: rgba(28, 31, 43, 0.35);
+  position: relative;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+
+.ot-graph-compound:hover {
+  border-color: rgba(108, 140, 255, 0.4);
+  background: rgba(28, 31, 43, 0.45);
+}
+
+.ot-graph-compound--current {
+  border-color: rgba(108, 140, 255, 0.5);
+  background: rgba(43, 73, 170, 0.08);
+}
+
+.ot-graph-compound--pending {
+  border-color: rgba(251, 191, 36, 0.4);
+  background: rgba(126, 93, 8, 0.06);
+}
+
+.ot-graph-compound__label {
+  position: absolute;
+  top: 10px;
+  left: 14px;
+  font-family: var(--ot-font);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ot-text-dim);
+  pointer-events: none;
+}
+
+/* Info card for node/edge selection */
+.ot-graph-info {
+  border-bottom: 1px solid var(--ot-border);
+  background: var(--ot-bg-raised);
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.ot-graph-info__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--ot-border);
+}
+
+.ot-graph-info__title {
+  font-family: var(--ot-font);
+  font-size: 12px;
+  font-weight: 700;
+  color: #f3f6ff;
+}
+
+.ot-graph-info__rows {
+  padding: 6px 12px 8px;
+}
+
+.ot-graph-info__row {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 11px;
+}
+
+.ot-graph-info__label {
+  color: var(--ot-text-dim);
+  min-width: 60px;
+  font-family: var(--ot-font);
+  font-size: 10px;
+}
+
+.ot-graph-info__value {
+  color: var(--ot-text);
+  font-family: var(--ot-font);
+  font-size: 10px;
+  word-break: break-word;
+}
+
+.ot-graph-info__value--blue { color: var(--ot-accent); }
+.ot-graph-info__value--green { color: var(--ot-green); }
+.ot-graph-info__value--yellow { color: var(--ot-yellow); }
+.ot-graph-info__value--red { color: var(--ot-red); }
+
+.ot-inspector__graph-canvas .react-flow__renderer,
+.ot-inspector__graph-canvas .react-flow__edges,
+.ot-inspector__graph-canvas .react-flow__edgelabel-renderer,
+.ot-inspector__graph-canvas .react-flow__nodes {
+  pointer-events: auto;
+}
+
+.ot-inspector__graph-canvas .react-flow__edge-path {
+  stroke-linecap: round;
+  transition:
+    stroke 0.16s ease,
+    stroke-width 0.16s ease,
+    opacity 0.16s ease;
+}
+
+.ot-inspector__graph-canvas .react-flow__edge.animated path {
+  stroke-dasharray: 7 5;
+}
+
+/* Idle edges dim on hover of other elements, brighten on own hover */
+.ot-inspector__graph-canvas .react-flow__edge.ot-graph-edge--idle:hover .react-flow__edge-path {
+  stroke: rgba(154, 169, 255, 0.88) !important;
+  stroke-width: 2.7 !important;
+}
+
+.ot-inspector__graph-canvas .react-flow__edge.ot-graph-edge--idle:not(:hover) .react-flow__edge-text,
+.ot-inspector__graph-canvas .react-flow__edge.ot-graph-edge--idle:not(:hover) .react-flow__edge-textbg {
+  opacity: 0;
+}
+
+.ot-inspector__graph-canvas .react-flow__edge.ot-graph-edge--idle:hover .react-flow__edge-textbg {
+  stroke: rgba(108, 140, 255, 0.4) !important;
+}
+
+.ot-inspector__graph-canvas .react-flow__edge.ot-graph-edge--idle:hover .react-flow__edge-text {
+  fill: #c4cae0 !important;
+}
+
+/* Traversed edge glow */
+.ot-inspector__graph-canvas .react-flow__edge.ot-graph-edge--traversed .react-flow__edge-path {
+  filter: drop-shadow(0 0 4px rgba(108, 140, 255, 0.5));
+}
+
+/* Matched branch green glow */
+.ot-inspector__graph-canvas .react-flow__edge.ot-graph-edge--matched .react-flow__edge-path {
+  filter: drop-shadow(0 0 5px rgba(52, 211, 153, 0.55));
+}
+
+/* Prior replay-history edges — muted glow so the trail reads as "past" vs current */
+.ot-inspector__graph-canvas .react-flow__edge.ot-graph-edge--history .react-flow__edge-path {
+  filter: drop-shadow(0 0 2.5px rgba(108, 140, 255, 0.32));
+}
+
+.ot-inspector__graph-canvas .react-flow__edge.ot-graph-edge--history-matched .react-flow__edge-path {
+  filter: drop-shadow(0 0 3px rgba(52, 211, 153, 0.38));
+}
+
+.ot-inspector__graph-canvas .react-flow__edge-textbg {
+  fill: rgba(15, 17, 23, 0.92);
+  transition:
+    opacity 0.16s ease,
+    stroke 0.16s ease,
+    fill 0.16s ease;
+}
+
+/* Edge label text */
+.ot-inspector__graph-canvas .react-flow__edge-text {
+  transition:
+    opacity 0.16s ease,
+    fill 0.16s ease;
+}
+
+.ot-inspector__graph-canvas .react-flow__controls {
+  border: 1px solid rgba(89, 97, 119, 0.55);
+  background: rgba(15, 17, 23, 0.86);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+
+.ot-inspector__graph-canvas .react-flow__controls button {
+  background: transparent;
+  border-bottom-color: rgba(89, 97, 119, 0.4);
+  color: var(--ot-text);
+}
+
+.ot-inspector__graph-canvas .react-flow__controls button:hover {
+  background: rgba(108, 140, 255, 0.1);
+}
+
+.ot-inspector__graph-canvas .react-flow__attribution {
+  background: rgba(15, 17, 23, 0.72);
+  color: var(--ot-text-muted);
+  border-radius: 999px;
+  margin: 10px;
+  padding: 2px 7px;
+}
+
+.ot-inspector__graph-canvas .react-flow__attribution a {
+  color: inherit;
+}
+
+.ot-inspector__graph-canvas .react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Empty state */
+.ot-inspector__empty {
+  padding: 16px 12px;
+  color: var(--ot-text-dim);
+  font-size: 11px;
+  text-align: center;
+}
+
+/* Close button */
+.ot-inspector__close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--ot-text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.12s;
+}
+
+.ot-inspector__close-btn:hover {
+  background: var(--ot-bg-hover);
+  color: var(--ot-text);
+}
+
+/* Tabs in panels */
+.ot-inspector__tabs {
+  display: flex;
+  border-bottom: 1px solid var(--ot-border);
+  background: var(--ot-bg);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.ot-inspector__tab {
+  flex: 1;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  color: var(--ot-text-dim);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 2px solid transparent;
+  transition: all 0.12s;
+  font-family: var(--ot-font-sans);
+}
+
+.ot-inspector__tab:hover {
+  color: var(--ot-text-muted);
+  background: var(--ot-bg-hover);
+}
+
+.ot-inspector__tab--active {
+  color: var(--ot-accent);
+  border-bottom-color: var(--ot-accent);
+}
+
+/* Scrollbar in inspector panels */
+.ot-inspector__panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.ot-inspector__panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ot-inspector__panel::-webkit-scrollbar-thumb {
+  background: var(--ot-border);
+  border-radius: 3px;
+}

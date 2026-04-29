@@ -1,0 +1,90 @@
+---
+title: Run a local hosted stack
+description: Use `openturn dev` to run your game with an authoritative Bun server, SQLite persistence, and anonymous auth.
+sidebarTitle: Local hosted
+---
+
+Before you deploy to Cloudflare, you want to prove the multiplayer flow on your own machine. `openturn dev` runs a production-shaped hosted stack against your project's `app/` folder. No cloud credentials, no network configuration.
+
+## Prerequisites
+
+You need a project with the three-file layout:
+
+- `app/game.ts` exporting `game` and `match`.
+- `app/page.tsx` rendering the React UI.
+- `app/openturn.ts` with metadata. For hosted, set `runtime: "multiplayer"`.
+
+See [tutorial: tic-tac-toe multiplayer](/tutorials/tic-tac-toe-multiplayer) for the layout.
+
+## Start the server
+
+From the project root:
+
+```bash
+openturn dev app
+```
+
+Or with options:
+
+```bash
+openturn dev app --port 4010 --db .openturn/dev.sqlite
+```
+
+The CLI starts a Bun HTTP server that:
+
+- Serves the bundled React app at `/play/<deploymentID>`.
+- Hosts a WebSocket endpoint for `@openturn/client` to connect to.
+- Runs your authored game inside `@openturn/server`'s `createRoomRuntime`.
+- Persists rooms in a SQLite database (default `.openturn/local-dev.sqlite`).
+- Signs anonymous session tokens with `@better-auth` so each window gets its own user.
+
+## Play
+
+Open the play URL in two browser windows. In the first window, create a room. Share the invite URL (the CLI also prints it on room creation) to the second window. Both windows land in the same lobby.
+
+When the lobby reaches its minimum player count, `LobbyRuntime` signs game tokens and the clients transition into the hosted match. Moves dispatched in either window go over WebSocket to the shared runtime and broadcast back as `BatchApplied` messages.
+
+## Inspect what is happening
+
+The CLI logs every room action, token issuance, and WebSocket event. Open the SQLite database with any SQLite client to see the persisted room records:
+
+- `openturn_rooms` — current room state (checkpoint, log, match).
+- `openturn_room_players` — seat assignments.
+- `openturn_audit_events` — room audit log.
+
+Because rooms are persisted, you can stop the server and resume; clients reconnecting pick up from the last revision.
+
+## Hot reload
+
+`openturn dev` watches `app/game.ts`. Saving a change rebuilds the bundle and swaps the deployment in-process. Open rooms keep running against the previous deployment version; new rooms pick up the update.
+
+For serious game-logic iterations, reset by deleting the SQLite file between runs or passing a fresh `--db` path.
+
+## Resetting a dev database
+
+```bash
+rm .openturn/local-dev.sqlite
+openturn dev app
+```
+
+A new schema is created on boot.
+
+## Using the runtime programmatically
+
+If you need a custom dev shell, the CLI server is also exported:
+
+```ts
+import { startLocalDevServer } from "@openturn/cli";
+import { loadGameDeployment } from "@openturn/server";
+
+const deployment = loadGameDeployment(await import("./my-deployment.ts"));
+const server = await startLocalDevServer({ deployment, port: 4010 });
+```
+
+You will rarely need this; `openturn dev` covers the common case.
+
+## Related
+
+- [Tutorial: tic-tac-toe multiplayer](/tutorials/tic-tac-toe-multiplayer) walks through the full local hosted flow.
+- [How-to: deploy to Cloudflare](/how-to/deploy-to-cloudflare) for the production path.
+- [Reference: cli](/reference/cli) and [reference: server](/reference/server).

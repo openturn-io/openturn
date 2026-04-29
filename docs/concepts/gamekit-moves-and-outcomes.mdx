@@ -1,0 +1,95 @@
+---
+title: Gamekit moves and outcomes
+description: The full set of move outcomes, what each compiles to, and when to reach for each one.
+sidebarTitle: Moves
+---
+
+A gamekit move's `run` function always returns an outcome built with the `move` helper:
+
+```ts
+move({
+  run({ G, args, move, player }) {
+    // return one of:
+    move.stay(patch?)
+    move.endTurn(patch?)
+    move.goto(phase, patch?, { endTurn?: boolean })
+    move.win(winnerID, patch?)
+    move.draw(patch?)
+    move.invalid(reason?, details?)
+  },
+})
+```
+
+Each outcome compiles to a core transition. Knowing which is which helps when you are reading the state graph or the replay log.
+
+## `stay(patch)`
+
+Keep the current phase, keep the current player's turn. The most common outcome for rounds where multiple players submit before anyone ends a turn (rock-paper-scissors plan phase).
+
+Compiles to a core transition with `to: <same phase>`, `turn: "preserve"`.
+
+## `endTurn(patch)`
+
+Keep the current phase, advance the turn counter by one. The most common outcome for classic turn-based games (tic-tac-toe, chess).
+
+Compiles to `to: <same phase>`, `turn: "increment"`.
+
+## `goto(phase, patch, options?)`
+
+Move to a different phase. By default keeps the turn counter; pass `{ endTurn: true }` to advance it.
+
+Compiles to `to: <target phase>`, `turn: "preserve"` (or `"increment"`).
+
+Use `goto` when the game has multiple phases (planning → battle → game-over, bidding → play). The target phase must be listed in `phases`.
+
+## `win(winnerID, patch)`
+
+End the match. The winner goes into `snapshot.meta.result.winner`. The engine moves to the internal `__gamekit_won` terminal state; no further moves are accepted.
+
+Compiles to `to: "__gamekit_won"`, `turn: "increment"`, with a `result` field set.
+
+## `draw(patch)`
+
+End the match without a winner. `snapshot.meta.result.draw === true`. Engine moves to `__gamekit_drawn`.
+
+## `invalid(reason, details)`
+
+Reject the move. The engine returns `{ ok: false, error: "invalid_event", ... }` to the dispatcher and leaves `G` unchanged. Use it when the move was legal enough to try (the player had permission to dispatch) but invalid at the current state (the square was already occupied, the dice roll was out of range, etc).
+
+Compiles to `rejectTransition(reason, details)` from core.
+
+## Patches
+
+Every outcome (except `invalid`) takes an optional `patch`: a `Partial<TState>` that is shallow-merged into `G`. If you omit it, `G` is unchanged.
+
+```ts
+return move.endTurn({ board, lastMove: { row, col } });
+```
+
+Patches only express the fields that change. The rest of `G` is preserved.
+
+## `enqueue`
+
+Every outcome accepts `{ enqueue: [...] }` for follow-up internal events:
+
+```ts
+return move.endTurn({ board }, {
+  enqueue: [{ kind: "resolveEffects" }],
+});
+```
+
+Gamekit forwards `enqueue` straight to the core reducer. Internal events run through your move definitions as if they had been dispatched, but with no player attribution.
+
+## Picking the right outcome
+
+- "I want the same player to go again": `stay`.
+- "I want the next player to go": `endTurn`.
+- "I want to change phases": `goto`.
+- "The game is over with a winner": `win`.
+- "The game is over as a tie": `draw`.
+- "The move is illegal": `invalid`.
+
+## What to read next
+
+- [Gamekit permissions and turns](/concepts/gamekit-permissions-and-turns) for when you need more than round-robin.
+- [Concepts: reducers and queued events](/concepts/reducers-and-queued-events) covers the `enqueue` mechanics.

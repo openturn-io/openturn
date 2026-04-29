@@ -1,0 +1,218 @@
+---
+title: "@openturn/deploy"
+description: Build pipeline for openturn projects. Discover `app/` files, emit a client bundle and a Cloudflare Worker script.
+sidebarTitle: Deploy
+---
+
+Bun-targeted. Compiles an openturn project (`app/game.ts` + `app/page.tsx` + `app/openturn.ts`) into a ready-to-deploy bundle. Used by `openturn build` and `openturn deploy` under the hood.
+
+Import directly if you are building custom deployment tooling.
+
+## Install
+
+```bash
+bun add @openturn/deploy
+```
+
+## Project discovery
+
+### `discoverOpenturnProject(projectDir?)`
+
+Walks a directory and returns the resolved paths.
+
+```ts
+const paths = discoverOpenturnProject("/path/to/my-game");
+// { game, metadata, page, projectDir }
+```
+
+### `OpenturnProjectPaths`
+
+```ts
+interface OpenturnProjectPaths {
+  game: string;              // resolved app/game.ts
+  metadata: string | null;   // resolved app/openturn.ts (optional)
+  page: string;              // resolved app/page.tsx
+  projectDir: string;
+}
+```
+
+### `validateOpenturnProject(paths)`
+
+Verify the expected exports exist (`game`, `match`, `metadata`, a default-exported `Page`).
+
+### `resolveOpenturnProject(projectDir?)`
+
+Run `discoverOpenturnProject` and `validateOpenturnProject` in one call and return the validated `OpenturnProjectPaths`. `buildOpenturnProject` uses this internally; call it directly when you need the paths but not the full build artifact.
+
+## Metadata
+
+### `OpenturnDeploymentMetadata`
+
+The `metadata` export from `app/openturn.ts`.
+
+```ts
+interface OpenturnDeploymentMetadata {
+  name?: string;
+  runtime?: OpenturnDeploymentRuntime;
+  multiplayer?: {
+    gameKey?: string;
+    deploymentVersion?: string;
+    schemaVersion?: string;
+    /**
+     * Optional override of the maximal player roster. When omitted, derived
+     * from `match.players` in `app/game.ts`. `players.length` is the
+     * declared `maxPlayers` for the lobby.
+     */
+    players?: readonly string[];
+    /**
+     * Lower bound for `lobby:start`. Defaults to `players.length` (game
+     * requires every seat filled). Set lower to declare a variable-player
+     * range, e.g. `minPlayers: 2` with `players: ["0","1","2","3"]` is a
+     * 2–4 player game.
+     */
+    minPlayers?: number;
+  };
+  inspector?: OpenturnInspectorPolicy;
+  [key: string]: unknown;
+}
+```
+
+### `OpenturnDeploymentRuntime`
+
+`"local" | "multiplayer"`.
+
+### `OpenturnMultiplayerManifest`
+
+Re-exported from [`@openturn/manifest`](/reference/manifest):
+
+```ts
+interface OpenturnMultiplayerManifest {
+  deploymentVersion: string;
+  gameKey: string;
+  schemaVersion: string;
+  serverBundleDigest: string;
+  /** Maximal player roster. `players.length === maxPlayers`. */
+  players: readonly string[];
+  /** Lower bound for `lobby:start`. */
+  minPlayers: number;
+  /** Upper bound on `targetCapacity`. Equals `players.length`. */
+  maxPlayers: number;
+}
+```
+
+## Build
+
+### `buildOpenturnProject(options?)`
+
+Produce assets and (for multiplayer) a Worker bundle.
+
+```ts
+const result = await buildOpenturnProject({
+  projectDir: ".",
+  outDir: ".openturn/deploy",
+  deploymentID?,
+  projectID?,
+});
+```
+
+### `BuildOpenturnProjectOptions`
+
+`{ outDir?, projectDir?, deploymentID?, projectID? }`.
+
+### `BuildOpenturnProjectResult`
+
+```ts
+interface BuildOpenturnProjectResult {
+  manifest: OpenturnDeploymentManifest;
+  outDir: string;
+  paths: OpenturnProjectPaths;
+  serverBundle: BuildOpenturnProjectServerBundle | null;
+}
+```
+
+### `OpenturnDeploymentManifest`
+
+Re-exported from [`@openturn/manifest`](/reference/manifest). The authoritative shape is defined there; `@openturn/deploy` is the build-time writer.
+
+### `BuildOpenturnProjectServerBundle`
+
+```ts
+interface BuildOpenturnProjectServerBundle {
+  path: string;                                  // path to the bundled Worker JS
+  digest: string;                                // SHA256 hex
+  size: number;
+  metadataPath: string;                          // path to server.metadata.json
+  metadata: OpenturnWorkerScriptMetadata;
+}
+```
+
+### `OpenturnWorkerScriptMetadata`
+
+```ts
+interface OpenturnWorkerScriptMetadata {
+  main_module: string;
+  compatibility_date: string;
+  compatibility_flags?: readonly string[];
+  bindings: readonly OpenturnWorkerScriptBinding[];
+  migrations: {
+    new_sqlite_classes: readonly string[];
+  };
+}
+```
+
+### `OpenturnWorkerScriptBinding`
+
+```ts
+interface OpenturnWorkerScriptBinding {
+  type: "durable_object_namespace" | "plain_text";
+  name: string;
+  class_name?: string;   // durable_object_namespace
+  text?: string;         // plain_text
+}
+```
+
+## Loading a deployment for tests
+
+### `loadOpenturnProjectDeployment(input?)`
+
+Resolve a `GameDeployment`-shaped record from an in-memory project (without a full build). Used in tests that want the game + match without running Vite.
+
+```ts
+await loadOpenturnProjectDeployment({
+  projectDir?,
+  gameKey?,           // override metadata.multiplayer.gameKey
+  deploymentVersion?, // override metadata.multiplayer.deploymentVersion
+  schemaVersion?,     // override metadata.multiplayer.schemaVersion
+});
+// → { deploymentVersion, game, gameKey, match, schemaVersion }
+```
+
+### `GeneratedGameDeploymentDescriptor`
+
+The descriptor produced by metadata + match resolution.
+
+```ts
+interface GeneratedGameDeploymentDescriptor {
+  gameKey: string;
+  deploymentVersion: string;
+  schemaVersion: string;
+  players: readonly string[];
+}
+```
+
+## HTML generation
+
+### `createDeploymentHTML(manifest)`
+
+Produce an `index.html` that loads the manifest's entry + styles. Used by the build pipeline; exported for custom hosting.
+
+## Errors
+
+### `OpenturnDeployError`
+
+Thrown on discovery, validation, or build failure. Has a `code` field for programmatic handling.
+
+## See also
+
+- [How-to: deploy to Cloudflare](/how-to/deploy-to-cloudflare)
+- [Reference: cli](/reference/cli) for the CLI that wraps this.

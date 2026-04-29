@@ -1,0 +1,144 @@
+---
+title: Author a game with core directly
+description: The primitive authoring recipe. Events, states, transitions, selectors, views.
+sidebarTitle: Authoring
+---
+
+Use `@openturn/core` directly when you want full control over the state graph or when gamekit's move-first shape does not fit.
+
+## Skeleton
+
+```ts
+import { defineEvent, defineGame } from "@openturn/core";
+
+export const game = defineGame({
+  maxPlayers: 2,
+  events: {
+    place_mark: defineEvent<{ row: number; col: number }>(),
+  },
+  initial: "play",
+  setup: () => ({ board: createEmptyBoard() }),
+  selectors: {
+    winnerMark: ({ G }) => getWinner(G.board),
+  },
+  states: {
+    play: {
+      activePlayers: ({ match, position }) =>
+        [match.players[(position.turn - 1) % match.players.length]!],
+      label: "Take your turn",
+      control: () => ({ status: "playing" }),
+    },
+    won: {
+      activePlayers: () => [],
+      label: "Winner",
+      control: () => ({ status: "won" }),
+    },
+  },
+  transitions: ({ transition }) => [
+    transition("place_mark", {
+      from: "play",
+      to: "won",
+      turn: "increment",
+      label: "place_mark:win",
+      resolve: ({ G, event, playerID }) => {
+        const board = placeMark(G.board, event.payload.row, event.payload.col, playerID);
+        if (board === null || getWinner(board) === null) return null;
+        return { G: { board }, result: { winner: playerID } };
+      },
+    }),
+    // more branches: draw, continue...
+  ],
+  views: {
+    public: ({ G }) => ({ board: G.board }),
+  },
+});
+```
+
+## Declare events
+
+```ts
+events: {
+  place_mark: defineEvent<{ row: number; col: number }>(),
+  concede: defineEvent(),
+},
+```
+
+`defineEvent<T>()` declares an event with a typed payload; `defineEvent()` (no type argument) is a no-payload event.
+
+## Declare states
+
+Each state is a node of the game graph:
+
+```ts
+states: {
+  play: {
+    activePlayers: ({ match, position }) => [currentPlayerID(match, position)],
+    label: ({ match, position }) => `Player ${currentPlayerID(match, position)}`,
+    control: () => ({ status: "playing" }),
+    metadata: ({ G }) => [{ key: "moves_made", value: countMoves(G) }],
+  },
+},
+initial: "play",
+```
+
+- `activePlayers` gates who can dispatch.
+- `label`, `control`, `metadata` surface in `snapshot.derived` for tooling.
+
+## Declare transitions
+
+Each transition branch declares `from`, `event`, and `resolve`:
+
+```ts
+transitions: ({ transition }) => [
+  transition("place_mark", {
+    from: "play",
+    to: "play",
+    label: "place_mark:continue",
+    turn: "increment",
+    resolve: ({ G, event, playerID }) => {
+      const board = placeMark(G.board, event.payload.row, event.payload.col, playerID);
+      if (board === null || getWinner(board) !== null) return null;
+      return { G: { board } };
+    },
+  }),
+],
+```
+
+Resolver returns:
+
+- `null | false | undefined` — branch does not match.
+- `rejectTransition(code, details)` — event is invalid; reject it.
+- `{ G?, enqueue?, result?, turn? }` — branch matches; commit.
+
+Every `(from, event)` pair can have multiple branches as long as exactly one matches at any time.
+
+## Queue internal events
+
+Need a chain reaction after committing? `return { G: next, enqueue: [{ kind: "resolveEffects", payload: ... }] }`. See [reducers and queued events](/concepts/reducers-and-queued-events).
+
+## Selectors and views
+
+Same as gamekit:
+
+```ts
+selectors: {
+  isBoardFull: ({ G }) => G.board.every((row) => row.every((cell) => cell !== null)),
+},
+views: {
+  public: ({ G }) => ({ board: G.board }),
+  player: ({ G, match }, playerID) => ({ board: G.board, myID: playerID }),
+},
+```
+
+## Why bother when gamekit exists
+
+- You need more than one event per move.
+- Your state graph has nodes that are not phase-shaped.
+- You want to render the graph yourself and need stable transition labels.
+- You are writing a library that mixes authored games (gamekit would force you to pick moves up front).
+
+## Related
+
+- [Tutorial: tic-tac-toe with core](/tutorials/tic-tac-toe-core) is the worked example.
+- [Reference: core](/reference/core) is the API reference.
+- [Concepts: events, states, transitions](/concepts/events-states-transitions) is the conceptual deep dive.

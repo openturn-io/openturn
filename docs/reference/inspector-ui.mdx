@@ -1,0 +1,124 @@
+---
+title: "@openturn/inspector-ui"
+description: React components for inspecting local sessions, replays, and hosted matches.
+sidebarTitle: Inspector UI
+---
+
+Browser-targeted. UI layer on top of `@openturn/inspector`. Ships two entry points:
+
+- **`createInspector(bindings)`** — one factory that returns `{ Inspector, ReplayInspector, HostedInspector }` drop-in components. Use these when you want the shipped inspector layout.
+- **`<InspectorPanel>`** — shell-owned component that renders the inspector from a `BridgeHost`, a pre-built timeline, or a saved-replay envelope. Used by the openturn cloud shell.
+
+For a custom layout around the timeline, reach for `bindings.useInspector()` from `@openturn/react` and render your own panels against the returned state.
+
+## Install
+
+```bash
+bun add @openturn/inspector-ui
+```
+
+## `createInspector(bindings)`
+
+One factory, three drop-in components.
+
+```tsx
+import { createOpenturnBindings } from "@openturn/react";
+import { createInspector } from "@openturn/inspector-ui";
+
+const bindings = createOpenturnBindings(myGame, {
+  runtime: "local",
+  match: myMatch,
+});
+const { Inspector, ReplayInspector, HostedInspector } = createInspector(bindings);
+```
+
+### `Inspector` — live local match
+
+Reads from the same `OpenturnMatchStore` your app uses. Props (`InspectorProps<TGame>`): `matchStore`, `match`, `playerID?`, `active?`, `children?`. Drop inside the matching `<bindings.OpenturnProvider>`.
+
+### `ReplayInspector` — saved replay
+
+Inspector for loaded replay envelopes. Props (`ReplayInspectorProps<TGame>`): `replayEnvelope` or `replayTimeline`, plus optional layout overrides.
+
+```tsx
+<ReplayInspector replayEnvelope={envelope}>{children}</ReplayInspector>
+```
+
+### `HostedInspector` — live hosted match
+
+Feeds `@openturn/protocol` snapshots and batches into the inspector timeline. Props (`HostedInspectorProps<TGame>`): `match` and `hostedState` (a `HostedMatchState<TGame>` from `@openturn/react`).
+
+```tsx
+<HostedInspector match={match} hostedState={hostedState}>{children}</HostedInspector>
+```
+
+## Shell-owned panel
+
+### `<InspectorPanel>` (`InspectorPanelProps`)
+
+Single component that covers all three shell-driven modes. Pass one and only one of:
+
+```tsx
+<InspectorPanel host={bridgeHost} />              // Live: subscribes to bridge batch stream.
+<InspectorPanel timeline={inspectorTimeline} />   // Pre-built: loaded from cloud replay API.
+<InspectorPanel source={envelope} game={game} /> // Saved replay: materializes locally.
+```
+
+This is the component the cloud shell embeds. For an in-app inspector tied to the active match, prefer `bindings.useInspector()` from `@openturn/react` or the factories above.
+
+## Hooks and context
+
+### `useInspector()`
+
+Read the nearest `InspectorContext` — for custom panels rendered inside the shipped `<InspectorPanel>` or a `createInspector(...)`-produced component. Returns an `InspectorContextValue` or throws when rendered outside of an inspector.
+
+```ts
+const inspector = useInspector();
+inspector.state.mode;        // "live" | "replay"
+inspector.dispatch({ type: "SET_MODE", mode: "replay" });
+```
+
+<Note>
+Do not confuse this with `bindings.useInspector()` from `@openturn/react`, which builds an inspector state *from the active match* rather than reading from an ambient context. Use this one inside the inspector's subtree; use the `@openturn/react` one at the top of your app to drive a custom layout.
+</Note>
+
+### `InspectorContextValue`
+
+The type returned by `useInspector`. Structurally compatible with `UseInspectorResult` from `@openturn/react`.
+
+## Inspector state
+
+### `InspectorState`
+
+The full reducer state. Tracks selected frame, view mode, panel widths, and playback state.
+
+### `InspectorAction`
+
+The reducer actions. You usually dispatch these via `useInspector().dispatch`.
+
+### `InspectorMode`
+
+`"live" | "replay"` — whether the inspector is following the active match's head or scrubbing through history.
+
+### `RightRailPanel`
+
+Which secondary panel is shown in the right rail.
+
+### `PanelWidthsState`
+
+Layout state for resizable panels. Persisted to localStorage via `panel-width-storage`.
+
+### `PlaybackSpeed` / `PLAYBACK_SPEEDS`
+
+Playback speed options and the constant array of available speeds.
+
+## Replay registry
+
+### `resolveReplayGame(entry)` / `ReplayGameRegistryEntry`
+
+Helper for registering game definitions by `gameID` so the replay inspector can look them up. Most apps will pass `resolveGame` directly into the `ReplayInspector` component instead.
+
+## See also
+
+- [Reference: inspector](/reference/inspector) for the non-UI builder functions.
+- [How-to: debug with inspector](/how-to/debug-with-inspector).

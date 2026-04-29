@@ -1,0 +1,98 @@
+---
+title: Gamekit views and computed
+description: Computed values, public views, player views, and the view helpers gamekit ships.
+sidebarTitle: Computed
+---
+
+Projection in gamekit looks the same as core: `views.public` shapes the observer view, `views.player` shapes the per-seat view. The only addition is `computed`: named selectors that are injected as `C` into moves, permissions, views, and phase configs.
+
+## Computed
+
+```ts
+computed: {
+  submittedCount: ({ G }) =>
+    PLAYERS.filter((id) => G.submissions[id] !== null).length,
+  scoreLeader: ({ G }) =>
+    PLAYERS.reduce(
+      (best, id) => (G.scores[id] > G.scores[best] ? id : best),
+      PLAYERS[0],
+    ),
+},
+```
+
+A computed value is a function of the snapshot. It must return JSON. The engine evaluates all computed values on every snapshot; they are never stale.
+
+Inside moves, permissions, and views, you read them via `C`:
+
+```ts
+move({
+  run({ G, C, move }) {
+    if (C.submittedCount === PLAYERS.length) return move.endTurn({ /* ... */ });
+    return move.stay();
+  },
+}),
+```
+
+Computed values also surface in `snapshot.derived.selectors` for downstream tools.
+
+## Public view
+
+`views.public` runs once per snapshot. It shapes the observer view; the hosted client uses it for spectator mode, and the local snapshot exposed by `useMatch().state` returns it when no specific player is selected.
+
+```ts
+views: {
+  public: ({ G, turn }) => ({
+    board: G.board,
+    currentPlayer: turn.currentPlayer,
+  }),
+},
+```
+
+If you omit it, gamekit hands back the plain `G` minus its internal `__gamekit` bookkeeping.
+
+## Player view
+
+`views.player` runs once per seat per snapshot. It returns the slice *that player* is allowed to see.
+
+```ts
+views: {
+  player: ({ G, turn }, player) => ({
+    myHand: G.hands[player.id],
+    opponentHandSize: Object.entries(G.hands)
+      .filter(([id]) => id !== player.id)
+      .reduce((count, [, hand]) => count + hand.length, 0),
+    currentPlayer: turn.currentPlayer,
+  }),
+},
+```
+
+The hosted server sends each player only their own view. The engine also uses it when local React code calls `useMatch().state.getPlayerView(playerID)`.
+
+## `view.merge` and `view.computed`
+
+For views that mostly repeat computed values, use the helpers:
+
+```ts
+import { view } from "@openturn/gamekit";
+
+views: {
+  public: (context) =>
+    view.merge(
+      { board: context.G.board, currentPlayer: context.turn.currentPlayer },
+      context,
+      "submittedCount",
+      "scoreLeader",
+    ),
+},
+```
+
+`view.merge(base, context, ...keys)` spreads the listed `C` keys into the base object. `view.computed(context, ...keys)` is the standalone version when you are not merging.
+
+## Don't store views in G
+
+Same rule as core: `G` is the source of truth. Views are functions of `G`. Caching a view inside `G` creates two representations of the same fact and the engine can only keep one of them in sync. Keep `G` minimal.
+
+## What to read next
+
+- [Selectors and player views](/concepts/selectors-and-player-views) is the core-level version.
+- [How-to: model hidden information](/how-to/model-hidden-info) walks through the battleship pattern.

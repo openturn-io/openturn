@@ -1,0 +1,29 @@
+{
+  "name": "@openturn/example-tic-tac-toe-multiplayer-app",
+  "private": true,
+  "type": "module",
+  "openturn": {
+    "runtime": "browser"
+  },
+  "scripts": {
+    "build": "bun run ../../../../packages/cli/src/index.ts build .",
+    "deploy": "bun run ../../../../packages/cli/src/index.ts deploy . --project tic-tac-toe-multiplayer --name \"Tic Tac Toe Multiplayer\"",
+    "dev": "bun run ../../../../packages/cli/src/index.ts dev . --port 3005",
+    "typecheck": "bun x tsc -p tsconfig.json --pretty false"
+  },
+  "dependencies": {
+    "@openturn/example-tic-tac-toe-game": "workspace:*",
+    "@openturn/example-tic-tac-toe-ui": "workspace:*",
+    "@openturn/react": "workspace:*",
+    "@openturn/server": "workspace:*",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.2.2",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^6.0.2"
+  }
+}

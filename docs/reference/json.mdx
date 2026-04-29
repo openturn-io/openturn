@@ -1,0 +1,136 @@
+---
+title: "@openturn/json"
+description: JSON types, Zod schema, and validators that every runtime surface uses.
+sidebarTitle: JSON
+---
+
+Worker-safe. The shared definition of "JSON" across openturn. Every `G`, every view, every protocol payload passes through these types.
+
+Most authored games never import this package directly; the types flow through `@openturn/core` and `@openturn/gamekit`. Import it explicitly when you need to validate external input (imported replays, user-supplied payloads) at the engine boundary.
+
+## Install
+
+```bash
+bun add @openturn/json
+```
+
+## Types
+
+### `JsonValue`
+
+```ts
+type JsonPrimitive = null | boolean | number | string;
+type JsonValue =
+  | JsonPrimitive
+  | readonly JsonValue[]
+  | { readonly [key: string]: JsonValue };
+```
+
+### `JsonPrimitive`
+
+Just the leaf types.
+
+### `JsonCompatible<T>`
+
+Type-level predicate that verifies `T` is JSON-serializable. Resolves to `T` if it is, `never` if not. Gamekit uses it to reject non-JSON state and view shapes at authoring time:
+
+```ts
+type OK = JsonCompatible<{ a: number }>;        // { a: number }
+type BAD = JsonCompatible<{ a: Date }>;         // never
+```
+
+## Schema
+
+### `JsonValueSchema`
+
+A Zod schema that accepts exactly `JsonValue`.
+
+```ts
+import { JsonValueSchema } from "@openturn/json";
+
+const parsed = JsonValueSchema.safeParse(unknownValue);
+```
+
+## Runtime validators
+
+### `assertJsonValue(value, label?)`
+
+Throws `InvalidJsonValueError` if the value is not JSON-serializable; otherwise narrows the type.
+
+### `parseJsonValue(value, label?): JsonValue`
+
+Asserts and returns. Convenience wrapper.
+
+### `parseJsonText(text, label?): JsonValue`
+
+Parses a JSON string, then asserts. Throws `InvalidJsonValueError` on parse errors with a path-shaped message.
+
+### `stringifyJson(value)`
+
+Asserts the value is JSON, then `JSON.stringify`s it.
+
+### `cloneJsonValue(value)`
+
+Deep clones by round-tripping through JSON. Safe for `ReplayValue` shapes; faster than `structuredClone` for the narrow types openturn uses.
+
+## Errors
+
+### `InvalidJsonValueError`
+
+```ts
+class InvalidJsonValueError extends Error {
+  readonly issues: readonly {
+    code: string;
+    message: string;
+    path: string;    // "$" for root, "$.a.b[0]" for nested
+  }[];
+}
+```
+
+Contains a list of issues, usually the most specific one. The `message` is also formatted with the first path for easy logging.
+
+## Usage patterns
+
+### Validating external input at the engine boundary
+
+The engine itself trusts that `G` and views are JSON because `JsonCompatible<T>` enforces it at authoring time. Runtime validation is only needed when values cross a boundary — a saved replay loaded from disk, a profile fetched from an external store, a payload accepted from untrusted code.
+
+```ts
+import { parseJsonText, assertJsonValue } from "@openturn/json";
+
+// Loading a replay file the user supplied.
+const replay = parseJsonText(await file.text(), "replay");
+
+// Accepting a profile row from a third-party store.
+assertJsonValue(row.data, "profile.data");
+```
+
+On failure both throw `InvalidJsonValueError` with the exact path (`$.actions[3].payload.row`) that first violated the JSON contract — easier to debug than a generic `JSON.parse` error.
+
+### Composing with your own Zod schemas
+
+`JsonValueSchema` is a regular Zod schema, so it composes cleanly with shapes you build for your own game or API layer:
+
+```ts
+import { z } from "zod";
+import { JsonValueSchema } from "@openturn/json";
+
+const ImportReplaySchema = z.object({
+  gameKey: z.string().min(1),
+  seed: z.string(),
+  actions: z.array(JsonValueSchema),
+});
+
+const imported = ImportReplaySchema.parse(await req.json());
+```
+
+Anywhere you would otherwise write `z.unknown()` for "opaque but persist-safe JSON," use `JsonValueSchema` instead — it rejects `undefined`, functions, `Date`, `Map`, and other values that would silently break on replay.
+
+### Cloning vs `structuredClone`
+
+`cloneJsonValue` round-trips through `JSON.parse(JSON.stringify(...))`. It is faster than `structuredClone` for the narrow JSON-only values openturn produces and — more importantly — will throw on values that are not actually JSON-serializable. Use it when you need a truly independent copy of a snapshot or replay envelope.
+
+## See also
+
+- [Concepts: authoritative state and snapshots](/concepts/authoritative-state) on why JSON is load-bearing.
+- [Reference: protocol](/reference/protocol) for protocol-level schemas that build on this.

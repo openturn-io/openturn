@@ -1,0 +1,178 @@
+---
+title: Tic-tac-toe with core directly
+description: Author the same tic-tac-toe game using `@openturn/core` alone, with no gamekit sugar, for when the state graph is the interesting part.
+sidebarTitle: Core
+---
+
+This tutorial rewrites tic-tac-toe at the core level: no `moves`, no phases, no `turn.roundRobin()`. Just explicit states, events, and transitions. You reach for this when you want full control over the state graph — for debugging, for tooling, or for games whose progression does not fit the move-first shape.
+
+Reference code: [`examples/using-core/tic-tac-toe-core`](https://github.com/openturn-io/openturn/tree/main/openturn/examples/using-core/tic-tac-toe-core).
+
+## What changes from gamekit
+
+Gamekit generates transitions from moves, phases, and outcomes. Core makes them explicit:
+
+- Instead of `moves`, you declare `events` and `transitions`.
+- Instead of phases, you declare `states`, each with its own `activePlayers`, `label`, and `control`.
+- Instead of `turn.roundRobin()`, you compute the current player from `position.turn` and the roster.
+- Instead of outcomes like `move.win(playerID)`, you return `{ G, result, turn }` from the matching transition branch.
+
+The game plays identically. The definition is more verbose, more inspectable.
+
+## The game definition
+
+```ts
+import {
+  createLocalSession,
+  defineGame,
+  defineEvent,
+  type LocalGameSession,
+  type PlayerIDOf,
+} from "@openturn/core";
+
+export type TicTacToeCell = "X" | "O" | null;
+
+export interface TicTacToeState {
+  board: TicTacToeCell[][];
+}
+
+export interface PlaceMarkArgs {
+  row: number;
+  col: number;
+}
+
+type TicTacToeResult = { draw?: true; winner?: "0" | "1" };
+
+const PLAYER_MARKS: Record<"0" | "1", "X" | "O"> = { "0": "X", "1": "O" };
+
+export const ticTacToeMachine = defineGame({
+  maxPlayers: 2,
+  events: {
+    place_mark: defineEvent<PlaceMarkArgs>(),
+  },
+  initial: "play",
+  selectors: {
+    boardFull: ({ G }) => isBoardFull(G.board),
+    winnerMark: ({ G }) => getWinner(G.board),
+  },
+  setup: (): TicTacToeState => ({ board: createEmptyBoard() }),
+  states: {
+    play: {
+      activePlayers: ({ match, position }) =>
+        [match.players[(position.turn - 1) % match.players.length]!],
+      control: () => ({ status: "playing" }),
+      label: ({ match, position }) => `Player ${currentPlayer(match.players, position.turn)} to play`,
+    },
+    won: {
+      activePlayers: () => [],
+      control: () => ({ status: "won" }),
+      label: "Winner",
+      metadata: ({ G }) => [{ key: "winnerMark", value: getWinner(G.board) }],
+    },
+    drawn: {
+      activePlayers: () => [],
+      control: () => ({ status: "drawn" }),
+      label: "Draw",
+    },
+  },
+  transitions: ({ transition }) => [
+    transition("place_mark", {
+      from: "play",
+      to: "won",
+      label: "place_mark_to_won",
+      turn: "increment",
+      resolve: ({ G, event, playerID }) => {
+        const board = placeMark(G.board, event.payload.row, event.payload.col, playerID);
+        if (board === null) return null;
+        const winner = getWinner(board);
+        if (winner === null) return null;
+        return {
+          G: { board },
+          result: { winner: winner === "X" ? "0" : "1" } satisfies TicTacToeResult,
+        };
+      },
+    }),
+    transition("place_mark", {
+      from: "play",
+      to: "drawn",
+      label: "place_mark_to_drawn",
+      turn: "increment",
+      resolve: ({ G, event, playerID }) => {
+        const board = placeMark(G.board, event.payload.row, event.payload.col, playerID);
+        if (board === null || getWinner(board) !== null || !isBoardFull(board)) return null;
+        return {
+          G: { board },
+          result: { draw: true } satisfies TicTacToeResult,
+        };
+      },
+    }),
+    transition("place_mark", {
+      from: "play",
+      to: "play",
+      label: "place_mark_continue",
+      turn: "increment",
+      resolve: ({ G, event, playerID }) => {
+        const board = placeMark(G.board, event.payload.row, event.payload.col, playerID);
+        if (board === null || getWinner(board) !== null || isBoardFull(board)) return null;
+        return { G: { board } };
+      },
+    }),
+  ],
+  views: {
+    player: ({ G, match, position }, playerID) => ({
+      board: G.board,
+      currentPlayer: currentPlayer(match.players, position.turn),
+      myMark: PLAYER_MARKS[playerID] ?? null,
+    }),
+    public: ({ G, match, position }) => ({
+      board: G.board,
+      currentPlayer: currentPlayer(match.players, position.turn),
+    }),
+  },
+});
+
+export function createTicTacToeMachineSession(): LocalGameSession<typeof ticTacToeMachine> {
+  return createLocalSession(ticTacToeMachine, {
+    match: { players: ticTacToeMachine.playerIDs },
+  });
+}
+```
+
+## Read the transition branches
+
+There are three branches, one `from: "play"` for each outcome:
+
+- **`place_mark_to_won`**: the move creates a three-in-a-row. Returns `{ G, result: { winner } }`.
+- **`place_mark_to_drawn`**: the move fills the board without a winner.
+- **`place_mark_continue`**: the move is legal and the game continues.
+
+Each resolver does the same work (`placeMark`, `getWinner`, `isBoardFull`) but returns a match only when its specific shape applies. Exactly one branch matches any given dispatch. The engine raises `ambiguous_transition` if that invariant ever breaks.
+
+Factor shared work into helpers (`placeMark`, `getWinner`, `isBoardFull`), not into the branches themselves.
+
+## Compare to gamekit
+
+In the gamekit version, all three branches are expressed by a single `move.run`:
+
+```ts
+run({ G, args, move, player }) {
+  const board = placeMark(G.board, args.row, args.col, player.id);
+  if (board === null) return move.invalid("occupied", args);
+  if (getWinner(board) !== null) return move.win(player.id, { board });
+  if (isBoardFull(board)) return move.draw({ board });
+  return move.endTurn({ board });
+}
+```
+
+Gamekit's compiler writes the three `from/to` branches for you. The runtime behavior is the same. The core version is useful when you want:
+
+- More than one `event` name (gamekit has one event per move, named after the move).
+- States that do not correspond to gamekit phases (e.g. a "waiting for reconnect" state).
+- Explicit `from/to` pairs for custom graph visualization.
+- The `control` and `metadata` hooks on states for tooling.
+
+## What to read next
+
+- [How-to: author with core](/how-to/author-with-core) is the recipe version.
+- [Concepts: reducers and queued events](/concepts/reducers-and-queued-events) goes deeper on labelled branches.
+- [Tutorial: tic-tac-toe with gamekit](/tutorials/tic-tac-toe-gamekit) is the gamekit counterpart.

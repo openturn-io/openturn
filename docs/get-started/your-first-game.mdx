@@ -1,0 +1,115 @@
+---
+title: Your first game
+description: Scaffold a new openturn project, edit the authored game, and run it locally in ten minutes.
+sidebarTitle: First game
+---
+
+This guide takes you from zero to a working React game you can click in a browser. It uses the CLI `local` template, so you do not need a server, an account, or any cloud setup. If you would rather skim the API reference, jump to [how-to: author with gamekit](/how-to/author-with-gamekit).
+
+## 1. Scaffold the project
+
+```bash
+openturn create counter-duel --template local
+cd counter-duel
+bun install
+```
+
+The generator scaffolds a small project. The three openturn-specific files are:
+
+- `app/game.ts` — exports `game`, the authored game definition.
+- `app/page.tsx` — the React UI.
+- `app/openturn.ts` — metadata that the CLI and deploy pipeline read.
+
+`package.json` and `tsconfig.json` are conventional TypeScript plumbing — you will rarely touch them.
+
+## 2. Read the starter game
+
+Open `app/game.ts`. The template ships a two-player increment counter:
+
+```ts
+import { defineGame, move, permissions } from "@openturn/gamekit";
+
+export interface CounterState {
+  value: number;
+}
+
+export const game = defineGame({
+  playerIDs: ["0", "1"] as const,
+  setup: (): CounterState => ({ value: 0 }),
+  moves: {
+    increment: move({
+      canPlayer: permissions.currentPlayer,
+      run({ G, move, player }) {
+        const value = G.value + 1;
+        if (value >= 5) return move.win(player.id, { value });
+        return move.endTurn({ value });
+      },
+    }),
+  },
+  views: {
+    public: ({ G, turn }) => ({ currentPlayer: turn.currentPlayer, value: G.value }),
+  },
+});
+```
+
+Four ideas to notice:
+
+1. **`playerIDs`** declares the seat pool: which players the game can seat. Here, two seats with IDs `"0"` and `"1"` (every seat must fill — set `minPlayers` lower to declare a variable-player range like 2–4).
+2. **`setup`** returns the authoritative state `G` at the start of the match. `G` is plain JSON-serializable data — no functions, no class instances.
+3. **`moves.increment`** is a pure function from state and args to an *outcome*. Outcomes are built with the `move` helper: `move.endTurn(...)`, `move.win(...)`, `move.invalid(...)`, etc. You never mutate `G` directly — you return a patch describing what changed. See [moves and outcomes](/concepts/gamekit-moves-and-outcomes) for the full set.
+4. **`views.public`** projects the state into the shape the client receives. You can also add `views.player` to hand different data to each seat (useful for hidden info).
+
+## 3. Run the game
+
+```bash
+bun run dev
+```
+
+The CLI serves the app at `http://localhost:3000`. You should see a counter showing `0`, an **Increment** button, and a label saying whose turn it is. Click **Increment** to bump the counter; the turn flips to the other player. The first player to push the counter past 5 wins, and the UI displays the winner's seat ID.
+
+## 4. Make your first edit
+
+Change the target from 5 to 3 so the game ends sooner. Save the file; the dev server hot-reloads. Play a round.
+
+## 5. Add a second move
+
+Give each player a way to zero the counter at the cost of skipping their turn.
+
+```ts
+moves: {
+  increment: move({
+    canPlayer: permissions.currentPlayer,
+    run({ G, move, player }) {
+      const value = G.value + 1;
+      if (value >= 3) return move.win(player.id, { value });
+      return move.endTurn({ value });
+    },
+  }),
+  resetBoard: move({
+    canPlayer: permissions.currentPlayer,
+    run({ move }) {
+      return move.endTurn({ value: 0 });
+    },
+  }),
+},
+```
+
+Then call it from the UI. In `app/page.tsx`, the React hook gives you a `dispatch` map with one method per move (`dispatch.increment`, `dispatch.resetBoard`, …) and an `activePlayer` derived from the current snapshot. Add a button next to the existing Increment button:
+
+```tsx
+<button onClick={() => dispatch.resetBoard(activePlayer)} type="button">
+  Reset
+</button>
+```
+
+Save the file and the dev server hot-reloads. Click the new button and the counter snaps back to `0` and play passes to the other player.
+
+## What just happened
+
+You wrote a pure data-and-functions game definition, ran it through `@openturn/gamekit` (which turned your moves into a small state machine), and bound it to React with `createOpenturnBindings`. No state is stored outside the authored reducer, so the engine can already replay the match, hand you a timeline, or move you to hosted multiplayer by switching the bindings' `runtime` from `"local"` to `"multiplayer"` — without changing your game code.
+
+## Where to go from here
+
+- [Tutorial: tic-tac-toe with gamekit](/tutorials/tic-tac-toe-gamekit) takes a richer game end to end, including a CLI and replay capture.
+- [Concepts: mental model](/concepts/mental-model) explains why the authoring contract is the way it is.
+- [How-to: author with gamekit](/how-to/author-with-gamekit) is the recipe book when you want to extend your game.

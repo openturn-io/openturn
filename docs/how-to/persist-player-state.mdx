@@ -1,0 +1,165 @@
+---
+title: Persist player state across matches
+description: Add a profile to your game, test it locally, and deploy it — including what openturn-cloud handles for you and where to plug in a local store.
+sidebarTitle: Persistence
+---
+
+Follow this guide when you want players to accumulate something between matches: cards, currency, unlocks, stats. Start with the [concept doc on persistent profiles](/concepts/persistent-profiles) if you haven't seen the model yet.
+
+Two working demos live in the repo:
+
+- [`examples/using-profiles/persistent-wins`](https://github.com/openturn-io/openturn/tree/main/openturn/examples/using-profiles/persistent-wins) — gamekit flavor. Recommended starting point.
+- [`examples/using-core/persistent-wins-core`](https://github.com/openturn-io/openturn/tree/main/openturn/examples/using-core/persistent-wins-core) — same game in raw `@openturn/core`. Useful if you're authoring without gamekit.
+
+Both implement a two-player "first tap wins" match whose winner gets `+1 wins`. Everything below uses the gamekit version; swap `@openturn/gamekit` for `@openturn/core` if you're on raw core.
+
+## 1. Declare the profile
+
+```ts
+// game/src/index.ts
+import { defineGame, defineProfile } from "@openturn/gamekit";
+
+const profile = defineProfile<{ wins: number }>({
+  schemaVersion: "1",
+  default: { wins: 0 },
+  parse: (data) => {
+    const obj = (data ?? {}) as { wins?: unknown };
+    return { wins: typeof obj.wins === "number" ? obj.wins : 0 };
+  },
+  commit: ({ profile, result }) => {
+    // Gamekit sets `result.winner` when a move calls `move.win(playerID)`.
+    const winner = (result as { winner?: string } | null)?.winner;
+    if (winner === undefined) return {};
+    return profile.inc(winner, "wins", 1);
+  },
+});
+```
+
+`defineProfile` is re-exported from `@openturn/gamekit` for convenience; it's the same function as `@openturn/core`'s.
+
+Rules of thumb:
+
+- **`default` is the first-play shape.** Players who never had a profile get this on their first match.
+- **`parse` runs on every hydration.** It's your only defense against stored data from an older schema. Write it defensively.
+- **`commit` is pure.** No timers, no randomness, no external reads. Inputs are the match, a bound profile mutation helper, the profiles as they were at setup, and the terminal result. Use direct helpers like `profile.inc(...)` for simple writes and `profile.update(...)` for complex draft mutations.
+
+## 2. Attach it to your game
+
+```ts
+export const game = defineGame({
+  maxPlayers: 2,
+  profile,
+  setup: () => ({ over: false }),
+  moves: ({ move }) => ({
+    tap: move({
+      run: ({ player, move: m }) => m.win(player.id, { over: true }),
+    }),
+  }),
+  phases: {
+    play: {
+      activePlayers: ({ turn }) => [...turn.players],
+      label: "First tap wins",
+    },
+  },
+});
+```
+
+That's the full wiring. When `move.win(...)` fires, gamekit sets `result.winner` and the engine calls `profile.commit`. The host persists the returned delta.
+
+## 3. Test locally
+
+The engine runs identically in local and cloud modes. Use `createLocalSession` to exercise the full lifecycle in a unit test:
+
+```ts
+import { createLocalSession } from "@openturn/core";
+import { applyProfileCommit } from "@openturn/gamekit";
+import { expect, test } from "bun:test";
+
+test("winner gains a win", () => {
+  const stored = { "0": { wins: 2 }, "1": { wins: 5 } };
+  const match = { players: game.playerIDs, profiles: stored };
+  const session = createLocalSession(game, { match });
+
+  session.applyEvent("0", "tap", null);
+
+  const outcome = applyProfileCommit({
+    match,
+    profile,
+    profilesBefore: stored,
+    result: session.getResult(),
+  });
+
+  expect(outcome.profilesAfter["0"]).toEqual({ wins: 3 });
+  expect(outcome.rejections).toEqual([]);
+});
+```
+
+Three things to notice:
+
+1. You supply `match.profiles` at session creation. Missing entries are auto-filled from `profile.default`.
+2. The commit is a pure function call on the host side — you run it whenever the session's `getResult()` is non-null.
+3. `applyProfileCommit` hydrates missing defaults, computes the delta, applies it, and reports any rejected per-player ops.
+
+A complete working test lives in [`persistent-wins/game/src/index.test.ts`](https://github.com/openturn-io/openturn/tree/main/openturn/examples/using-profiles/persistent-wins/game/src/index.test.ts).
+
+## 4. Persist locally (single-player app)
+
+For a local app, wrap the engine with whatever storage you prefer. A minimal pattern:
+
+```ts
+function loadProfiles(): Record<string, { wins: number }> {
+  const raw = localStorage.getItem("my-game:profiles");
+  return raw === null ? {} : JSON.parse(raw);
+}
+
+function saveProfiles(next: Record<string, { wins: number }>): void {
+  localStorage.setItem("my-game:profiles", JSON.stringify(next));
+}
+
+// Kick off the match:
+const profiles = loadProfiles();
+const match = { players: game.playerIDs, profiles };
+const session = createLocalSession(game, { match });
+
+// On game end:
+const outcome = applyProfileCommit({
+  match,
+  profile,
+  profilesBefore: profiles,
+  result: session.getResult(),
+});
+if (outcome.rejections.length === 0) saveProfiles(outcome.profilesAfter);
+```
+
+The gamekit example bundles this into an `applyCommitLocally(profiles, result)` helper ([source](https://github.com/openturn-io/openturn/tree/main/openturn/examples/using-profiles/persistent-wins/game/src/index.ts)) — copy that shape if you want.
+
+## 5. Deploy to openturn-cloud
+
+When you deploy with `openturn deploy`, the cloud takes over hydration and commit. **You don't configure anything** — it works automatically because:
+
+- Hydration: when a match activates, the game-worker Durable Object calls back to `/api/profiles/hydrate` with the seated user IDs. The cloud reads the `profile` table and returns each user's stored data (or nothing if they're new — the engine fills in `profile.default`).
+- Commit: when the match terminates, the DO runs your `profile.commit` and POSTs the delta to `/api/profiles/commit`. The cloud re-validates against the current profile and writes it.
+- Auth: both calls are signed with HMAC-SHA256 using the room-token secret that's already shared between cloud and every game-worker. No new env vars, no per-deploy configuration.
+
+The only operator step is making sure the `profile` / `profile_commit` tables exist. They're part of the normal Drizzle migrations under [`openturn-cloud/drizzle/`](https://github.com/anthropic-claude/openturn/tree/main/openturn-cloud/drizzle). Run your usual migration command.
+
+Check progress from the client:
+
+```http
+GET /api/profiles/<gameKey>
+Authorization: Bearer <session token>
+```
+
+Returns the current user's profile row (or `{ profile: null }` for first-time players).
+
+## Security caveats
+
+Profiles are **scoped by `gameKey`, not by project**. That's what lets you promote a new deployment without resetting every player's collection — but it also means any deployed project that claims the same `gameKey` can read and write those profiles. For v1 this is flat-trust: whoever deploys first wins.
+
+Before external authors can publish into your cloud, wire a gameKey ownership model (claim on first deploy, explicit grant for additional projects). The plan file tracks this as a pre-GA follow-up.
+
+## What to read next
+
+- [Concepts: Persistent profiles](/concepts/persistent-profiles) — the model and the trust story.
+- [Reference: `@openturn/core`](/reference/core#profiles) — exact API surface for `defineProfile` and the delta grammar.
+- [Reference: `@openturn/server`](/reference/server#profiles) — `RoomSettleHandler` and `onSettle`, if you're hosting your own engine.

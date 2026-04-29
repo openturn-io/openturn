@@ -1,0 +1,73 @@
+---
+title: Selectors and player views
+description: Derive data from G, and project it into the shape each audience should see.
+sidebarTitle: Selectors
+---
+
+Selectors and views are the read side of an openturn game. They never mutate `G`. They compute pure projections the engine re-evaluates after every transition.
+
+Use them aggressively. Any fact you can derive from `G` should live here, not in `G`.
+
+## Selectors
+
+Selectors are named, JSON-valued computations over the current snapshot. Core declares them as `selectors`; gamekit surfaces them as `computed`:
+
+```ts
+// core
+selectors: {
+  boardFull: ({ G }) => isBoardFull(G.board),
+  winnerMark: ({ G }) => getWinner(G.board),
+},
+
+// gamekit
+computed: {
+  submittedCount: ({ G }) =>
+    PLAYERS.filter((id) => G.submissions[id] !== null).length,
+},
+```
+
+Selectors run on every snapshot. The engine caches their output in `snapshot.derived.selectors` and exposes them to views, permissions (gamekit), and inspector.
+
+Selectors must return `JsonValue` and must not close over mutable outside state.
+
+## Public views
+
+`views.public` is the redacted shape any observer can see. It is the default view for spectators, CLIs, and replay viewers. Anything you did not want to hide from the other players belongs here.
+
+```ts
+views: {
+  public: ({ G, turn }) => ({
+    board: G.board,
+    currentPlayer: turn.currentPlayer,
+  }),
+},
+```
+
+If you omit `views.public`, the engine uses `G` directly. Always define it when any part of `G` is secret.
+
+## Player views
+
+`views.player` is called once per player per snapshot. Return what *that seat* should see. Hidden information (opponent cards, secret fleets, private scores) is filtered here.
+
+```ts
+views: {
+  player: ({ G, turn }, player) => ({
+    myHand: G.hands[player.id],         // your own cards
+    opponentHandSize: G.hands["1"].length, // count, not contents
+    currentPlayer: turn.currentPlayer,
+  }),
+},
+```
+
+The engine calls this function separately for each seat. The hosted server sends each player only their own view.
+
+For hidden-state patterns like battleship's fleets, see [how-to: model hidden information](/how-to/model-hidden-info).
+
+## Don't cache views in G
+
+It is tempting to compute a view once and store it in `G` so you can read it everywhere. Resist. `G` is the source of truth; views are projections. Caching a projection in `G` creates two representations of the same fact and the engine can only guarantee one of them. Keep `G` minimal and let the engine re-run your views.
+
+## What to read next
+
+- [Authoritative state and snapshots](/concepts/authoritative-state) for the rule on what lives in `G`.
+- [How-to: model hidden information](/how-to/model-hidden-info) is the practical recipe with battleship.

@@ -1,0 +1,24 @@
+{
+  "name": "@openturn/example-tic-tac-toe-ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "openturn": {
+    "runtime": "browser"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles.css": "./src/styles.css"
+  },
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "bun x tsc -p tsconfig.json --pretty false"
+  },
+  "dependencies": {
+    "react": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "typescript": "^6.0.2"
+  }
+}

@@ -1,0 +1,73 @@
+---
+title: Install and run
+description: Clone the openturn repo, install dependencies, and run the example apps end to end.
+sidebarTitle: Install
+---
+
+The fastest way to see openturn is to run the example apps out of the monorepo. This page sets up your machine and points you at the games that already exist.
+
+## Prerequisites
+
+- **Bun 1.3 or newer.** Openturn uses Bun as the package manager and for every script. Install from [bun.sh](https://bun.sh).
+- **Node 20 or newer** is not required, but some IDEs still expect it for TypeScript language services.
+- **Chromium-based browser** for the React apps. The examples use Vite, which outputs modern ESM.
+
+## Clone and install
+
+```bash
+git clone https://github.com/openturn-io/openturn.git
+cd openturn/openturn
+bun install
+```
+
+Confirm the install:
+
+```bash
+bun run typecheck:packages
+bun test
+```
+
+## Scaffold a new project
+
+If you only want to author your own game (rather than read the example monorepo), use the CLI to scaffold a fresh project anywhere on disk:
+
+```bash
+bun add -g @openturn/cli
+openturn create my-game --template local
+cd my-game
+bun install
+bun run dev
+```
+
+`openturn create` writes a small project. Three of the files are openturn-specific:
+
+- `app/game.ts` — your authored game (state, moves, views).
+- `app/page.tsx` — the React entry point.
+- `app/openturn.ts` — metadata read by the CLI and the deploy pipeline.
+
+The remaining `package.json` and `tsconfig.json` are conventional TypeScript plumbing.
+
+The `local` template gives you a single-device React app; `--template multiplayer` gives you the cloud-ready variant. See [your first game](/get-started/your-first-game) for what these files mean.
+
+## Run the example apps
+
+All examples live under `examples/*` in the monorepo. Each has one or more of: a `game` worker package, an `app` browser package, and a `cli` Bun package.
+
+| Example | Flavor | Command |
+| --- | --- | --- |
+| Tic-tac-toe (local React) | gamekit | `bun --filter @openturn/example-tic-tac-toe-app dev --port 3000` |
+| Tic-tac-toe (CLI) | gamekit | `bun --filter @openturn/example-tic-tac-toe-cli demo` |
+| Tic-tac-toe (hosted multiplayer shell) | gamekit | `bun --filter @openturn/example-tic-tac-toe-multiplayer-app dev` |
+| Tic-tac-toe replay viewer | gamekit | `bun --filter @openturn/example-tic-tac-toe-replay-viewer-app dev --port 3001` |
+| Tic-tac-toe core | core | `bun --filter @openturn/example-tic-tac-toe-core-game typecheck` |
+| Paper-scissors-rock | gamekit | `bun --filter @openturn/example-paper-scissors-rock-app dev --port 3003` |
+| Pig-dice CLI | gamekit | `bun --filter @openturn/example-pig-dice-cli demo` |
+| Battleship | gamekit | `bun --filter @openturn/example-battleship-app dev` |
+
+Open the logged URL in your browser and play. If you are new to openturn, start with the tic-tac-toe React app.
+
+## What to read next
+
+- [Your first game](/get-started/your-first-game) builds a game from scratch in ten minutes.
+- [Tutorial: tic-tac-toe with gamekit](/tutorials/tic-tac-toe-gamekit) walks through the example you just ran.
+- [Mental model](/concepts/mental-model) explains the authoring contract the engine relies on.

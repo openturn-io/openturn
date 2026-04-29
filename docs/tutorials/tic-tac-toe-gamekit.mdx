@@ -1,0 +1,274 @@
+---
+title: Tic-tac-toe with gamekit
+description: Build the full tic-tac-toe example from scratch — worker game package, React app, and optional CLI — using `@openturn/gamekit`.
+sidebarTitle: GameKit
+---
+
+This tutorial rebuilds the `examples/games/tic-tac-toe` example end to end. You will finish with three packages in a Bun workspace:
+
+- a **`game`** package that exports the authored tic-tac-toe definition,
+- an **`app`** browser package that renders it with React,
+- and an optional Bun **`cli`** package for terminal play.
+
+We split into three packages so the same game can be imported by both the React UI and the CLI without dragging React or DOM types into the CLI build. The `game` package is *worker-safe*, meaning it does not import any Node, Bun, browser, or DOM APIs. That same package will also drop into a hosted multiplayer worker later (see [tutorial: tic-tac-toe multiplayer](/tutorials/tic-tac-toe-multiplayer)) without any change.
+
+In short: `game/src/index.ts` exports `game` and `match`. The React app binds them with `createOpenturnBindings`. The CLI uses `createLocalSession` directly.
+
+Reference code: [`examples/games/tic-tac-toe`](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/tic-tac-toe). If you would rather just edit a working copy, that's the source to copy.
+
+<Note>
+  This tutorial assumes a Bun workspace at the repo root with a `package.json` containing `"workspaces": ["packages/*", "tic-tac-toe/*"]` (or similar). If you are starting from a fresh checkout of the openturn repo, the workspace is already set up; otherwise add a top-level `package.json` with `"workspaces"` before running `bun install`.
+</Note>
+
+## 1. Create the workspace packages
+
+```bash
+mkdir -p tic-tac-toe/game/src tic-tac-toe/app/app tic-tac-toe/app/src tic-tac-toe/cli/src
+```
+
+### `game/package.json`
+
+```json
+{
+  "name": "@my/tic-tac-toe-game",
+  "type": "module",
+  "openturn": { "runtime": "worker" },
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@openturn/core": "workspace:*",
+    "@openturn/gamekit": "workspace:*"
+  }
+}
+```
+
+### `game/src/index.ts`
+
+```ts
+import type { PlayerID } from "@openturn/core";
+import { defineGame, turn } from "@openturn/gamekit";
+
+export type TicTacToeCell = "X" | "O" | null;
+
+export interface TicTacToeState {
+  board: TicTacToeCell[][];
+}
+
+export interface PlaceMarkArgs {
+  col: number;
+  row: number;
+}
+
+const PLAYER_MARKS: Record<PlayerID, "X" | "O"> = { "0": "X", "1": "O" };
+
+export const ticTacToe = defineGame({
+  maxPlayers: 2,
+  setup: (): TicTacToeState => ({
+    board: [
+      [null, null, null],
+      [null, null, null],
+      [null, null, null],
+    ],
+  }),
+  turn: turn.roundRobin(),
+  computed: {
+    boardFull: ({ G }) => isBoardFull(G.board),
+    winner: ({ G }) => getWinner(G.board),
+  },
+  moves: ({ move }) => ({
+    placeMark: move<PlaceMarkArgs>({
+      run({ G, args, move, player }) {
+        const board = placeMark(G.board, args.row, args.col, player.id);
+        if (board === null) return move.invalid("occupied", args);
+        if (getWinner(board) !== null) return move.win(player.id, { board });
+        if (isBoardFull(board)) return move.draw({ board });
+        return move.endTurn({ board });
+      },
+    }),
+  }),
+  views: {
+    public: ({ G, turn }) => ({ board: G.board, currentPlayer: turn.currentPlayer }),
+    player: ({ G, turn }, player) => ({
+      board: G.board,
+      currentPlayer: turn.currentPlayer,
+      myMark: PLAYER_MARKS[player.id] ?? null,
+    }),
+  },
+});
+
+// helper implementations (placeMark, getWinner, isBoardFull) are pure TS
+```
+
+Notice: the game has one move, one phase (the default `"play"`), a round-robin turn policy, and two views.
+
+The three helpers (`placeMark`, `getWinner`, `isBoardFull`) are pure TypeScript — nothing openturn-specific. Drop them into the same file:
+
+```ts
+function placeMark(
+  board: TicTacToeCell[][],
+  row: number,
+  col: number,
+  playerID: PlayerID,
+): TicTacToeCell[][] | null {
+  if (board[row]?.[col] !== null) return null;
+  return board.map((r, ri) =>
+    ri === row ? r.map((cell, ci) => (ci === col ? PLAYER_MARKS[playerID]! : cell)) : r,
+  );
+}
+
+function getWinner(board: TicTacToeCell[][]): TicTacToeCell {
+  const lines = [
+    ...board,
+    ...[0, 1, 2].map((c) => board.map((r) => r[c]!)),
+    [board[0]![0], board[1]![1], board[2]![2]],
+    [board[0]![2], board[1]![1], board[2]![0]],
+  ];
+  for (const line of lines) {
+    if (line[0] !== null && line.every((c) => c === line[0])) return line[0]!;
+  }
+  return null;
+}
+
+function isBoardFull(board: TicTacToeCell[][]): boolean {
+  return board.every((row) => row.every((cell) => cell !== null));
+}
+```
+
+## 2. Render it with React
+
+The browser package lives in a folder called `app/`. Inside it, the openturn entry files (`game.ts`, `page.tsx`, `openturn.ts`) live in an inner `app/` folder — that is the convention the CLI and deploy pipeline look for. So a fully qualified path looks like `app/app/page.tsx` (browser package `app`, openturn-app folder `app`, file `page.tsx`). Your own React components can live anywhere; this tutorial puts them in `app/src/`.
+
+### `app/package.json` (excerpt)
+
+```json
+{
+  "name": "@my/tic-tac-toe-app",
+  "openturn": { "runtime": "browser" },
+  "dependencies": {
+    "@my/tic-tac-toe-game": "workspace:*",
+    "@openturn/react": "workspace:*",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  }
+}
+```
+
+### `app/app/game.ts`
+
+```ts
+export { ticTacToe as game } from "@my/tic-tac-toe-game";
+```
+
+### `app/app/openturn.ts`
+
+```ts
+export const metadata = {
+  name: "Tic Tac Toe",
+  runtime: "local",
+};
+```
+
+### `app/app/page.tsx`
+
+```tsx
+import { TicTacToeExperience } from "../src/components/TicTacToeExperience";
+
+export default function Page() {
+  return <TicTacToeExperience />;
+}
+```
+
+### `app/src/components/TicTacToeExperience.tsx`
+
+```tsx
+import { createOpenturnBindings } from "@openturn/react";
+import { ticTacToe } from "@my/tic-tac-toe-game";
+
+const { useMatch } = createOpenturnBindings(ticTacToe, {
+  runtime: "local",
+  match: { players: ticTacToe.playerIDs },
+});
+
+export function TicTacToeExperience() {
+  const view = useMatch();
+  if (view.mode !== "local") throw new Error("requires a local match");
+  const { dispatch, reset, snapshot } = view.state;
+  const result = snapshot.meta.result;
+  const active = snapshot.derived.activePlayers[0] ?? "0";
+
+  return (
+    <div>
+      {snapshot.G.board.map((row, r) =>
+        row.map((cell, c) => (
+          <button
+            key={`${r}-${c}`}
+            disabled={result !== null || cell !== null}
+            onClick={() => dispatch.placeMark(active, { row: r, col: c })}
+          >
+            {cell ?? "·"}
+          </button>
+        )),
+      )}
+      <button onClick={reset}>Reset</button>
+      <p>{result?.winner ? `Winner: ${result.winner}` : result?.draw ? "Draw" : `Turn: ${active}`}</p>
+    </div>
+  );
+}
+```
+
+`createOpenturnBindings(ticTacToe, { runtime: "local", match })` builds typed bindings, declares the deployment shape (in-process), and seeds the initial match. Capacity (`playerIDs`, `minPlayers`) lives on the game itself; the per-session `match` carries just the seated subset. `useMatch()` returns a mode-discriminated view; in local mode, `view.state` exposes `snapshot`, `dispatch`, `reset`, and a per-player `getPlayerView` helper. The dispatch map exposes every move by name: `dispatch.placeMark(playerID, args)` sends the event through the reducer.
+
+## 3. Run it
+
+From the root of the monorepo:
+
+```bash
+bun --filter @my/tic-tac-toe-app dev --port 3000
+```
+
+Open `http://localhost:3000`. Click cells. Fill a row. The game ends and `result.winner` pops into the snapshot.
+
+## 4. Add a Bun CLI (optional)
+
+### `cli/src/index.ts`
+
+```ts
+import { createLocalSession } from "@openturn/core";
+import { ticTacToe } from "@my/tic-tac-toe-game";
+
+const session = createLocalSession(ticTacToe, { match: { players: ticTacToe.playerIDs } });
+
+while (true) {
+  const snap = session.getState();
+  if (snap.meta.result !== null) {
+    console.log(snap.meta.result);
+    break;
+  }
+  const player = snap.derived.activePlayers[0]!;
+  const line = prompt(`Player ${player} (row col):`);
+  if (line === null || line === "q") break;
+  const [row, col] = line.split(" ").map(Number);
+  const result = session.applyEvent(player, "placeMark", { row, col });
+  if (!result.ok) console.log("rejected:", result.error);
+}
+```
+
+`createLocalSession` is the same reducer React uses, just without the store wrapper. `applyEvent` is the low-level dispatch primitive.
+
+Run it:
+
+```bash
+bun --filter @my/tic-tac-toe-cli run src/index.ts
+```
+
+## What you learned
+
+- A game definition is a pure value you can share across a worker package, a React app, and a Bun CLI.
+- Gamekit moves compile to core transitions; `move.invalid`, `move.endTurn`, `move.win`, and `move.draw` are the outcomes you will use most.
+- `createOpenturnBindings` gives you typed React bindings with no boilerplate.
+- The CLI uses the raw `createLocalSession` because it does not need React.
+
+## What to do next
+
+- [Tutorial: tic-tac-toe multiplayer](/tutorials/tic-tac-toe-multiplayer) reuses this same game package and hosts it.
+- [Tutorial: tic-tac-toe replay](/tutorials/tic-tac-toe-replay) captures matches to JSON and builds a playback UI.
+- [Tutorial: tic-tac-toe with core](/tutorials/tic-tac-toe-core) rewrites the same game without gamekit sugar.

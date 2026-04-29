@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "src",
+    "composite": false,
+    "incremental": false,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "module": "ESNext"
+  },
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "dist"]
+}

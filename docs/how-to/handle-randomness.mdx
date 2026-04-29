@@ -1,0 +1,100 @@
+---
+title: Handle randomness deterministically
+description: Use the deterministic RNG from `@openturn/core` for every random decision. Never reach for `Math.random`.
+sidebarTitle: Randomness
+---
+
+Openturn matches are replay-safe because every input is recorded. If your game logic reads `Math.random()` or `Date.now()` directly, the replay will diverge. The engine hands you a deterministic RNG and a fixed `now` on every transition. Use them.
+
+## The RNG API
+
+`@openturn/core` exports `createRng(seed, snapshot?)` and a `DeterministicRng` interface:
+
+```ts
+interface DeterministicRng {
+  bool(probability?: number): boolean;   // probability defaults to 0.5
+  int(maxExclusive: number): number;     // integer in [0, maxExclusive)
+  next(): number;                         // float in [0, 1)
+  pick<T>(values: readonly T[]): T;      // uniform choice
+  d4(): number;                           // 1..4
+  d6(): number;                           // 1..6
+  d8(): number;                           // 1..8
+  d10(): number;                          // 1..10
+  d12(): number;                          // 1..12
+  d20(): number;                          // 1..20
+  d100(): number;                         // 1..100
+  dice(count: number, sides: number): number; // sum of `count` rolls
+  advantage(): number;                    // max of two d20s
+  disadvantage(): number;                 // min of two d20s
+  getSnapshot(): RngSnapshot;             // { seed, state, draws }
+}
+```
+
+The engine builds the match's RNG from `createRng(seed)` where `seed` comes from `createLocalSession({ seed })` or the server's per-room seed. It then passes a seeded RNG into every transition and move context.
+
+## Use it in a move
+
+```ts
+import { defineGame } from "@openturn/gamekit";
+
+defineGame({
+  maxPlayers: 2,
+  moves: ({ move }) => ({
+    roll: move({
+      run({ G, rng, move }) {
+        const value = rng.int(6) + 1;
+        if (value === 1) return move.endTurn({ lastRoll: 1, turnTotal: 0 });
+        return move.stay({ lastRoll: value, turnTotal: G.turnTotal + value });
+      },
+    }),
+  }),
+});
+```
+
+`rng` is in scope for `canPlayer`, `run`, and every core resolver context. Any draw you make is recorded in the match's RNG trace; the replay materializer reruns the same draws and arrives at the same state.
+
+## Dice helpers
+
+For tabletop-style logic, use the dice sugar instead of `int(...) + 1`:
+
+```ts
+const damage = rng.dice(2, 6) + 3;   // 2d6+3
+const attack = rng.advantage();      // d20 with advantage
+const crit = rng.d20() === 20;
+```
+
+Each die consumes one draw; `dice(count, sides)` consumes `count`; `advantage`/`disadvantage` consume two.
+
+## Why not `Math.random`
+
+`Math.random()` produces different numbers on every call. A replay that re-dispatches the action log will diverge from the original match on the first random draw. The engine has no way to recover.
+
+The same goes for `Date.now()`, `performance.now()`, `crypto.randomUUID()`, and any other non-deterministic side effect. If you need the time, read it from `context.now`, which is the match's recorded time (fixed during replay).
+
+## Dice-like inputs as payload
+
+Sometimes the randomness is an *input* to the game, not a decision inside it (a physical die roll, a coin flip outside the app). Model it as an event payload:
+
+```ts
+moves: ({ move }) => ({
+  roll: move<{ value: number }>({
+    run({ args, move }) {
+      if (!Number.isInteger(args.value) || args.value < 1 || args.value > 6) {
+        return move.invalid("invalid_roll");
+      }
+      // ...
+    },
+  }),
+}),
+```
+
+That is what `examples/games/pig-dice` does: the player sends the roll value, and the game validates it. This keeps the reducer pure and the randomness audit-friendly.
+
+## RNG snapshots
+
+`rng.getSnapshot()` returns the current state. You usually do not need this; the engine tracks RNG state inside the snapshot for replay. It is available if you want to pass the RNG state across a boundary (pausing a long-running simulation, say).
+
+## Related
+
+- [Reference: core](/reference/core#runtime-helpers) for the `createRng` and turn helpers.
+- [Concepts: reducers and queued events](/concepts/reducers-and-queued-events) for determinism requirements on resolvers.

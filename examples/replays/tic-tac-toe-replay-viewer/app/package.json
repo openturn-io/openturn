@@ -1,0 +1,34 @@
+{
+  "name": "@openturn/example-tic-tac-toe-replay-viewer-app",
+  "private": true,
+  "type": "module",
+  "openturn": {
+    "runtime": "browser"
+  },
+  "scripts": {
+    "dev": "bun run ../../../../packages/cli/src/index.ts dev . --port 3001",
+    "build": "bun run ../../../../packages/cli/src/index.ts build .",
+    "test": "vitest run --config vitest.config.ts",
+    "typecheck": "bun x tsc -p tsconfig.json --pretty false"
+  },
+  "dependencies": {
+    "@openturn/example-tic-tac-toe-game": "workspace:*",
+    "@openturn/example-tic-tac-toe-ui": "workspace:*",
+    "@openturn/react": "workspace:*",
+    "@openturn/replay": "workspace:*",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.2.2",
+    "@testing-library/react": "^16.3.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.0.1",
+    "jsdom": "^29.0.1",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.5",
+    "vitest": "^4.1.2"
+  }
+}

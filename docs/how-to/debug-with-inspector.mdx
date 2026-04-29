@@ -1,0 +1,99 @@
+---
+title: Debug with inspector
+description: Use `@openturn/inspector-ui` to inspect matches, scrub replays, and see every resolver branch fire.
+sidebarTitle: Inspector
+---
+
+Openturn's inspector turn the action log into an interactive timeline: every frame, every state diff, every transition branch the engine considered, and the graph of states with the current node highlighted.
+
+## Preferred: `useInspector` + `<InspectorShell>`
+
+Inside any `<OpenturnProvider>`, call `useInspector()` on your bindings. One hook covers both local and multiplayer modes; it picks the right timeline source (local replay log or hosted batch history) from `useMatch()`.
+
+```tsx
+import { createOpenturnBindings } from "@openturn/react";
+import { InspectorShell, InspectorContext } from "@openturn/inspector-ui";
+import { myGame, myMatch } from "./game";
+
+const bindings = createOpenturnBindings(myGame, {
+  runtime: "local",
+  match: myMatch,
+});
+
+function DebugPane() {
+  const inspector = bindings.useInspector();
+  if (inspector === null) return null; // no match yet
+  return (
+    <InspectorContext.Provider value={inspector}>
+      <InspectorShell>
+        <GameUI />
+      </InspectorShell>
+    </InspectorContext.Provider>
+  );
+}
+```
+
+For standalone replay viewers (no live match), use `useReplayInspector`:
+
+```tsx
+import { materializeSavedReplay, parseSavedReplay } from "@openturn/replay";
+
+function ReplayPage({ text }) {
+  const envelope = parseSavedReplay(text);
+  const inspector = bindings.useReplayInspector({ envelope });
+  return (
+    <InspectorContext.Provider value={inspector}>
+      <InspectorShell />
+    </InspectorContext.Provider>
+  );
+}
+```
+
+## Drop-in components
+
+`@openturn/inspector-ui` exports a single `createInspector(bindings)` that returns `{ Inspector, ReplayInspector, HostedInspector }`. Each component manages its own inspector state internally and renders `<InspectorShell>` for you. Prefer the hook-based pattern above for custom layouts.
+
+## What you see
+
+Each inspector exposes the same panels:
+
+- **Timeline** — a horizontal list of frames. Click a frame to jump to it.
+- **Snapshot** — the full `G` + `position` + `derived` at the selected frame.
+- **Diff** — what changed between the previous and current frame (computed with `diffReplayValues`).
+- **Transition** — the event that fired, the chosen branch label, and all the branches the engine evaluated.
+- **Control** — the state's `control` summary and pending targets.
+- **Graph** — the state machine graph with the current node and incoming/outgoing edges highlighted.
+
+## Inspecting a specific branch
+
+Click a transition entry to see:
+
+- The event name and payload.
+- Every branch evaluation: which resolver ran, whether it returned a result, and (if not) why (null return, `rejectTransition`, no match).
+- The chosen branch's label.
+
+This is the fastest way to answer "why did the engine pick that transition."
+
+## Programmatic access
+
+If you want the raw data without a UI, use the underlying builders:
+
+```ts
+import { buildInspectorTimelineFromSource } from "@openturn/inspector";
+import { materializeSavedReplay } from "@openturn/replay";
+
+const replayTimeline = materializeSavedReplay(myGame, envelope);
+const inspectorTimeline = buildInspectorTimelineFromSource({
+  kind: "replay",
+  timeline: replayTimeline,
+  game: myGame,
+});
+// inspectorTimeline.frames[n].diffs, transition, evaluations, graphHighlight, ...
+```
+
+For hosted matches, convert protocol batches with `hostedBatchEntriesFromProtocol` and pass the result as the `entries` field of a `{ kind: "hosted", ... }` source.
+
+## Related
+
+- [How-to: capture replays](/how-to/capture-replays) for producing the envelope an inspector loads.
+- [Reference: inspector](/reference/inspector) and [reference: inspector-react](/reference/inspector-ui).

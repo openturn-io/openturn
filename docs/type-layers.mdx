@@ -1,0 +1,151 @@
+---
+title: Type system layers
+description: How a game's static type flows from author input through gamekit, defineGame, and the hosted match state. Maintainer-focused.
+sidebarTitle: Type layers
+---
+
+This doc is a map of the type chain a game definition travels through. It's for contributors who maintain the libraries, not authors writing games.
+
+If you're authoring a game, [Mental model](/concepts/mental-model) and [Authoring with gamekit](/how-to/author-with-gamekit) are what you want.
+
+## Why this doc exists
+
+The type system has six well-defined transformation layers. When something breaks, it's almost always inside one of them. Walking the chain top-down is faster than starting from the failing call site and tracing back. This page is the chain.
+
+## The chain at a glance
+
+```
+                ┌──────────────────────────────────────────┐
+   author input │  { maxPlayers, setup, moves, views, ... }│  literal-typed by the call site
+                └─────────────────┬────────────────────────┘
+                                  │   contextual typing flows in
+                                  ▼
+                ┌──────────────────────────────────────────┐
+        gamekit │  GamekitDefinition<TState, TMoves, ...>  │  packages/gamekit/src/index.ts:429
+                └─────────────────┬────────────────────────┘
+                                  │   defineGame(input)
+                                  ▼
+                ┌──────────────────────────────────────────┐
+       runtime  │  CoreGameDefinitionFor<TState, TMoves,   │  packages/gamekit/src/index.ts:492
+                │                  TPlayers, TPhase, ...>  │  = GameDefinition<GamekitState<TState>, ...>
+                └─────────────────┬────────────────────────┘
+                                  │   stored as `typeof <yourGame>`
+                                  ▼
+                ┌──────────────────────────────────────────┐
+       core     │  GameDefinition<TState, TEvents, TResult,│  packages/core/src/types.ts:402
+                │             TPlayers, TNode, ...>        │
+                └─────────────────┬────────────────────────┘
+                                  │   protocolize / hosted shells
+                                  ▼
+                ┌──────────────────────────────────────────┐
+       wire     │  MatchSnapshot<TPublic, TResult>         │  packages/protocol/src/index.ts
+                │  ProtocolStep, ProtocolActionRecord, ... │
+                └─────────────────┬────────────────────────┘
+                                  │   client + bindings
+                                  ▼
+                ┌──────────────────────────────────────────┐
+       react    │  HostedRoomState<TGame> →                │  packages/react/src/index.tsx
+                │  HostedMatchState<TGame> →               │
+                │  HostedDispatchMap<TGame>                │
+                └──────────────────────────────────────────┘
+```
+
+## Layer 1 — Author input
+
+The literal you pass to `defineGame({ maxPlayers, setup, moves, views, ... })` (or `withPlugins({ ... }, plugins)`).
+
+What matters here:
+- **`maxPlayers: 2`** — TS sees the literal `2`, not `number`. The first `defineGame` overload uses `const TMaxPlayers extends number` to capture that literal and derive `TPlayers = ["0", "1"]`.
+- **`playerIDs: ["white", "black"] as const`** — alternative path. Second overload, captures the named-seat tuple.
+- **`setup: () => TState`** — TState is whatever you return. View functions, move runners, computed selectors all see this.
+- **`moves: ({ move }) => ({ ... })`** — the factory's parameter `move` is contextually typed by the gamekit definition shape so `move<Args>({ run({G, args, player, move}) { ... } })` infers everything.
+
+When inference here breaks, it's usually because something cast the input to a wider type before TS saw the literal. The historical example is the old `withPlugins(...) as never` pattern, which erased every generic before `defineGame` could reverse-infer.
+
+## Layer 2 — `GamekitDefinition`
+
+`packages/gamekit/src/index.ts` — the typed input shape `defineGame` accepts. Eight generics:
+
+| Generic | Source | Notes |
+|---------|--------|-------|
+| `TState` | `setup` return type | Must be JSON-compatible (checked via `JsonCompatibilityChecks`). |
+| `TMoves` | reverse-inferred from `moves` factory return | Each entry is `GamekitMoveDefinition<...>`. |
+| `TPhase` | union of `initialPhase` + `phases` keys + move-level `phases` | Defaults to `"play"`. |
+| `TPlayers` | `DefaultPlayerIDsBound<TMaxPlayers>` or literal `playerIDs` tuple | The single most regression-prone slot. |
+| `TComputed` | `computed` map | Each computed function returns a `JsonValue`. |
+| `TPublic` / `TPlayer` | `views.public`/`views.player` return types | Default to `TState` if no views. |
+| `TCoreNode` | `core.states` keys | For gamekit-with-core compositions. |
+| `TProfile` | `profile.default` shape | `ReplayValue` constraint. |
+
+`withPlugins` (`packages/plugins/src/index.ts`) mirrors `defineGame`'s overload structure on the *input* side and forwards through to `defineGame` internally — same generic surface, same contextual typing, plus a `PluginsState<TPlugins>` intersection on the result's `TPublic`/`TPlayer`.
+
+## Layer 3 — `CoreGameDefinitionFor`
+
+`defineGame`'s return type. Wraps `TState` in `GamekitState<TState>` (which adds the `__gamekit` internal slice), maps `TMoves` to a `GamekitEventMap<TMoves>` event map, and pins `TResult` to `GamekitResultState`.
+
+```ts
+CoreGameDefinitionFor<TState, TMoves, TPlayers, TPhase, TPublic, TPlayer, TCoreNode>
+  = GameDefinition<
+      GamekitState<TState>,
+      GamekitEventMap<TMoves>,
+      GamekitResultState,
+      TPlayers,
+      GamekitNode<TPhase, TCoreNode>,  // = TPhase | TCoreNode | "__gamekit_finished"
+      TPublic,
+      TPlayer,
+      ReplayValue
+    >;
+```
+
+Most consumer code refers to this as `typeof myGame` rather than spelling out the full instantiation.
+
+## Layer 4 — `GameDefinition`
+
+`packages/core/src/types.ts` — the underlying state-machine shape the engine actually executes. Key fields:
+
+- `events: { readonly [TKind in keyof TEvents & string]: TEvents[TKind] }` — the typed event payload map. Indexed by move name through gamekit; indexed by transition `event` through core.
+- `transitions: readonly GameTransitionConfig<...>[]` — the graph edges.
+- `setup`, `views`, `legalActions` — same intent as gamekit, but typed against `GamekitState<TState>` (so `__gamekit` is visible on `G`).
+
+`AnyGame = GameDefinition<any, any, any, any, any, any, any, any, any>` is the standard wildcard upper bound. The `any`s are slot wildcards: every concrete `GameDefinition<...>` extends `AnyGame` regardless of which generic slots vary. Variance forces `any` here — `unknown` doesn't accept arbitrary callables in function-parameter positions like `legalActions(context: GameRuleContext<any, ...>) => ...`.
+
+## Layer 5 — Wire types
+
+`packages/protocol/src/index.ts` defines the over-the-wire shapes:
+
+- `MatchSnapshot<TPublicState, TResult>` — what `getState()` returns: `G`, `position`, `derived`, `meta.log`, `result`, `revision`. Validated by `MatchSnapshotSchema` (zod).
+- `PlayerViewSnapshot<TPlayerView, TResult>` — the per-seat redacted variant.
+- `ProtocolActionRecord` — one applied event in the log.
+- `BatchApplied<TPublicState, TResult>` — diff applied between revisions.
+
+These are JSON-shaped. The `G`/`result` slots are generic; everything else is concrete and zod-validated. Schemas live alongside their types so `Schema.parse(unknown)` is the boundary check.
+
+## Layer 6 — React / hosted bindings
+
+`packages/react/src/index.tsx`. Two top-level facades:
+
+- **`HostedRoomState<TGame>`** — the room-level state: phase (`lobby`/`game`/`closed`/...), invite URL, bridge handle, and `game: HostedMatchState<TGame> | null`.
+- **`HostedMatchState<TGame>`** — the per-match facade: `snapshot`, `dispatch` (one method per move), `canDispatch`, `playerID`, `result`, `status`, plus history.
+
+`HostedDispatchMap<TGame>` is the key piece — it maps over `keyof TGame["events"] & string` to give one typed dispatcher per move. When a chat-app sees `room.game.dispatch.placeMark` typed as `Record<string, unknown>` instead of the typed function, the regression is upstream — Layer 1 or 2 lost the literal events shape.
+
+## Where the casts are, and why
+
+Cross-layer transitions need a handful of `as unknown as` casts. They are not hygiene failures; each is documented in source. A summary:
+
+| Location | Why |
+|----------|-----|
+| `react/index.tsx`: `WeakMap<AnyGame, OpenturnBindings<AnyGame>>` cache | TS has no key-dependent map type. Erased on insert, narrowed on read. |
+| `react/index.tsx`: `Object.fromEntries(Object.keys(events).map(...))` for dispatch builders | `Object.fromEntries` widens to `Record<string, ...>`; TS cannot reconstruct literal keys from a runtime iteration. |
+| `react/index.tsx`: `HostedMatchOverrideContext` | Context is typed `HostedMatchOverride<AnyGame>` so any subtree can install one regardless of the consuming hook's `TGame`. |
+| `server/index.ts`: `parseRoomPersistenceRecord` exit cast | zod's `.nonempty()` returns mutable tuple; `MatchInput.players` is readonly tuple. Wire-equivalent shapes, different variance markers. |
+| `protocol/index.ts`: `protocolizeGameStep`/`protocolizeGameSnapshot` | Schema validates structure but cannot preserve the caller's `TPublicState`/`TResult` generics. |
+| `core/session.ts`: `cloneJsonValue(parseJsonValue(match)) as TMatch` | Same pattern — runtime validates JSON, the caller's generic is reasserted. |
+
+If you find yourself adding a new `as unknown as`, check first whether one of these patterns covers it. If not, document the *why* in a comment so the next contributor doesn't churn it.
+
+## Catching regressions
+
+The `*.test-d.ts` files next to the major surfaces (`packages/gamekit/src/types.test-d.ts`, `packages/plugins/src/types.test-d.ts`, `packages/react/src/types.test-d.ts`) use `expect-type` to encode the contracts above. They are zero-cost: included in each package's `tsc -p tsconfig.json` typecheck, not run by `bun test`. When a refactor regresses a layer-2 generic in a way that silently widens a downstream type, these tests fail at the package level instead of at a downstream example's example app.
+
+When adding a new public typed API, write the assertion before the implementation. The assertions are short — usually one or two `expectTypeOf<...>().toEqualTypeOf<...>()` per invariant — and they catch silent inference drift the runtime tests cannot.

@@ -1,0 +1,417 @@
+---
+title: "@openturn/server"
+description: Authoritative room runtime, lobby, Cloudflare Worker factory, room tokens, and persistence.
+sidebarTitle: Server
+---
+
+Worker-safe. The authoritative side of a hosted openturn match. Used by `openturn dev` (via `@openturn/cli`) and by the generated Cloudflare Worker bundle.
+
+## Install
+
+```bash
+bun add @openturn/server
+```
+
+## Deployment definition
+
+### `GameDeployment<TGame>`
+
+The minimum information needed to host a game.
+
+```ts
+interface GameDeployment<TGame> {
+  deploymentVersion: string;
+  game: TGame;
+  gameKey: string;
+  match: MatchInput<GamePlayers<TGame>>;
+  metadata?: ProtocolValue;
+  schemaVersion: string;
+}
+```
+
+### `defineGameDeployment(deployment)`
+
+Type-safe factory for a deployment. Errors at the type level if `TGame`'s state or views are not protocol-compatible (not JSON).
+
+<Note>
+For cloud authoring, you do **not** need to call `defineGameDeployment` yourself. `openturn build` generates the deployment — and the Cloudflare Worker that hosts it — directly from your `app/game.ts` and `app/openturn.ts` files. Reach for `defineGameDeployment` only when you need a hand-written Worker entry (custom bindings, advanced routing), when you are embedding `@openturn/server` into your own Bun/Node host, or when you are writing a test that exercises `createRoomRuntime` directly.
+</Note>
+
+### `loadGameDeployment(moduleValue)`
+
+Extract a deployment from a module value (handles `default`, `deployment`, and bare exports). Used by the CLI to load user-authored deployment files.
+
+## Room runtime
+
+### `createRoomRuntime(options)`
+
+Build a `RoomRuntime<TGame>` for one room. The runtime accepts `ProtocolClientMessage`s and produces `RoomServerMessage`s.
+
+```ts
+const room = await createRoomRuntime({
+  deployment,                  // GameDeployment
+  roomID,                      // MatchID
+  connectedPlayers?,           // pre-populate connected list
+  initialNow?,                 // ms, for deterministic time
+  persistence?,                // RoomPersistence
+  seed?,                       // RNG seed, otherwise derived from roomID
+});
+```
+
+### `RoomRuntime<TGame>`
+
+```ts
+interface RoomRuntime<TGame> {
+  connect(playerID): Promise<readonly RoomRuntimeEnvelope<TGame>[]>;
+  disconnect(playerID): void;
+  getState(): RoomRuntimeState<TGame>;
+  handleClientMessage(message): Promise<readonly RoomRuntimeEnvelope<TGame>[]>;
+}
+```
+
+### `RoomRuntimeEnvelope<TGame>`
+
+`{ playerID, message }`: a message addressed to a specific seat.
+
+### `RoomRuntimeState<TGame>`
+
+```ts
+interface RoomRuntimeState<TGame> {
+  branch: ProtocolHistoryBranch;
+  connectedPlayers: readonly PlayerID[];
+  revision: Revision;
+  roomID: MatchID;
+  snapshot: MatchSnapshot<GamePublicView<TGame>, GameResultState<TGame>>;
+}
+```
+
+### `RoomRuntimeOptions<TGame>`
+
+The input to `createRoomRuntime`.
+
+```ts
+interface RoomRuntimeOptions<TGame> {
+  deployment: GameDeployment<TGame>;
+  roomID: MatchID;
+  connectedPlayers?: readonly PlayerID[];
+  initialNow?: number;
+  initialSavedSnapshot?: InitialSavedSnapshot<TGame>;  // warm-start from a saved checkpoint
+  onActionProfileCommit?: RoomActionProfileCommitHandler<TGame>;
+  onSaveRequest?: RoomSaveHandler<TGame>;
+  onSettle?: RoomSettleHandler<TGame>;
+  persistence?: RoomPersistence;
+  restorePersistedState?: boolean;
+  seed?: string;
+}
+```
+
+### `InitialSavedSnapshot<TGame>`
+
+`{ branch?, initialNow, match, revision, seed, snapshot }`. Feeds a hot-started room (decoded from a save envelope) directly into `createRoomRuntime`.
+
+## Profiles
+
+Server-side settlement of per-player persistent state. See [concepts: persistent profiles](/concepts/persistent-profiles).
+
+### `onSettle: RoomSettleHandler<TGame>`
+
+Invoked exactly once when the match reaches a terminal `result`. Receives the pure delta computed by the game's declared `profile.commit`, already restricted to seated players.
+
+```ts
+await createRoomRuntime({
+  deployment,
+  roomID,
+  onSettle: async ({ delta, gameKey, profilesAtSetup, result, roomID }) => {
+    // persist delta here — e.g. POST to your control plane.
+  },
+});
+```
+
+The handler is idempotent at the caller's boundary: a retry (DO crash, settle retry) re-computes the same delta from the checkpoint, so your storage layer should dedupe on `(roomID, userID)`.
+
+Games that don't declare `profile` call the handler with `delta: {}` — safe to skip.
+
+### `onActionProfileCommit: RoomActionProfileCommitHandler<TGame>`
+
+Invoked once per in-match transition that emitted a `profile` delta (mid-match unlocks, incremental rewards). The host is responsible for dedupe on `(roomID, actionID)` — failures do not block gameplay.
+
+```ts
+onActionProfileCommit: async ({ actionID, delta, roomID }) => {
+  await profileStore.applyIdempotent({ key: `${roomID}:${actionID}`, delta });
+}
+```
+
+### `onSaveRequest: RoomSaveHandler<TGame>`
+
+Invoked when a player requests a save envelope. Return `{ saveID, downloadURL? }` to tell the client where the artifact lives.
+
+```ts
+interface RoomSaveHandlerInput<TGame> {
+  branch: ProtocolHistoryBranch;
+  clientRequestID: string;
+  initialNow: number;
+  match: MatchInput<GamePlayers<TGame>>;
+  matchID: MatchID;
+  playerID: PlayerID;
+  revision: Revision;
+  seed: string;
+  snapshot: GameSnapshotOf<TGame>;
+}
+
+interface RoomSaveHandlerOutput {
+  saveID: string;
+  downloadURL?: string;
+}
+```
+
+### `RoomActionProfileCommitInput<TGame>`
+
+Input to `onActionProfileCommit`.
+
+```ts
+interface RoomActionProfileCommitInput<TGame> {
+  actionID: string;
+  delta: ProfileCommitDeltaMap<GamePlayers<TGame>>;
+  deploymentVersion: string;
+  gameKey: string;
+  match: MatchInput<GamePlayers<TGame>>;
+  revision: Revision;
+  roomID: MatchID;
+}
+```
+
+### How openturn-cloud wires this
+
+The generated game-worker's `GameRoom` Durable Object reads a `cloudAPIBase` URL that's threaded in via the `x-openturn-cloud-base` header on the cloud's dispatch proxy. When it sees `onSettle`, it POSTs the delta to `${cloudAPIBase}/api/profiles/commit`, signing the body with HMAC-SHA256 using `ROOM_TOKEN_SECRET` (the same secret already used for room tokens). No new env vars are required.
+
+Hydration is the mirror call: at first bootstrap, the DO POSTs to `/api/profiles/hydrate` with the seated user IDs and merges the returned profile data into `MatchInput.profiles` before creating the session.
+
+## Persistence
+
+### `RoomPersistence`
+
+```ts
+interface RoomPersistence {
+  load(roomID: MatchID): Promise<RoomPersistenceRecord | null>;
+  save(record: RoomPersistenceRecord): Promise<void>;
+}
+```
+
+Pass a persistence adapter when you want rooms to survive runtime restart. `@openturn/cli` ships a SQLite adapter; the generated Cloudflare Worker uses Durable Object storage.
+
+### `RoomPersistenceRecord<TGame>`
+
+The serialized snapshot of a room.
+
+### `parseRoomPersistenceRecord(value)`
+
+Deserialize and validate a persistence record.
+
+## Save envelopes
+
+Opaque, signed blobs that carry the log needed to resume a match elsewhere. Used by `onSaveRequest` on the server side and by the openturn-cloud replay UI on the client side.
+
+### `encodeSave(payload, secret, options?)` / `decodeSave(bytes, secret)`
+
+Round-trip between `SavedGamePayload` and a self-describing encrypted binary envelope. `decodeSave` throws `SaveDecodeError` on malformed input; inspect its `.code` (`SaveDecodeErrorCode = "magic" | "version" | "auth" | "key" | "payload"`) to disambiguate.
+
+### `EncodeSaveOptions`
+
+```ts
+interface EncodeSaveOptions {
+  keyId?: number;   // 1..255, identifies the encryption key version embedded in the envelope
+  nonce?: Uint8Array; // 12 bytes; leave unset to randomize
+}
+```
+
+### `SaveDecodeError`
+
+Error class thrown by `decodeSave`. Has a `code: SaveDecodeErrorCode` field for programmatic handling.
+
+### `deriveSaveKey(saveID, secret)`
+
+Derive a stable, unguessable download key for a `saveID` — use when signing presigned URLs.
+
+### `SAVE_FORMAT_VERSION`
+
+Constant: the version byte embedded in every save envelope. Bumped when the envelope schema breaks.
+
+### `SavedGamePayload`, `SavedGameCheckpoint`, `SavedGameMeta`
+
+Types describing the decoded envelope shape.
+
+## Room tokens
+
+### `signRoomToken(claims, secret)`
+
+Sign a room token. Returns `SignedRoomToken = { claims, token }`.
+
+### `verifyRoomToken(token, secret)`
+
+Verify and decode. Returns `RoomTokenClaims | null`.
+
+### `RoomTokenClaims`
+
+```ts
+interface RoomTokenClaims {
+  deploymentVersion: string;
+  exp: number;
+  iat: number;
+  playerID: PlayerID | null;
+  roomID: MatchID;
+  scope: "lobby" | "game";
+  userID: string;
+}
+```
+
+`scope: "lobby"` is issued during lobby, `scope: "game"` after seat assignment. The `RoomTokenScope` type alias is exported for reuse.
+
+### `SignedRoomToken`
+
+```ts
+interface SignedRoomToken {
+  claims: RoomTokenClaims;
+  token: string; // base64url-encoded `${base64url(claims)}.${signature}`
+}
+```
+
+### `signValue(value, secret)`
+
+HMAC-SHA256 signer used internally for room tokens; re-exported for server-to-server signing (e.g. DO → openturn-cloud profile commits share this primitive with `ROOM_TOKEN_SECRET`). Returns a base64url digest.
+
+## Lobby
+
+### `LobbyRuntime`
+
+Pure state machine for the pre-game lobby. The Durable Object host and the local dev server both wrap an instance with their own WebSocket/presence plumbing; this class has no knowledge of sockets or persistence.
+
+```ts
+import { LobbyRuntime } from "@openturn/server";
+
+const runtime = new LobbyRuntime(env, persisted?);
+```
+
+- `env: LobbyEnv` — `{ hostUserID, capacity, minPlayers, playerIDs, knownBots? }`. `knownBots` is the bot catalog (built via [`buildKnownBots`](/reference/lobby#buildknownbots-registry)) and turns on `lobby:assign_bot` validation.
+- `persisted?: LobbyPersistedState` — rehydrate from storage; omit for a fresh lobby.
+
+Key methods: `apply(userID, userName, message)`, `takeSeat`, `leaveSeat`, `setReady`, `assignBot(hostUserID, seatIndex, botID)`, `clearSeat(hostUserID, seatIndex)`, `start(hostUserID)`, `close(hostUserID)`, `dropUser(userID)`, `pruneToConnected(connectedUserIDs)`, `buildStateMessage(roomID, connectedUserIDs)`, `toPersisted()`, `playerIDFor(userID)`, `seatIndexFor(userID)`. See [how-to: build a lobby](/how-to/build-a-lobby) and [reference: `@openturn/lobby`](/reference/lobby).
+
+### Lobby types
+
+```ts
+interface LobbyEnv {
+  hostUserID: string;
+  capacity: number;
+  minPlayers: number;
+  playerIDs: readonly string[]; // keyed by seat index
+}
+
+interface SeatRecord {
+  seatIndex: number;
+  userID: string;
+  userName: string | null;
+  ready: boolean;
+}
+
+interface LobbyPersistedState {
+  mode: LobbyPhase;
+  seats: readonly SeatRecord[];
+  userToPlayer: Readonly<Record<string, string>>;
+}
+
+interface LobbyStartAssignment {
+  userID: string;
+  seatIndex: number;
+  playerID: string;
+}
+
+type LobbyApplyResult =
+  | { ok: true; changed: boolean }
+  | { ok: false; reason: LobbyRejectionReason };
+
+type LobbyStartResult =
+  | { ok: true; assignments: readonly LobbyStartAssignment[] }
+  | { ok: false; reason: LobbyRejectionReason };
+
+interface LobbyDropUserResult {
+  changed: boolean;
+  shouldCloseRoom: boolean;
+}
+```
+
+`SeatRecord` is now a discriminated union over `kind: "human" | "bot"`. `LobbyStartAssignment` carries `kind` plus `botID` for bot seats. See [reference: `@openturn/lobby`](/reference/lobby#openturnlobbyprotocol) for the full discriminated shape.
+
+## Bot driver in the Durable Object
+
+`@openturn/server` ships an in-DO `BotDriver<TGame>` that dispatches bot moves directly through `RoomRuntime.handleClientMessage` after every state change. This avoids opening a WebSocket-to-self from the DO and is the variant the cloud uses; sidecar processes that connect over the network use [`createHostedBotSupervisor`](/reference/lobby#createhostedbotsupervisor-options) from `@openturn/lobby/supervisor` instead.
+
+```ts
+import { BotDriver, resolveBotMap } from "@openturn/server";
+
+// At lobby:start time, build a Map<playerID, Bot<TGame>> from the registry
+// attached to game.bots:
+const botMap = resolveBotMap(game.bots, lobbyStartResult.assignments);
+const driver = botMap === null ? null : new BotDriver({ game, bots: botMap });
+
+// After every dispatch (human or bot), tick the driver:
+await driver?.tick({
+  session: roomRuntime.getSession(),
+  matchID,
+  dispatch: (msg) => roomRuntime.handleClientMessage(msg),
+});
+```
+
+`tick()` chains bot-vs-bot moves up to `maxChainDepth` (default 64) before yielding. `isBot(playerID)` exposes the seat assignment for the room's broadcast logic. Cold-start safe: rebuild from `lobbyRuntime.toPersisted().seats` after DO wake-up.
+
+`BotDriver` accepts a `BotRegistryShape` rather than the full `BotRegistry` from `@openturn/lobby/registry` to dodge the `server → lobby → server` package cycle — the structural shape on `game.bots` matches.
+
+## Cloudflare Worker factory
+
+### `createGameWorker(deployment, options?)` (from `@openturn/server/worker`)
+
+Produce a Worker-ready `{ default: ExportedHandler, GameRoom: DurableObject }` from a game deployment.
+
+```ts
+import { createGameWorker } from "@openturn/server/worker";
+import { deployment } from "./deployment";
+
+const { default: handler, GameRoom } = createGameWorker(deployment, {
+  idleReapMs?: 5 * 60 * 1000,
+  lobbyTokenTtlSeconds?,
+  gameTokenTtlSeconds?,
+});
+
+export { GameRoom };
+export default handler;
+```
+
+`openturn build` generates a Worker entry that calls this for you.
+
+### `GameWorkerEnv`
+
+The required Worker bindings: `GAME_ROOM` (DurableObjectNamespace) and `ROOM_TOKEN_SECRET` (string).
+
+### `GameWorkerOptions`
+
+`{ idleReapMs?, lobbyTokenTtlSeconds?, gameTokenTtlSeconds? }`.
+
+### `GameWorkerInfoResponse`
+
+The shape served at `/__info`: `{ deploymentVersion, gameKey, players, schemaVersion, minPlayers, capacity }`.
+
+### `GameWorkerExports`
+
+The return type of `createGameWorker`:
+
+```ts
+interface GameWorkerExports {
+  default: ExportedHandler<GameWorkerEnv>;
+  GameRoom: DurableObjectConstructor<GameWorkerEnv>;
+}
+```
+
+## See also
+
+- [How-to: run a local hosted stack](/how-to/run-local-hosted)
+- [How-to: deploy to Cloudflare](/how-to/deploy-to-cloudflare)
+- [Reference: protocol](/reference/protocol), [reference: client](/reference/client)

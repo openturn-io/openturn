@@ -1,0 +1,103 @@
+---
+title: Add a CLI front-end
+description: Drive a local session from a Bun script to get a terminal UI with no browser involved.
+sidebarTitle: CLI
+---
+
+Because `createLocalSession` is just a reducer with a subscribe, you can drive it from a Bun script, a Node process, or any environment that can do stdin. This is useful for:
+
+- Rapid prototyping of game rules before you build a UI.
+- Smoke tests and AI players.
+- Keeping a CLI variant alongside your React app (see the `examples/games/tic-tac-toe/cli` and `examples/games/pig-dice/cli` packages).
+
+## Minimal CLI
+
+```ts
+// cli/src/index.ts
+import { stdout } from "node:process";
+import { createLocalSession } from "@openturn/core";
+import { ticTacToe } from "@my/tic-tac-toe-game";
+
+const session = createLocalSession(ticTacToe, { match: { players: ticTacToe.playerIDs } });
+const reader = Bun.stdin.stream().pipeThrough(new TextDecoderStream()).getReader();
+
+async function prompt(text: string) {
+  stdout.write(text);
+  const { value } = await reader.read();
+  return value?.trim() ?? null;
+}
+
+while (true) {
+  const snap = session.getState();
+  printBoard(snap.G.board);
+  if (snap.meta.result !== null) {
+    console.log(snap.meta.result);
+    break;
+  }
+  const player = snap.derived.activePlayers[0]!;
+  const line = await prompt(`Player ${player} (row col): `);
+  if (line === null || line === "q") break;
+  const [row, col] = line.split(" ").map(Number);
+  const result = session.applyEvent(player, "placeMark", { row, col });
+  if (!result.ok) console.log("rejected:", result.error);
+}
+```
+
+### `cli/package.json` (excerpt)
+
+```json
+{
+  "name": "@my/tic-tac-toe-cli",
+  "openturn": { "runtime": "bun" },
+  "scripts": { "demo": "bun run src/index.ts" },
+  "dependencies": {
+    "@openturn/core": "workspace:*",
+    "@my/tic-tac-toe-game": "workspace:*"
+  }
+}
+```
+
+Mark the package `openturn.runtime: "bun"` so the runtime checker knows you are allowed to use Node builtins and Bun globals.
+
+## Capture a replay from the CLI
+
+Pair the CLI with `@openturn/replay` to record matches:
+
+```ts
+import { createSavedReplayFromSession, serializeSavedReplay } from "@openturn/replay";
+
+const session = createLocalSession(ticTacToe, {
+  match: { players: ticTacToe.playerIDs },
+  seed: "cli-run",
+});
+// ... play the match ...
+
+const envelope = createSavedReplayFromSession({
+  gameID: "example/tic-tac-toe",
+  playerID: "0",
+  session,
+});
+await Bun.write("replay.json", serializeSavedReplay(envelope));
+```
+
+See [how-to: capture replays](/how-to/capture-replays).
+
+## AI player sketch
+
+An AI driver is a loop that reads `session.getState()`, picks an event, and calls `applyEvent`:
+
+```ts
+while (session.getState().meta.result === null) {
+  const snap = session.getState();
+  const player = snap.derived.activePlayers[0]!;
+  const move = pickMove(snap, player);     // your logic
+  session.applyEvent(player, move.name, move.args);
+}
+```
+
+Because the reducer is deterministic, fixing the RNG seed and action order makes AI evaluation reproducible.
+
+## Related
+
+- [How-to: run a local session](/how-to/run-a-local-session) is the primitive this recipe builds on.
+- [How-to: capture replays](/how-to/capture-replays) for recording the action log.

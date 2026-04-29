@@ -1,0 +1,172 @@
+---
+title: Persistent profiles
+description: Per-player state that survives across matches — card collections, unlocks, currency — and how it flows in and out of the engine.
+sidebarTitle: Profiles
+---
+
+Openturn's core contract is that every match is a self-contained reducer: `G` is authoritative, transitions are pure, no side effects. That's great for replay safety and terrible for games where players expect to accumulate things. **Profiles** are the escape hatch.
+
+A profile is per-`(user, gameKey)` JSON state owned by the host (openturn-cloud, or your embedding app in local mode). It flows into the match as `match.profiles` at setup, and back out as a declarative delta computed by a pure function after the match ends. The engine never mutates it.
+
+## What's in a profile vs. what's in `G`
+
+| Lives in `G` | Lives in the profile |
+| --- | --- |
+| State that any transition needs to read or write during the match | State that persists between matches |
+| Board position, decks drawn, HP | Card collections, gold, unlocks, XP, meta-progression |
+| Ephemeral — discarded when the room closes | Durable — keyed by `(userID, gameKey)` |
+
+Rule of thumb: if restarting the match should reset it, it's `G`. If the player expects it to be there next time they log in, it's a profile.
+
+## The three-step lifecycle
+
+```
+┌───────────────────┐   setup      ┌───────────────────┐   commit      ┌──────────────┐
+│   stored profile  │ ───────────► │  match.profiles   │ ───────────►  │  ProfileDelta │
+│   (Postgres/KV)   │              │  (engine input)   │               │  (back to    │
+└───────────────────┘              └───────────────────┘               │   storage)   │
+                                                                        └──────────────┘
+      ▲                                                                         │
+      └─────────────────────────────────────────────────────────────────────────┘
+                               apply delta, idempotently
+```
+
+1. **Hydrate.** Before `setup` runs, the host reads each seated player's profile row and puts it on `match.profiles`. Missing entries get `profile.default`.
+2. **Read.** Your `setup` receives the profiles and can copy whatever it needs into `G` (e.g. "these are the cards player 0 brought to the match"). Transitions cannot read `match.profiles` directly — copy what you need.
+3. **Commit.** When the match reaches a terminal `result`, the engine invokes your `profile.commit(ctx)` which returns a per-player delta. The host applies the delta to storage.
+
+`commit` is a pure function of `(match, profilesAtSetup, result)` — the same terminal state always produces the same delta. That's what makes the whole thing replay-safe and crash-recoverable.
+
+Transitions can also emit deltas mid-match — useful for unlocks, discoveries, or incremental rewards that shouldn't wait until the match ends. See [Mid-match deltas](#mid-match-deltas) below.
+
+## Declaring a profile on your game
+
+```ts
+import { defineGame, defineProfile } from "@openturn/gamekit";
+// (or: import { defineGame, defineProfile } from "@openturn/core" — same API)
+
+const profile = defineProfile<{ wins: number }>({
+  schemaVersion: "1",
+  default: { wins: 0 },
+  parse: (data) => {
+    const obj = (data ?? {}) as { wins?: unknown };
+    return { wins: typeof obj.wins === "number" ? obj.wins : 0 };
+  },
+  commit: ({ profile, result }) => {
+    const winner = (result as { winner?: string } | null)?.winner;
+    if (winner === undefined) return {};
+    return profile.inc(winner, "wins", 1);
+  },
+});
+
+export const game = defineGame({
+  maxPlayers: 2,
+  profile,
+  setup: () => ({ over: false }),
+  moves: ({ move }) => ({
+    tap: move({ run: ({ player, move: m }) => m.win(player.id, { over: true }) }),
+  }),
+});
+```
+
+Gamekit re-exports `defineProfile`, `applyProfileDelta`, `computeProfileCommit`, and the delta grammar types — same implementation as `@openturn/core`. Raw-core authors can import the same names from `@openturn/core` and wire `profile` into `defineGame` alongside `events`, `states`, and `transitions`.
+
+Four fields:
+
+- `schemaVersion`: a string you bump when the profile shape changes.
+- `default`: the shape a never-before-seen player gets on first play. Must be JSON-compatible.
+- `parse` (optional but recommended): validates/normalizes stored data at hydration. Profiles live across deploys and can outlive a schema change; this is where you defend against that.
+- `commit`: pure function returning a per-player delta using the [delta grammar](#delta-grammar).
+
+## Delta grammar
+
+Deltas are arrays of ops, each targeting a JSON path. Four ops cover most game economies:
+
+```ts
+type ProfileOp =
+  | { op: "set";    path: (string | number)[]; value: ReplayValue }
+  | { op: "inc";    path: (string | number)[]; value: number }
+  | { op: "push";   path: (string | number)[]; value: ReplayValue }
+  | { op: "remove"; path: (string | number)[] };
+```
+
+- `set` writes an arbitrary JSON value (root set with an empty path replaces the whole profile).
+- `inc` treats a missing number as `0`, so `{ op: "inc", path: ["cards", "dragon"], value: 1 }` awards a card even if the player never had one.
+- `push` appends to an array.
+- `remove` deletes an array index or an object key.
+
+`applyProfileDelta(data, ops)` runs the list and returns `{ ok: true, data }` or a typed rejection (`type_mismatch`, `out_of_range`, `invalid_container`, ...). The cloud re-validates every delta against the live profile before writing.
+
+## Mid-match deltas
+
+Some games need profile state to move *during* the match, not just at the end — Balatro-style unlocks, card discoveries, currency awarded the moment something happens. Any transition can emit a per-player delta alongside its normal state change, and the engine applies it to `match.profiles` atomically with the transition.
+
+In gamekit, every move outcome helper (`m.stay`, `m.endTurn`, `m.goto`, `m.finish`) takes an options object with a `profile` field. Build the delta with the `profile` helper passed into `run`:
+
+```ts
+play: move({
+  args: undefined as unknown as { card: CardID },
+  run: ({ player, profile, profiles, G, args, move: m }) => {
+    const playerID = player.id;
+    const remaining = G.hand[playerID].filter((c) => c !== args.card);
+    const seen = profiles[playerID]?.discovered ?? [];
+    if (seen.includes(args.card)) {
+      return m.stay({ hand: { ...G.hand, [playerID]: remaining } });
+    }
+    // First time seeing this card — record it on the profile.
+    return m.stay(
+      { hand: { ...G.hand, [playerID]: remaining } },
+      { profile: profile.push(playerID, "discovered", args.card) },
+    );
+  },
+}),
+```
+
+The `profile` helper exposes `inc`, `push`, `set`, `remove`, and an Immer-style `update(playerID, recipe)` for batching multiple ops into one delta. It returns a `ProfileCommitDeltaMap` — the same shape `commit` returns at the end of the match.
+
+In raw `@openturn/core`, return `profile` from a transition resolver alongside `G`, `enqueue`, `result`, etc.:
+
+```ts
+{
+  event: "discover",
+  from: "play",
+  resolve: ({ playerID }) => ({
+    profile: { [playerID!]: [{ op: "push", path: ["seen"], value: "dragon" }] },
+  }),
+  to: "play",
+}
+```
+
+A few properties worth knowing:
+
+- **Atomic with the transition.** The delta is validated and applied before the next transition runs; subsequent resolvers in the same batch — and any end-of-match `commit` — see the mutated profile. An apply failure rejects the transition with `invalid_transition_result`.
+- **Read-own / write-own, same as commit.** Keys not seated in the match are dropped; each entry must target the player's own profile.
+- **Idempotent at the host.** The applied delta is recorded on `step.transition.profile` and surfaced to the host via `onActionProfileCommit({ actionID, delta, roomID, ... })`. The dedupe key is `(roomID, actionID)` rather than `(roomID, userID)` — one move can emit one delta. Per-action commits are **best-effort**; a failure does not block gameplay because the local session already moved.
+
+For the cloud, this is wired automatically. For local hosts and self-run servers, see [`onActionProfileCommit` in the server reference](/reference/server#profiles). The [card-discovery example](https://github.com/openturn-io/openturn/tree/main/openturn/examples/using-profiles/card-discovery) is the canonical demo.
+
+## Authority and trust
+
+Game code runs in a sandboxed iframe; in multiplayer that means untrusted. So:
+
+- **Hydration is server-side.** The cloud reads the `profiles` table and injects the result into the match payload. The iframe reads profiles via `match.profiles`; it never writes them.
+- **Commit is server-side.** The commit function runs in the Durable Object (worker) — same pure function the client could run, but the client's delta is never trusted. The cloud re-applies and re-validates.
+- **Commit is idempotent.** Dedup key is `${roomID}:${userID}`. A crashed-and-restarted DO that re-emits the same delta gets a `duplicate` status; the profile moves once.
+
+For v1, commit is also constrained to **read-own / write-own**: the delta map's keys must be seated players, and each entry targets that player's own profile. Trading is out of scope.
+
+## Scope: gameKey, not deployment
+
+Profiles are keyed by `(userID, gameKey)`. One published game — across multiple projects, promotions, or redeploys — sees one profile per player. That's deliberate: players expect their collection to survive an update.
+
+The tradeoff is that schema changes need to be backwards-compatible. Ship a `parse` that tolerates old shapes, and/or bump `schemaVersion` and add a `migrate(fromVersion, data)` hook in a follow-up. Until external authors can publish under a shared `gameKey`, namespace collisions are a trust issue — see the [security caveats in the how-to guide](/how-to/persist-player-state#security-caveats).
+
+## Local mode
+
+Profiles work without openturn-cloud. In local mode the embedding app is the host: pass `match.profiles` at session start, read `computeProfileCommit(profile, ctx)` at the end, persist however you like (localStorage, IndexedDB, a file). The [persistent-wins example](https://github.com/openturn-io/openturn/tree/main/openturn/examples/using-profiles/persistent-wins) (gamekit) and its [raw-core sibling](https://github.com/openturn-io/openturn/tree/main/openturn/examples/using-core/persistent-wins-core) show the full loop in ~30 lines each.
+
+## What to read next
+
+- [How-to: Persist player state](/how-to/persist-player-state) — the operational recipe for authoring, local testing, and cloud deployment.
+- [Reference: `@openturn/core`](/reference/core#profiles) — API shape for `defineProfile` and the delta grammar.
+- [Reference: `@openturn/server`](/reference/server#profiles) — the host-side hook for receiving mid-match deltas.

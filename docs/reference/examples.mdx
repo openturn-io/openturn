@@ -1,0 +1,65 @@
+---
+title: Examples index
+description: Every example package with its path and the bun --filter command to run it.
+sidebarTitle: Examples index
+---
+
+Quick lookup for every example shipped in the monorepo. For curated descriptions and tutorial cross-links see [Examples](/examples).
+
+All commands are run from the monorepo root (`openturn/`). `--filter` can also be written as `-F`.
+
+## Browser apps (`dev`)
+
+These run a local Vite dev server via `openturn dev`.
+
+| Example | Package | Path | Command |
+| --- | --- | --- | --- |
+| Tic-tac-toe | `@openturn/example-tic-tac-toe-app` | [examples/games/tic-tac-toe/app](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/tic-tac-toe/app) | `bun --filter @openturn/example-tic-tac-toe-app dev` |
+| Battleship | `@openturn/example-battleship-app` | [examples/games/battleship/app](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/battleship/app) | `bun --filter @openturn/example-battleship-app dev` |
+| Tic-tac-toe multiplayer | `@openturn/example-tic-tac-toe-multiplayer-app` | [examples/hosted-multiplayer/tic-tac-toe-multiplayer/app](https://github.com/openturn-io/openturn/tree/main/openturn/examples/hosted-multiplayer/tic-tac-toe-multiplayer/app) | `bun --filter @openturn/example-tic-tac-toe-multiplayer-app dev` |
+| Tic-tac-toe with chat | `@openturn/example-tic-tac-toe-with-chat-app` | [examples/plugins/tic-tac-toe-with-chat/app](https://github.com/openturn-io/openturn/tree/main/openturn/examples/plugins/tic-tac-toe-with-chat/app) | `bun --filter @openturn/example-tic-tac-toe-with-chat-app dev` |
+| Tic-tac-toe replay viewer | `@openturn/example-tic-tac-toe-replay-viewer-app` | [examples/replays/tic-tac-toe-replay-viewer/app](https://github.com/openturn-io/openturn/tree/main/openturn/examples/replays/tic-tac-toe-replay-viewer/app) | `bun --filter @openturn/example-tic-tac-toe-replay-viewer-app dev` |
+| Paper-scissors-rock | `@openturn/example-paper-scissors-rock-app` | [examples/simultaneous-moves/paper-scissors-rock/app](https://github.com/openturn-io/openturn/tree/main/openturn/examples/simultaneous-moves/paper-scissors-rock/app) | `bun --filter @openturn/example-paper-scissors-rock-app dev` |
+| Paper-scissors-rock (raw core) | `@openturn/example-paper-scissors-rock-core-app` | [examples/using-core/paper-scissors-rock-core/app](https://github.com/openturn-io/openturn/tree/main/openturn/examples/using-core/paper-scissors-rock-core/app) | `bun --filter @openturn/example-paper-scissors-rock-core-app dev` |
+
+Pass extra flags after `--`. For example, to pin a port:
+
+```bash
+bun --filter @openturn/example-tic-tac-toe-app dev -- --port 3001
+```
+
+## CLI apps (`demo`)
+
+Terminal-only examples. They don't have a `dev` script — use `demo`.
+
+| Example | Package | Path | Command |
+| --- | --- | --- | --- |
+| Tic-tac-toe CLI | `@openturn/example-tic-tac-toe-cli` | [examples/games/tic-tac-toe/cli](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/tic-tac-toe/cli) | `bun --filter @openturn/example-tic-tac-toe-cli demo` |
+| Pig-dice CLI | `@openturn/example-pig-dice-cli` | [examples/games/pig-dice/cli](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/pig-dice/cli) | `bun --filter @openturn/example-pig-dice-cli demo` |
+
+Common flags for the tic-tac-toe CLI:
+
+```bash
+bun --filter @openturn/example-tic-tac-toe-cli demo -- --save-replay out.json
+bun --filter @openturn/example-tic-tac-toe-cli demo -- --bot 1=random
+bun --filter @openturn/example-tic-tac-toe-cli demo -- --bot 1=minimax
+```
+
+## Library packages (no dev server)
+
+These define games, UIs, or bots that other example packages import. They have no `dev` or `demo` script — they're consumed via workspace dependencies and exercised through the apps and CLIs above. `bun --filter <name> typecheck` and `bun --filter <name> test` (where present) still work.
+
+| Package | Path |
+| --- | --- |
+| `@openturn/example-tic-tac-toe-game` | [examples/games/tic-tac-toe/game](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/tic-tac-toe/game) |
+| `@openturn/example-tic-tac-toe-ui` | [examples/games/tic-tac-toe/ui](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/tic-tac-toe/ui) |
+| `@openturn/example-tic-tac-toe-bots` | [examples/games/tic-tac-toe/bots](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/tic-tac-toe/bots) |
+| `@openturn/example-pig-dice-game` | [examples/games/pig-dice/game](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/pig-dice/game) |
+| `@openturn/example-battleship-game` | [examples/games/battleship/game](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/battleship/game) |
+| `@openturn/example-paper-scissors-rock-game` | [examples/simultaneous-moves/paper-scissors-rock/game](https://github.com/openturn-io/openturn/tree/main/openturn/examples/simultaneous-moves/paper-scissors-rock/game) |
+| `@openturn/example-tic-tac-toe-with-chat-game` | [examples/plugins/tic-tac-toe-with-chat/game](https://github.com/openturn-io/openturn/tree/main/openturn/examples/plugins/tic-tac-toe-with-chat/game) |
+| `@openturn/example-tic-tac-toe-core-game` | [examples/using-core/tic-tac-toe-core/game](https://github.com/openturn-io/openturn/tree/main/openturn/examples/using-core/tic-tac-toe-core/game) |
+| `@openturn/example-paper-scissors-rock-core-game` | [examples/using-core/paper-scissors-rock-core/game](https://github.com/openturn-io/openturn/tree/main/openturn/examples/using-core/paper-scissors-rock-core/game) |
+| `@openturn/example-persistent-wins-core-game` | [examples/using-core/persistent-wins-core/game](https://github.com/openturn-io/openturn/tree/main/openturn/examples/using-core/persistent-wins-core/game) |
+| `@openturn/example-persistent-wins-game` | [examples/using-profiles/persistent-wins/game](https://github.com/openturn-io/openturn/tree/main/openturn/examples/using-profiles/persistent-wins/game) |
+| `@openturn/example-card-discovery-game` | [examples/using-profiles/card-discovery/game](https://github.com/openturn-io/openturn/tree/main/openturn/examples/using-profiles/card-discovery/game) |

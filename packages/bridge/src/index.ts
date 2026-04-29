@@ -1,0 +1,50 @@
+export {
+  BRIDGE_CAPABILITY_PRESETS,
+  BRIDGE_FRAGMENT_KEY,
+  BRIDGE_MESSAGE_NAMESPACE,
+  BridgeCapabilityDescriptorSchema,
+  BridgeCapabilityPreset,
+  BridgeInitSchema,
+  BridgeMessageSchema,
+  BridgeScope,
+  BridgeUnavailableError,
+  decodeBridgeFragment,
+  encodeBridgeFragment,
+  readBridgeFragmentFromLocation,
+  type BridgeCapabilityDescriptor,
+  type BridgeCapabilityPresetMeta,
+  type BridgeCapabilitySlot,
+  type BridgeInit,
+  type BridgeMessage,
+} from "./schema";
+export {
+  createGameBridge,
+  type BatchSourceHandle,
+  type CapabilityEnableOptions,
+  type CapabilityRegistry,
+  type CapabilityRunner,
+  type CreateGameBridgeOptions,
+  type GameBridge,
+  type BridgeLifecycle,
+  type BridgeLifecycleEvent,
+} from "./game";
+export {
+  createBridgeHost,
+  type BatchStreamListener,
+  type BatchStreamPayload,
+  type BatchStreamStatus,
+  type BridgeHost,
+  type BridgeHostEvent,
+  type BridgeHostEventMap,
+  type BridgeHostOptions,
+  type BridgeHostTokenContext,
+  type BridgeHostTokenRefreshResult,
+} from "./host";
+export {
+  createDevTransport,
+  type AnonymousSession,
+  type DevTransport,
+  type DevTransportOptions,
+  type DevLobbySnapshot,
+} from "./dev-transport";
+export type { HostedConnectionDescriptor } from "@openturn/client";

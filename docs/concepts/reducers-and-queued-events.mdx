@@ -1,0 +1,78 @@
+---
+title: Reducers and queued events
+description: Labelled resolvers, deterministic internal events, and how to keep complex flows debuggable.
+sidebarTitle: Reducers
+---
+
+The openturn reducer is the function the engine builds from your game definition. For every dispatched event it picks the matching transition branch, runs the resolver, and commits the result. There is no side-effect pipeline and no preparer/guard/commit split. Just pure branches, chosen strictly.
+
+## Labelled resolvers
+
+A single `from/event` pair can declare many branches with different outcomes. Give each a `label` so inspector and the validation report can tell them apart:
+
+```ts
+transitions: ({ transition }) => [
+  transition("placeMark", {
+    from: "play",
+    to: "won",
+    label: "placeMark:win",
+    resolve: ({ G, event, playerID }) => {
+      const board = placeMark(G.board, event.payload.row, event.payload.col, playerID);
+      if (board === null || getWinner(board) === null) return null;
+      return { G: { board }, result: { winner: playerID }, turn: "increment" };
+    },
+  }),
+  transition("placeMark", {
+    from: "play",
+    to: "play",
+    label: "placeMark:continue",
+    resolve: ({ G, event, playerID }) => {
+      const board = placeMark(G.board, event.payload.row, event.payload.col, playerID);
+      if (board === null || getWinner(board) !== null) return null;
+      return { G: { board }, turn: "increment" };
+    },
+  }),
+],
+```
+
+Exactly one branch should return a result for any given event in any given state. That is the engine's correctness contract.
+
+## Shared branch work
+
+If two branches do the same work to decide whether they match, extract it into a helper and call it from both. The resolver stays pure; the helper stays in your module.
+
+```ts
+function attemptPlace(G, event, playerID) {
+  const board = placeMark(G.board, event.payload.row, event.payload.col, playerID);
+  if (board === null) return null;
+  return { board, winner: getWinner(board) };
+}
+```
+
+## Queued internal events
+
+Some flows want to run follow-up logic without asking a player. Example: after a move ends a round, automatically kick off the next round's setup. Return `enqueue: [{ kind, payload }]` from your resolver:
+
+```ts
+return {
+  G: nextG,
+  enqueue: [{ kind: "startRound", payload: { round: G.round + 1 } }],
+};
+```
+
+The engine commits your result, then runs every queued event in order through the same reducer. Each internal event is recorded in the replay log with `kind: "internal"`, so inspector still show the full chain.
+
+Internal events are deterministic and pure. You cannot call `fetch`, trigger animations, or read the wall clock inside them. If you need the current time, read it from `context.now`, which is the match's recorded time (fixed during replay).
+
+## When not to queue
+
+If a follow-up is mechanical and has no meaningful intermediate state, just compute it inline and return the final `G`. Queue only when:
+
+- The intermediate state is inspectable (a player should see it before the chain resolves).
+- The flow is naturally recursive or multi-step (draw card → reveal → resolve effect).
+- A hosted client needs to observe each step for animation.
+
+## What to read next
+
+- [Turns, phases, and control](/concepts/turns-phases-control) explains how `activePlayers` and turn increments interact.
+- [How-to: debug with inspector](/how-to/debug-with-inspector) shows the inspector UI that renders every resolver branch and internal event.

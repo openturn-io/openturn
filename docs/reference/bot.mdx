@@ -1,0 +1,330 @@
+---
+title: "@openturn/bot"
+description: Plug-and-play AI bots over `@openturn/core`. Author with `defineBot`, attach with `attachLocalBot` or `attachHostedBot`, and the bot drives a seat just like a human player would.
+sidebarTitle: Bot
+---
+
+Worker-safe. The bot package lets a developer drop a traditional game AI into any seat of any openturn game without touching the engine. The same `defineBot({ decide })` shape powers a five-line random bot, a heuristic bot, an alpha-beta minimax bot, and an LLM-backed bot.
+
+## Install
+
+```bash
+bun add @openturn/bot
+```
+
+The package depends on `@openturn/core` and `@openturn/client`. The game itself is untouched — bots consume the public session API.
+
+## Authoring a bot
+
+### `defineBot(bot)`
+
+Identity function that names and types your bot.
+
+```ts
+import { defineBot } from "@openturn/bot";
+import type { ticTacToe } from "./game";
+
+export const randomBot = defineBot<typeof ticTacToe>({
+  name: "random",
+  decide({ legalActions, rng }) {
+    return rng.pick(legalActions);
+  },
+});
+```
+
+The full bot shape:
+
+```ts
+interface Bot<TGame> {
+  name: string;
+  thinkingBudgetMs?: number;     // default 5_000
+  enumerate?: (ctx: { view; snapshot; playerID }) => readonly LegalAction[];
+  decide(context: DecideContext<TGame>): LegalAction | Promise<LegalAction>;
+  init?(context: { playerID }): void | Promise<void>;
+  dispose?(): void;
+}
+```
+
+`decide` may be sync (random, heuristic) or async (MCTS with yields, LLM). The runner awaits whatever you return.
+
+### `DecideContext<TGame>`
+
+```ts
+interface DecideContext<TGame> {
+  readonly playerID: PlayerID;
+  readonly view: GamePlayerView<TGame>;        // sanitized for this seat
+  readonly snapshot: GameSnapshot<TGame> | null; // full snapshot (local hosts only)
+  readonly legalActions: ReadonlyArray<LegalAction>;
+  readonly rng: BotRng;                          // forked from snapshot.meta.rng
+  readonly deadline: { remainingMs(): number; expired(): boolean };
+  readonly signal: AbortSignal;                  // fires when a new turn supersedes this decision
+  readonly simulate: SimulateFn<TGame>;          // dry-run a candidate (local hosts only)
+}
+```
+
+- `view` is what `session.getPlayerView(playerID)` returns. Hidden information is already filtered out.
+- `snapshot` is the full server-side snapshot. It is `null` on hosted (network) hosts because clients only see views.
+- `legalActions` is enumerated for you — see [Legal-action enumeration](#legal-action-enumeration) below.
+- `rng` is reproducible: bots seeded from the same snapshot make the same choices.
+- `signal` aborts when the snapshot moves on while you are thinking. LLM bots should pass it to `fetch` so a stale call exits early.
+
+### `LegalAction`
+
+```ts
+interface LegalAction {
+  event: string;
+  payload: unknown;        // forwarded to dispatch(playerID, event, payload)
+  label?: string;          // optional human-readable label
+}
+```
+
+`payload` is typed as `unknown` rather than `JsonValue` so authors can pass concrete move-arg types (e.g. `PlaceMarkArgs`) without adding index signatures. The engine validates JSON shape at dispatch time.
+
+## Legal-action enumeration
+
+The runner needs to know which moves a seat may legally play. Enumeration resolves in this order:
+
+1. **Game-level hook (preferred).** Add `legalActions` to `defineGame`:
+
+   ```ts
+   import { defineGame } from "@openturn/gamekit";
+
+   export const ticTacToe = defineGame({
+     maxPlayers: 2,
+     // ...existing fields
+     legalActions: ({ G, derived }, playerID) => {
+       if (!derived.activePlayers.includes(playerID)) return [];
+       const out = [];
+       for (let row = 0; row < 3; row += 1) {
+         for (let col = 0; col < 3; col += 1) {
+           if (G.board[row]![col] === null) {
+             out.push({ event: "placeMark", payload: { row, col } });
+           }
+         }
+       }
+       return out;
+     },
+   });
+   ```
+
+   The engine never reads this field — only the bot runtime does.
+
+2. **Per-bot fallback.** If the game has no hook, the bot supplies its own:
+
+   ```ts
+   defineBot({
+     name: "fallback",
+     enumerate: ({ view }) => /* ... */,
+     decide: ({ legalActions, rng }) => rng.pick(legalActions),
+   });
+   ```
+
+3. **Empty.** If neither exists, `legalActions` is `[]` and your `decide` must use `simulate` to explore the action space.
+
+### `enumerateLegalActions(game, snapshot, view, playerID, bot)`
+
+Direct call, normally unnecessary because the runner does this for you. Useful inside MCTS-style searches that re-enumerate from a simulated snapshot.
+
+## Simulating moves
+
+### `simulate(game, snapshot, playerID, action) => SimulateResult`
+
+Dry-run a candidate action against a clone of the snapshot. The original snapshot is never mutated.
+
+```ts
+const result = simulate(ticTacToe, snapshot, "0", { event: "placeMark", payload: { row: 1, col: 1 } });
+
+if (result.ok) {
+  // result.outcome — "endTurn" | "stay" | "finish"
+  // result.next   — GameSnapshot<TGame> after the move
+}
+```
+
+The cloned session is created with `skipValidation: true` because the live session was already validated. RNG resumes from `snapshot.meta.rng`, so MCTS rollouts are deterministic given a forked seed.
+
+`SimulateFn` is also handed to `decide` via `context.simulate(action)` — same function, with `game`, `snapshot`, and `playerID` already bound for you.
+
+`simulate` is unavailable on hosted hosts (the bot doesn't have the full snapshot or the game definition over the wire). The function returns `{ ok: false, reason: "simulate_unavailable_for_host" }` in that case.
+
+## Attaching to a session
+
+### `attachLocalBot(options)` — single seat
+
+```ts
+import { attachLocalBot } from "@openturn/bot";
+import { createLocalSession } from "@openturn/core";
+import { ticTacToe } from "./game";
+
+const raw = createLocalSession(ticTacToe, { match: { players: ticTacToe.playerIDs } });
+
+const { session, runner, bus } = attachLocalBot({
+  session: raw,
+  game: ticTacToe,
+  playerID: "1",
+  bot: randomBot,
+});
+```
+
+The returned `session` is a session-shaped facade. **Use it instead of the raw session in your game loop** — every `applyEvent` through it notifies the runner. Bot 1 watches for its turn and dispatches autonomously; the human side of the loop calls `session.applyEvent("0", ...)` exactly as before.
+
+```ts
+interface AttachLocalBotResult<TGame> {
+  runner: BotRunner;
+  session: LocalGameSession<TGame>;   // the facade — use this in your loop
+  bus: LocalSessionBus<TGame>;        // pass to subsequent attachLocalBot calls
+}
+```
+
+When binding more than one bot to the same session, prefer `attachLocalBots` (next), or pass the returned `bus` to subsequent `attachLocalBot` calls — every host on the same bus hears every dispatch.
+
+### `attachLocalBots(options)` — many seats at once
+
+```ts
+const { session, isBot, whenIdle, detachAll } = attachLocalBots({
+  session: raw,
+  game: ticTacToe,
+  bots: { "1": randomBot },     // seat → bot
+});
+
+// Game loop:
+while (true) {
+  const snapshot = session.getState();
+  if (snapshot.meta.result) break;
+  const active = snapshot.derived.activePlayers[0]!;
+  if (isBot(active)) {
+    await whenIdle(active);                  // wait for the bot to dispatch
+    continue;
+  }
+  // human input...
+  session.applyEvent(active, "placeMark", move);
+}
+
+detachAll();
+```
+
+`whenIdle(playerID)` resolves once the bot at that seat has finished thinking and dispatched (or errored).
+
+### `attachHostedBot(options)` — over the network
+
+For cloud play, a separate process connects to the room as a player and runs the bot:
+
+```ts
+import { createHostedClient } from "@openturn/client";
+import { attachHostedBot } from "@openturn/bot";
+
+const client = createHostedClient({ /* roomID, playerID, getRoomToken */ });
+await client.connect();
+
+const runner = attachHostedBot({
+  client,
+  playerID: "1",
+  bot: randomBot,
+  game: ticTacToe,    // optional — only used to read the legalActions hook
+});
+```
+
+The runner subscribes to the client's snapshot stream and dispatches via `client.dispatchEvent`. `simulate` is unavailable; bots that need search must rely on a per-bot `enumerate` and pure-view heuristics.
+
+The recommended cloud topology is documented in [Concepts: AI bots](/concepts/bots#cloud-deployment).
+
+### `BotRunner`
+
+```ts
+interface BotRunner {
+  isThinking(): boolean;
+  whenIdle(): Promise<void>;
+  detach(): void;
+}
+```
+
+`detach` removes the runner's subscription and aborts any in-flight `decide`. Call it when the match ends or the player is replaced.
+
+### `AttachOptions`
+
+Shared by every `attach*` call:
+
+```ts
+interface AttachOptions {
+  thinkingBudgetMs?: number;          // default bot.thinkingBudgetMs ?? 5_000
+  clock?: { now(): number };          // override for tests
+  onError?: (e: { error: string; reason?: string; action: LegalAction }) => void;
+}
+```
+
+## Lifecycle and cancellation
+
+The session reducer is synchronous; `decide` may be slow. The runner separates them:
+
+1. On every snapshot change, if it is your seat's turn and no decision is in flight, `decide` fires inside a microtask.
+2. While `decide` is awaiting, every new snapshot aborts `signal` and queues a fresh decision once the in-flight one settles.
+3. After `decide` resolves, the runner re-checks `position.turn`. If the turn has advanced (e.g. the opponent reconnected and the room re-synced), the decision is dropped before dispatch.
+4. `host.dispatch(action)` returns the engine's outcome. Invalid moves never mutate state, so `onError` is called and the runner waits for the next change to retry.
+
+LLM bots should plumb `signal` into their HTTP client (`anthropic.messages.create({...}, { signal })`) so a superseded thought is cancelled instead of charged.
+
+## Determinism and reproducibility
+
+### `forkRng(base, botName, playerID, turn)`
+
+```ts
+import { forkRng } from "@openturn/bot";
+
+const rng = forkRng(snapshot.meta.rng, "random", "0", snapshot.position.turn);
+```
+
+The runner does this for you and passes the result as `context.rng`. Two bots on the same snapshot get different but reproducible streams; the same bot on the same snapshot always gets the same stream.
+
+### `createDeadline(budgetMs, clock?) => DeadlineToken`
+
+```ts
+const deadline = createDeadline(2_000);
+deadline.remainingMs();   // ~2000
+deadline.expired();        // false until 2s pass
+```
+
+The runner builds one and hands it to `decide`. Tests can pass a custom `clock` (`{ now(): number }`) for deterministic deadline behaviour.
+
+## Hosts (low-level)
+
+You will not normally construct hosts directly — `attachLocalBot` / `attachHostedBot` do it for you. They exist for advanced uses (custom transports, headless test harnesses).
+
+### `BotHost<TGame>`
+
+```ts
+interface BotHost<TGame> {
+  readonly playerID: PlayerID;
+  getView(): GamePlayerView<TGame> | null;
+  getSnapshot(): GameSnapshot<TGame> | null;
+  isMyTurn(): boolean;
+  dispatch(action: LegalAction): Promise<HostDispatchOutcome>;
+  onChange(listener: () => void): () => void;
+  close(): void;
+}
+```
+
+### `createLocalSessionBus(rawSession)` / `createLocalSessionHost(busOrSession, playerID)`
+
+Build the shared notification bus for a local session, then wrap it as a `BotHost`. The bus exists because multiple bots on the same session must hear each other's dispatches; constructing one explicitly lets you mix bots with custom drivers.
+
+### `createHostedClientHost(client, playerID)`
+
+Wrap a `HostedClient` as a `BotHost`. Used internally by `attachHostedBot`.
+
+## Game-author hooks
+
+`@openturn/bot` adds **one** optional field to `GameDefinition` (and through `defineGame` in gamekit):
+
+```ts
+legalActions?: (
+  context: GameRuleContext<TState, TNode, TPlayers, TControl>,
+  playerID: TPlayers[number],
+) => readonly LegalAction[];
+```
+
+The engine never reads it. The runtime invokes it to surface candidate moves to the bot. Author it once per game and every bot you write — random, heuristic, search-based, LLM — works without per-bot scaffolding.
+
+## Related
+
+- [Concepts: AI bots](/concepts/bots) — design rationale and runtime model.
+- [How-to: add an AI bot to a game](/how-to/add-a-bot) — practical recipe.
+- [Tutorial: tic-tac-toe with bots](/tutorials/tic-tac-toe-bot) — end-to-end walkthrough.

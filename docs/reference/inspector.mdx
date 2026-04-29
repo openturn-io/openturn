@@ -1,0 +1,198 @@
+---
+title: "@openturn/inspector"
+description: "Non-UI inspector logic: build an inspectable timeline from a replay or hosted batch stream."
+sidebarTitle: Inspector
+---
+
+Worker-safe. The engine behind `@openturn/inspector-ui`. You import it directly when you want the timeline data without the UI (to render your own inspector, to diff programmatically, to drive tests).
+
+## Install
+
+```bash
+bun add @openturn/inspector
+```
+
+## Inspector timeline
+
+### `buildInspectorTimelineFromSource(source)`
+
+Single entry point. Accepts either a replay or a hosted-batch source and returns an `InspectorTimeline`.
+
+```ts
+import { materializeSavedReplay } from "@openturn/replay";
+import { buildInspectorTimelineFromSource } from "@openturn/inspector";
+
+const replayTimeline = materializeSavedReplay(myGame, envelope);
+const timeline = buildInspectorTimelineFromSource({
+  kind: "replay",
+  timeline: replayTimeline,
+  game: myGame,
+});
+
+// Or from hosted protocol batches:
+buildInspectorTimelineFromSource({
+  kind: "hosted",
+  entries,
+  graph,
+  queueSemantics,
+  validationReport,
+});
+```
+
+### `InspectorSource<TGame>`
+
+Discriminated union: `{ kind: "replay"; timeline; game }` or `{ kind: "hosted"; entries; graph; queueSemantics; validationReport }`.
+
+### `InspectorTimeline`
+
+```ts
+interface InspectorTimeline {
+  frames: readonly InspectorFrame[];
+  graph: GameGraph;
+  queueSemantics: GameQueueSemantics;
+  validationReport: GameValidationReport;
+}
+```
+
+### `InspectorFrame`
+
+```ts
+interface InspectorFrame {
+  revision: number;
+  turn: number;
+  stepKind: "action" | "internal" | "initial";
+
+  eventName: string | null;
+  actionID: string | null;
+  playerID: string | null;
+  payload: ReplayValue | null;
+
+  snapshot: ReplayValue;
+  playerView: ReplayValue | null;
+
+  transition: GameObservedTransition | null;
+  evaluations: readonly GameTransitionFamilyEvaluation[];
+  diffs: readonly SnapshotDiffEntry[];
+  controlSummary: GameControlSummary | null;
+  controlHandoff: InspectorControlHandoff | null;
+  graphHighlight: InspectorGraphHighlight | null;
+}
+```
+
+### `InspectorStepKind`
+
+`"action" | "internal" | "initial"`.
+
+### `SnapshotDiffEntry`
+
+`{ path, before, after }`: a single change between two frames. `path` is JSONPath-shaped (`"$.board[0]"`).
+
+### `InspectorControlHandoff`
+
+```ts
+interface InspectorControlHandoff {
+  beforeActivePlayers: readonly string[];
+  afterActivePlayers: readonly string[];
+  handoffKind: "same" | "pass" | "shared" | "terminal" | "unknown";
+  handoffLabel: string;
+  summary: string;
+}
+```
+
+Describes how active-player control changed between frames.
+
+### `InspectorGraphHighlight`
+
+```ts
+interface InspectorGraphHighlight {
+  currentNode: string;
+  lastTraversedEdge: { from: string; to: string } | null;
+  pendingTargets: readonly string[];
+  matchedBranch: string | null;
+  controlHandoff: InspectorControlHandoff;
+}
+```
+
+Used by graph-view panels.
+
+## Hosted match support
+
+### `hostedBatchEntriesFromProtocol(input)`
+
+Convert a `ProtocolInitialSnapshotInput` + `ProtocolBatchInput[]` into `HostedBatchEntry[]`, ready to pass as the `entries` field of a `{ kind: "hosted", ... }` source.
+
+### `HostedBatchEntry`, `ProtocolBatchInput`, `ProtocolStepInput`, `ProtocolInitialSnapshotInput`
+
+Input shapes for the hosted builders.
+
+### `InspectorLiveInitialPayload<TPublicState, TResult>` / `InspectorLiveBatchPayload<TPublicState, TResult>`
+
+Shapes the game bridge ships to its hosting shell when the shell requests an inspector batch stream. Lives in `@openturn/inspector` because both the producer (`@openturn/react`, game side) and the consumer (`@openturn/inspector-ui`, shell side) are inspector concerns. Used by `InspectorPanel({ host })` to reassemble a live timeline from bridge traffic.
+
+## Utilities
+
+### `diffReplayValues(before, after)`
+
+Deep diff two JSON values, returning an array of `SnapshotDiffEntry`. Used by the frame builder; exported for direct use in tests and UIs.
+
+## Inspector reducer state
+
+The reducer that drives panel layout, play/pause, and scrub selection lives in this package (consumed by `@openturn/inspector-ui` and `@openturn/react`).
+
+### `inspectorReducer(state, action)` / `createInitialInspectorState()`
+
+Pure reducer + initial-state factory. Pass the result through `useReducer` when building a custom inspector host.
+
+### `getSelectedFrame(timeline, state)` / `clampRevision(state, maxRevision)`
+
+Selectors for picking the frame that corresponds to `state.selectedRevision` and clamping `state.selectedRevision` into `[0, maxRevision]`.
+
+### `InspectorState`
+
+```ts
+interface InspectorState {
+  mode: InspectorMode;                   // "live" | "replay"
+  selectedRevision: number;
+  isPlaying: boolean;
+  speed: PlaybackSpeed;                  // 0.25 | 0.5 | 1 | 2 | 4
+  leftPanelOpen: boolean;
+  rightPanel: RightRailPanel | null;     // "inspector" | "graph" | null
+  panelWidths: PanelWidthsState;         // { left, right, graph }
+  dockCollapsed: boolean;
+}
+```
+
+### `InspectorAction`
+
+Discriminated-union of actions the reducer accepts:
+
+`SET_MODE`, `SELECT_REVISION`, `STEP_FORWARD`, `PLAY_TICK`, `STEP_BACKWARD`, `JUMP_TO_START`, `JUMP_TO_END`, `PLAY`, `PAUSE`, `SET_SPEED`, `TOGGLE_LEFT_PANEL`, `TOGGLE_RIGHT_PANEL`, `TOGGLE_GRAPH_PANEL`, `SET_PANEL_WIDTH`, `HYDRATE_PANEL_WIDTHS`, `TOGGLE_DOCK`, `RETURN_TO_LIVE`, `SYNC_LIVE_HEAD`.
+
+### Panel-width constants
+
+- `DEFAULT_PANEL_WIDTHS` — `{ left: 280, right: 320, graph: 640 }`.
+- `PANEL_WIDTH_LIMITS` — per-panel `{ min, max }`.
+- `clampPanelWidth(key, width)` — round + clamp a width into limits.
+
+### `PLAYBACK_SPEEDS`
+
+`readonly [0.25, 0.5, 1, 2, 4]` — the available values for `state.speed`.
+
+### Type aliases
+
+`InspectorMode`, `RightRailPanel`, `PlaybackSpeed`, `PanelWidthKey`, `PanelWidthsState`.
+
+## Replay cursor integration
+
+### `createCursorInspector(cursor, game)`
+
+Bind a `ReplayCursor` from `@openturn/replay` to a game and get a `CursorInspector<TGame>` with lazy, per-frame queries (`getCurrentFrame`, `getDiff`, `getGraph`, `getObservedTransition`, `getMatchedFamilyEvaluations`, `getRngTrace`, `getControlSummary`, `getQueueSemantics`, `getValidationReport`, `getPreviousFrame`). Use this when you want to tie an inspector to a cursor's live position; most new code uses `buildInspectorTimelineFromSource` instead.
+
+<Note>
+This function returns plain timeline data. The React component with similar name lives on `createInspector(bindings).ReplayInspector` in [`@openturn/inspector-ui`](/reference/inspector-ui).
+</Note>
+
+## See also
+
+- [Reference: inspector-ui](/reference/inspector-ui) for the React UI that wraps these.
+- [How-to: debug with inspector](/how-to/debug-with-inspector).

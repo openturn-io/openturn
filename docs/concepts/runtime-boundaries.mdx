@@ -1,0 +1,71 @@
+---
+title: Runtime boundaries
+description: Openturn packages are classified by what they execute, not where they are developed. This page maps the lines.
+sidebarTitle: Runtimes
+---
+
+Openturn has three runtime classes. Every package is labelled in its `package.json` under `openturn.runtime`, and CI enforces the labels. Knowing them saves you from importing a Bun-only helper into a package that will one day run in a Cloudflare Worker.
+
+<Note>
+  The word *"runtime"* appears in two places in openturn and they mean different things:
+
+  - `package.json` → `openturn.runtime`: **`"worker" | "browser" | "Bun"`** — the JavaScript host the package is allowed to run in. That is what this page is about.
+  - `app/openturn.ts` → `metadata.runtime`: **`"local" | "multiplayer"`** — whether the app runs entirely in the player's browser or talks to a hosted server. Covered in [local vs hosted](/concepts/local-vs-hosted).
+</Note>
+
+## The three runtimes
+
+**Worker** — runs in Cloudflare Workers, Durable Objects, browsers, Node, Bun, or any modern ESM host. No Node builtins, no Bun globals, no `Buffer`, no filesystem. All authoritative game logic and protocol code is worker-safe.
+
+**Browser** — runs in a modern browser. Can use DOM, `window`, React. Must not import Node/Bun APIs.
+
+**Bun** — runs locally with Bun. Can use Bun APIs, `node:*` modules, and the filesystem. Reserved for tooling: CLIs, dev servers, build pipelines, scripts.
+
+## Current mapping
+
+| Package | Runtime |
+| --- | --- |
+| `@openturn/core` | worker |
+| `@openturn/json` | worker |
+| `@openturn/gamekit` | worker |
+| `@openturn/protocol` | worker |
+| `@openturn/replay` | worker |
+| `@openturn/server` | worker |
+| `@openturn/client` | worker |
+| `@openturn/react` | browser |
+| `@openturn/bridge` | browser |
+| `@openturn/inspector` | browser |
+| `@openturn/inspector-ui` | browser |
+| `@openturn/deploy` | Bun |
+| `@openturn/cli` | Bun |
+| `examples/*/game` | worker |
+| `examples/*/app` | browser |
+| `examples/*/cli` | Bun |
+
+## Why worker-safe by default
+
+The authoritative runtime (the one that decides what actually happened) has to work in Cloudflare Durable Objects, because that is where hosted matches run. Everything upstream of that (game definition, reducer, protocol, replay) has to be the same code locally as in production. If it imports `fs` or `Buffer`, it cannot.
+
+This is also why `G`, events, and views are JSON-only. JSON is the lingua franca of "things that survive structured-clone to a Durable Object."
+
+## Writing your own package
+
+If you build a new package, declare its runtime in the `package.json`:
+
+```json
+{
+  "name": "@yourorg/your-package",
+  "openturn": {
+    "runtime": "worker"
+  }
+}
+```
+
+Extend the corresponding `tsconfig` (`tsconfig.worker.json`, `tsconfig.browser.json`, or `tsconfig.bun.json`) so the language service refuses Node/Bun APIs in worker packages.
+
+If a package mixes worker logic with Bun-only tooling, split it. Cutover is preferred over compatibility shims.
+
+## What to read next
+
+- [Local vs hosted architecture](/concepts/local-vs-hosted) for how worker and browser packages fit together in a real app.
+- [Reference: packages overview](/reference/packages) for the per-package index.

@@ -1,0 +1,174 @@
+---
+title: Bind a game to React
+description: Use `@openturn/react` to turn an authored game into a typed React context with hooks.
+sidebarTitle: React
+---
+
+`@openturn/react` wraps `@openturn/core` in a React-shaped API. One function turns a game definition into typed hooks: `createOpenturnBindings`.
+
+The same component runs unchanged across `openturn dev` (local development) and openturn-cloud (production). The runtime is declared once at bindings-creation time, and the provider auto-detects everything else.
+
+## One configuration, every environment
+
+```tsx
+import { createOpenturnBindings } from "@openturn/react";
+import { ticTacToe } from "./game";
+
+// Local game — runs in-process. `match` is the seated subset for this session.
+const { OpenturnProvider, useMatch } = createOpenturnBindings(ticTacToe, {
+  runtime: "local",
+  match: { players: ticTacToe.playerIDs },
+});
+
+// Multiplayer game — connects to the server via the bridge fragment that
+// `openturn dev` and openturn-cloud both inject. No `match` needed; the
+// server holds the authoritative state.
+const { OpenturnProvider, useRoom } = createOpenturnBindings(ticTacToe, {
+  runtime: "multiplayer",
+});
+```
+
+The provider is then zero-prop everywhere it appears:
+
+```tsx
+<OpenturnProvider>
+  <Board />
+</OpenturnProvider>
+```
+
+That same expression runs locally under `openturn dev` and in production behind openturn-cloud — there is nothing to switch.
+
+## Local play
+
+```tsx
+import { createOpenturnBindings } from "@openturn/react";
+import { ticTacToe } from "./game";
+
+const { useMatch } = createOpenturnBindings(ticTacToe, {
+  runtime: "local",
+  match: { players: ticTacToe.playerIDs },
+});
+
+function Board() {
+  const view = useMatch();
+  if (view.mode !== "local") throw new Error("Board requires a local match.");
+  const { snapshot, dispatch, reset, getPlayerView } = view.state;
+  const active = snapshot.derived.activePlayers[0]!;
+  return (
+    <button onClick={() => dispatch.placeMark(active, { row: 0, col: 0 })}>
+      Move at 0,0
+    </button>
+  );
+}
+```
+
+`useMatch()` returns a mode-discriminated `MatchView<TGame>`. Narrow on `view.mode === "local"` and read `view.state` for:
+
+- `snapshot` — the current game state. Subscribes the component to every state change.
+- `dispatch` — the typed dispatch map (`dispatch.placeMark(playerID, args)` is type-checked).
+- `reset`, `lastBatch`, `replayData`, `status`, `game` — lifecycle and metadata.
+- `getPlayerView(playerID)` — the view shaped for a specific seat (hidden-info safe).
+
+The dispatch map is typed from your game's events. Local mode passes `playerID` because the in-process session represents every seat.
+
+For local-runtime apps, the host shell (`openturn dev` locally, openturn-cloud in production) wraps your `Page` in `<OpenturnProvider>` automatically — your `Page` is a thin renderer of the experience, and any descendant can call `useMatch()`.
+
+## Multiplayer play
+
+Use `useMatch` when you only need the in-game UI (no lobby):
+
+```tsx
+import { createOpenturnBindings } from "@openturn/react";
+import { ticTacToe } from "./game";
+
+const { OpenturnProvider, useMatch } = createOpenturnBindings(ticTacToe, {
+  runtime: "multiplayer",
+});
+
+export function App() {
+  return (
+    <OpenturnProvider>
+      <Board />
+    </OpenturnProvider>
+  );
+}
+
+function Board() {
+  const view = useMatch();
+  // view.mode is "hosted" here.
+  const match = view.state;
+  if (match.snapshot === null) return <p>{match.status}</p>;
+  return (
+    <button
+      disabled={!match.canDispatch.placeMark}
+      onClick={() => match.dispatch.placeMark({ row: 0, col: 0 })}
+    >
+      Move at 0,0
+    </button>
+  );
+}
+```
+
+Differences from local:
+
+- `dispatch.placeMark(args)` does not take a player ID. The server knows who you are from the room token.
+- `match.snapshot` can be `null` until the initial sync.
+- `match.status` reflects the connection lifecycle (`idle | connecting | connected | disconnected | error`).
+- `match.canDispatch.placeMark` gates the button based on server-reported active players and result state.
+
+## Lobby + game together
+
+When your app needs a lobby first, use `useRoom` instead of `useMatch`. It exposes the full `HostedRoomState` (phase, lobby, game, bridge, invite URL):
+
+```tsx
+import { createOpenturnBindings, Lobby } from "@openturn/react";
+
+const { OpenturnProvider, useRoom } = createOpenturnBindings(ticTacToe, {
+  runtime: "multiplayer",
+});
+
+export function App() {
+  return (
+    <OpenturnProvider>
+      <Room />
+    </OpenturnProvider>
+  );
+}
+
+function Room() {
+  const room = useRoom();
+  if (room.lobby !== null) return <Lobby lobby={room.lobby} inviteURL={room.inviteURL} />;
+  if (room.game !== null) return <GameBoard match={room.game} />;
+  return <p>{room.phase}</p>;
+}
+```
+
+`room.phase` walks through `idle → connecting → lobby → transitioning → game`. See [how-to: build a lobby](/how-to/build-a-lobby).
+
+## Tests and Storybook
+
+The provider's optional `match` prop forces in-process mode with a fixture you control — useful for tests, Storybook, or a load-saved-game flow inside your dev shell. It overrides whatever the bindings declared:
+
+```tsx
+const bindings = createOpenturnBindings(game, {
+  runtime: "local",
+  match: { players: ticTacToe.playerIDs },
+});
+
+function renderWithFixture() {
+  const fixture = bindings.createLocalMatch({ match: { players: ticTacToe.playerIDs } });
+  return render(
+    <bindings.OpenturnProvider match={fixture}>
+      <Board />
+    </bindings.OpenturnProvider>,
+  );
+}
+```
+
+Each call to `createLocalMatch` produces a fresh in-process store, so tests stay isolated.
+
+## Related
+
+- [Tutorial: tic-tac-toe with gamekit](/tutorials/tic-tac-toe-gamekit) walks through the local binding.
+- [Tutorial: tic-tac-toe multiplayer](/tutorials/tic-tac-toe-multiplayer) uses `useRoom()`.
+- [Reference: react](/reference/react) is the hook reference.

@@ -1,0 +1,250 @@
+---
+title: "@openturn/gamekit"
+description: Move-first authoring on top of `@openturn/core`. Moves, phases, outcomes, permissions, turns, views.
+sidebarTitle: GameKit
+---
+
+Worker-safe. Compiles to a normal `GameDefinition<...>` from `@openturn/core`. Every gamekit game is a core game.
+
+## Install
+
+```bash
+bun add @openturn/gamekit
+```
+
+## Authoring
+
+### `defineGame(definition)`
+
+```ts
+export const game = defineGame({
+  maxPlayers: 2,                  // pool size — generates IDs "0",..,"N-1"
+  // minPlayers: 2,               // optional; defaults to maxPlayers
+  // playerIDs: ["white","black"] as const,  // opt-in for named seats
+  setup: (context) => ({ /* initial G */ }),
+  turn: turn.roundRobin(),
+  initialPhase: "play",
+  phases: { play: { label: "Take your turn" } },
+  computed: { /* derived values */ },
+  moves: ({ move, queue }) => ({ /* ... */ }),
+  views: { public: ({ G }) => ({ /* ... */ }) },
+  core: { /* optional escape hatch to core primitives */ },
+});
+```
+
+`maxPlayers`, `playerIDs`, and `minPlayers` work the same as in core's
+`defineGame` — see [`@openturn/core`](/reference/core#definegame-definition).
+Pass exactly one of `maxPlayers` (default IDs) or `playerIDs` (named seats);
+set `minPlayers` lower than the pool size for variable-player games.
+
+### `move(definition)`
+
+Build a move. Supports three forms:
+
+```ts
+move({ run: ({ G, move }) => move.stay() })
+move<PlaceMarkArgs>({ run: (...) => ... })       // typed args
+move.withArgs<PlaceMarkArgs>()({ run: (...) => ... })  // currying for generic helpers
+```
+
+A move definition:
+
+```ts
+interface GamekitMoveDefinition {
+  args?: TArgs;
+  canPlayer?: (context) => boolean;
+  phases?: readonly TPhase[];
+  run: (context) => MoveOutcome;
+}
+```
+
+### `defineMoves(moves)`
+
+Typing helper for a `{ [name]: move(...) }` record. Optional; inlining the record works too.
+
+### `defineProfile(config)`
+
+Gamekit-flavored re-export of core's `defineProfile`. Same signature, but defaults the result type to `GamekitResultState | null` so `commit({ result })` gets `result.winner` typed without a cast. See [Profiles](#profiles) below.
+
+### `GamekitSetupContext<TPlayers, TProfile>`
+
+The context passed to `setup(context)`. Provides:
+
+```ts
+interface GamekitSetupContext<TPlayers, TProfile> {
+  match: MatchInput<TPlayers>;
+  now: number;
+  /** Per-player profile snapshot, hydrated with defaults for any seated player who had no stored profile. Empty object when the game declares no profile. */
+  profiles: Readonly<PlayerRecord<TPlayers, TProfile>>;
+  seed: string;
+}
+```
+
+Use the typed `match` (with `match.players`) so helpers like `roster.record(match, 0)` narrow to the declared player IDs. RNG is created from `seed` by gamekit itself; setup runs before any random draws.
+
+### Outcomes (`move.*`)
+
+| Helper | Compiles to |
+| --- | --- |
+| `move.stay(patch?)` | same phase, `turn: "preserve"` |
+| `move.endTurn(patch?)` | same phase, `turn: "increment"` |
+| `move.goto(phase, patch?, { endTurn? })` | target phase |
+| `move.win(winnerID, patch?)` | terminal `__gamekit_won` with `result.winner` |
+| `move.draw(patch?)` | terminal `__gamekit_drawn` with `result.draw` |
+| `move.invalid(reason?, details?)` | `rejectTransition(reason, details)` |
+
+Every non-invalid outcome accepts `{ enqueue: [...] }` for internal follow-up events.
+
+## Permissions
+
+### `permissions.currentPlayer`
+
+Built-in predicate: returns `true` when `player.id === turn.currentPlayer`. Use as `canPlayer`.
+
+## Turn policies
+
+### `turn.roundRobin()`
+
+The only built-in turn policy. Assigns `currentPlayer` as `players[(turn - 1) % players.length]`.
+
+## Views
+
+### `view.computed(context, ...keys)`
+
+Pluck computed values into a view:
+
+```ts
+view.computed(context, "submittedCount", "scoreLeader")
+// returns { submittedCount, scoreLeader }
+```
+
+### `view.merge(base, context, ...keys)`
+
+Spread computed values into an existing object:
+
+```ts
+view.merge({ board: G.board }, context, "submittedCount")
+```
+
+## Modifiers
+
+Helpers for composing modular effects (auras, buffs, item effects) into a final value through a callback-based modifier pipeline. Re-exported under `modifiers` from `./modifiers`.
+
+- `modifiers.evaluateValue({ base, context, modifiers, stageOrder? })` — fold an ordered list of modifiers over `base`, returning `{ value, applied }`.
+- `modifiers.evaluateNumber(...)` — same as `evaluateValue` with `TValue = number`.
+
+```ts
+const { value, applied } = modifiers.evaluateValue({
+  base: 10,
+  context: { unit },
+  modifiers: [
+    { id: "armor", stage: "defense", apply: (current) => current * 0.8 },
+    { id: "shield", stage: "defense", priority: 10, apply: (current) => current - 2 },
+    { id: "crit", apply: (current, ctx) => ctx.unit.crit ? current * 2 : current },
+  ],
+  stageOrder: ["offense", "defense"],
+});
+```
+
+Modifiers are sorted by `stage` (using `stageOrder` plus first-seen order for unknown stages), then `priority` (higher first), then declaration order. Pass an empty `context` object (`{}`) when you do not need a context.
+
+### Modifier types
+
+```ts
+interface Modifier<TValue, TContext = void> {
+  id: string;
+  apply(current: TValue, context: TContext): TValue;
+  priority?: number;
+  stage?: string;                            // defaults to "default"
+}
+
+interface AppliedModifier {
+  id: string;
+  index: number;
+  priority: number;
+  stage: string;
+}
+
+interface ModifierEvaluation<TValue> {
+  value: TValue;
+  applied: readonly AppliedModifier[];
+}
+
+interface EvaluateValueOptions<TValue, TContext = void> {
+  base: TValue;
+  context: TContext;
+  modifiers: readonly Modifier<TValue, TContext>[];
+  stageOrder?: readonly string[];
+}
+
+interface EvaluateNumberOptions<TContext = void>
+  extends EvaluateValueOptions<number, TContext> {}
+```
+
+`Modifier.id` must be non-empty; `stageOrder` entries must be non-empty and unique (the helper throws otherwise).
+
+## Profiles
+
+Gamekit's `defineGame` accepts an optional `profile` field that hydrates `match.profiles` before setup and runs a pure `commit` function when the match terminates. The API is re-exported from `@openturn/core`:
+
+```ts
+import { defineGame, defineProfile } from "@openturn/gamekit";
+
+const profile = defineProfile<{ wins: number }>({
+  schemaVersion: "1",
+  default: { wins: 0 },
+  commit: ({ result }) => {
+    const winner = (result as { winner?: string } | null)?.winner;
+    return winner === undefined ? {} : { [winner]: [{ op: "inc", path: ["wins"], value: 1 }] };
+  },
+});
+
+export const game = defineGame({
+  maxPlayers: 2,
+  profile,
+  setup: () => ({ over: false }),
+  moves: ({ move }) => ({
+    tap: move({ run: ({ player, move: m }) => m.win(player.id) }),
+  }),
+});
+```
+
+Gamekit's result is `{ draw?: true; winner?: PlayerID }`, so `commit` reads `result.winner`. Also re-exported: `applyProfileDelta`, `computeProfileCommit`, `validateProfileDelta`, and the delta grammar types. See [concepts: persistent profiles](/concepts/persistent-profiles) and [how-to: persist player state](/how-to/persist-player-state).
+
+## Core escape hatch
+
+For the rare case gamekit's shape does not fit, pass raw core pieces via `core`:
+
+```ts
+defineGame({
+  maxPlayers: 2,
+  setup: () => ({ ... }),
+  moves: { ... },
+  core: {
+    states: { archived: { activePlayers: () => [] } },
+    transitions: [/* raw core transitions */],
+    selectors: { /* ... */ },
+    initial: "archived",
+    views: { /* ... */ },
+  },
+});
+```
+
+## Key types
+
+- **`GamekitDefinition<...>`** — the shape of the input definition.
+- **`GamekitMoveDefinition<...>`** — a single move.
+- **`GamekitPhaseConfig<...>`** — a phase's configuration (activePlayers, label).
+- **`GamekitState<TState>`** — the internal wrapper type (`TState & { __gamekit: GamekitInternalState }`). You rarely touch it; it is exposed for typing views in edge cases.
+- **`GamekitInternalState`** — the private compartment gamekit owns inside a game's `G`. Exposed at runtime as `G.__gamekit`. Carries the optional `result: GamekitResultState | null` plus arbitrary JSON-shaped slots gamekit reserves for future internal state. You should not write to it directly; use `move.win` / `move.draw` / `move.invalid` instead.
+- **`GamekitResultState`** — `{ draw?: true; winner?: PlayerID }`.
+- **`GamekitViews<...>`** — the shape of the optional `views` field on a `GamekitDefinition`.
+- **`MovePlayerContext`, `MovePermissionContext`, `MoveRunContext`** — the contexts passed to `canPlayer` and `run`.
+- **`MoveOutcome`, `MoveHelpers`** — outcome and helper types.
+- **`TurnContext`, `TurnPolicy`** — turn types.
+
+## See also
+
+- [Concepts: gamekit](/concepts/gamekit)
+- [Concepts: gamekit moves and outcomes](/concepts/gamekit-moves-and-outcomes)
+- [How-to: author with gamekit](/how-to/author-with-gamekit)

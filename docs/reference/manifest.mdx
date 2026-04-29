@@ -1,0 +1,135 @@
+---
+title: "@openturn/manifest"
+description: Deployment manifest schema and HTML generator, shared by the build tool and the cloud shell.
+sidebarTitle: Manifest
+---
+
+Worker-safe leaf. Owns the shape of `manifest.json` emitted by `@openturn/deploy` and read back by the cloud shell. Both sides depend on this package so the schema stays a single source of truth.
+
+## Install
+
+```bash
+bun add @openturn/manifest
+```
+
+## Types
+
+### `OpenturnDeploymentManifest`
+
+The on-disk manifest for a deployed game:
+
+```ts
+interface OpenturnDeploymentManifest {
+  deploymentID?: string;
+  projectID?: string;
+  runtime: "local" | "multiplayer";
+  gameName: string;
+  entry: string;
+  styles: readonly string[];
+  assets: readonly string[];
+  build: { at: string; openturn: Record<string, string> };
+  multiplayer?: OpenturnMultiplayerManifest;
+  inspector?: OpenturnInspectorPolicy;
+}
+```
+
+`deploymentID` / `projectID` are optional because the build-time manifest may not know them yet; the cloud control plane fills them in when the manifest is promoted to a deployment record.
+
+### `OpenturnInspectorPolicy`
+
+```ts
+interface OpenturnInspectorPolicy {
+  mode: "always" | "dev-only" | "never";
+  allowedRoles?: readonly ("owner" | "player" | "spectator")[];
+}
+```
+
+Controls who can open the in-shell inspector for this deployment. Omit to fall back to the cloud default. `allowedRoles` further restricts access within the chosen mode.
+
+### `OpenturnMultiplayerManifest`
+
+```ts
+interface OpenturnMultiplayerManifest {
+  gameKey: string;
+  deploymentVersion: string;
+  schemaVersion: string;
+  players: readonly string[];
+  minPlayers?: number;
+  serverBundleDigest: string;
+}
+```
+
+### Scalar type aliases
+
+The string-literal unions used inside the manifest types — exported separately so consumers can narrow on them or build their own UIs around the same vocabulary.
+
+```ts
+type OpenturnDeploymentRuntime = "local" | "multiplayer";
+type OpenturnInspectorMode = "always" | "dev-only" | "never";
+type OpenturnInspectorRole = "owner" | "player" | "spectator";
+```
+
+## Validation
+
+### `parseDeploymentManifest(value)`
+
+Zod-parses unknown JSON into an `OpenturnDeploymentManifest`, or throws. Multiplayer deployments must include a `multiplayer` block; local deployments must omit it.
+
+```ts
+import { parseDeploymentManifest } from "@openturn/manifest";
+
+try {
+  const manifest = parseDeploymentManifest(await res.json());
+  if (manifest.runtime === "multiplayer") {
+    // manifest.multiplayer is guaranteed present
+    connectToRoom(manifest.multiplayer.gameKey);
+  }
+} catch (err) {
+  // The thrown error carries a zod-shaped `issues` array.
+  console.error("invalid deployment manifest", err);
+}
+```
+
+### `OpenturnDeploymentManifestSchema` / `OpenturnMultiplayerManifestSchema`
+
+The underlying Zod schemas if you need `.safeParse` or composition — for example, wrapping the manifest inside your own control-plane response envelope:
+
+```ts
+import { z } from "zod";
+import { OpenturnDeploymentManifestSchema } from "@openturn/manifest";
+
+const DeploymentResponseSchema = z.object({
+  deployment: OpenturnDeploymentManifestSchema,
+  createdAt: z.string().datetime(),
+});
+```
+
+## Lifecycle
+
+The manifest schema is the single source of truth shared across three boundaries:
+
+1. **Build time.** `@openturn/deploy` emits `manifest.json` beside the built assets. `deploymentID` and `projectID` are typically absent at this stage; the cloud control plane fills them in when it promotes the build to a deployment record.
+2. **Serve time.** The cloud shell reads the manifest and passes it to `createDeploymentHTML` to generate the iframe's `index.html`. The `multiplayer` block (if present) tells the shell to issue a room token instead of rendering a local session.
+3. **Dispatch time.** The `serverBundleDigest` is how the cloud pins the game-worker bundle in Cloudflare. The `schemaVersion` is what gates profile migrations and determines whether an older stored snapshot can be replayed on the current deployment.
+
+Because the schema is shared, breaking it in one package breaks the whole pipeline. Add new fields as optional when possible, or bump the consumer versions in lockstep.
+
+## HTML generation
+
+### `createDeploymentHTML({ manifest, assetBaseURL? })`
+
+Produces the static `index.html` that bootstraps the game bundle. Pass `assetBaseURL` when serving the HTML and assets from different origins (e.g. cloud serves from a CDN prefix); omit it when `index.html` lives beside its assets.
+
+```ts
+import { createDeploymentHTML } from "@openturn/manifest";
+const html = createDeploymentHTML({ manifest, assetBaseURL: "https://cdn.example/deployments/abc" });
+```
+
+### `normalizeAssetPath(asset)`
+
+Strip a leading `./` or `/` from an asset path. Used internally when resolving manifest entries against an `assetBaseURL`; exported for tooling that needs to match the same normalization rule the HTML generator uses.
+
+## See also
+
+- [Reference: deploy](/reference/deploy) for the build tool that writes manifests.
+- [Reference: bridge](/reference/bridge) for the wire contract used once the deployed iframe is live.

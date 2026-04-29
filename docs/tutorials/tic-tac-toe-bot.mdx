@@ -1,0 +1,354 @@
+---
+title: Tic-tac-toe with bots
+description: Add an AI opponent to the tic-tac-toe CLI — a five-line random bot, then an alpha-beta minimax bot — without changing the game definition's logic.
+sidebarTitle: Bots
+---
+
+This tutorial picks up where [Tic-tac-toe with gamekit](/tutorials/tic-tac-toe-gamekit) leaves off. Same game, same `app`, same `cli` — we add one optional field to the game and a sibling `bots` package, then wire them into the CLI so a human can play against the computer.
+
+Reference code: [`examples/games/tic-tac-toe/bots`](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/tic-tac-toe/bots) and the bot-aware CLI at [`examples/games/tic-tac-toe/cli`](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/tic-tac-toe/cli).
+
+## 1. Add the `legalActions` hook to the game
+
+The bot runtime needs to know which moves a seat may legally play. Add one field to `defineGame` in `game/src/index.ts`:
+
+```ts {3-16}
+export const ticTacToe = defineGame({
+  maxPlayers: 2,
+  legalActions: ({ G, derived }, playerID) => {
+    if (!derived.activePlayers.includes(playerID)) return [];
+    const out: { event: string; payload: PlaceMarkArgs; label: string }[] = [];
+    for (let row = 0; row < G.board.length; row += 1) {
+      const cells = G.board[row]!;
+      for (let col = 0; col < cells.length; col += 1) {
+        if (cells[col] === null) {
+          out.push({ event: "placeMark", payload: { row, col }, label: `(${row},${col})` });
+        }
+      }
+    }
+    return out;
+  },
+  // ...existing fields: setup, turn, moves, views, computed
+});
+// playerIDs is now part of the definition; the legacy `defineGame(match, ...)` form
+// is gone — see [Reference: core](/reference/core#definegame-definition).
+```
+
+Three things are worth noting:
+
+- The engine never reads this field. It is metadata for the bot runtime. Authors who don't ship bots can omit it.
+- We return `[]` when the seat is not in `derived.activePlayers`, so the runner knows it is not this seat's turn.
+- `payload` is `{ row, col }` — the same shape the existing `placeMark` move accepts.
+
+## 2. Create the `bots` package
+
+Same workspace, sibling to `game/`, `app/`, and `cli/`.
+
+### `bots/package.json`
+
+```json
+{
+  "name": "@my/tic-tac-toe-bots",
+  "private": true,
+  "type": "module",
+  "openturn": { "runtime": "worker" },
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "bun x tsc -p tsconfig.json" },
+  "dependencies": {
+    "@openturn/bot": "workspace:*",
+    "@openturn/core": "workspace:*",
+    "@my/tic-tac-toe-game": "workspace:*"
+  }
+}
+```
+
+### `bots/tsconfig.json`
+
+```json
+{
+  "extends": "../../../../tsconfig.worker.json",
+  "compilerOptions": { "composite": true },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"]
+}
+```
+
+## 3. Write the random bot
+
+`bots/src/random.ts`:
+
+```ts
+import { defineBot } from "@openturn/bot";
+import type { ticTacToe } from "@my/tic-tac-toe-game";
+
+export const randomBot = defineBot<typeof ticTacToe>({
+  name: "random",
+  decide({ legalActions, rng }) {
+    if (legalActions.length === 0) {
+      throw new Error("randomBot: no legal actions available");
+    }
+    return rng.pick(legalActions);
+  },
+});
+```
+
+That is the entire bot. `rng` is forked from the snapshot's RNG and salted by bot name + seat + turn, so identical seeds produce identical bot games.
+
+## 4. Write the minimax bot
+
+Tic-tac-toe is small enough that depth-9 alpha-beta minimax solves the position exactly. `bots/src/minimax.ts`:
+
+```ts
+import { defineBot, simulate } from "@openturn/bot";
+import { ticTacToe } from "@my/tic-tac-toe-game";
+
+const OTHER: Record<string, string> = { "0": "1", "1": "0" };
+
+interface ResultLike { winner?: string; draw?: boolean }
+
+function legalForSnapshot(snapshot: { G: { board: (string | null)[][] } }, playerID: string) {
+  const out = [];
+  for (let row = 0; row < snapshot.G.board.length; row += 1) {
+    const cells = snapshot.G.board[row]!;
+    for (let col = 0; col < cells.length; col += 1) {
+      if (cells[col] === null) {
+        out.push({ event: "placeMark", payload: { row, col } });
+      }
+    }
+  }
+  return out;
+}
+
+function evaluate(snapshot: { meta: { result: ResultLike | null } }, me: string): number | null {
+  const r = snapshot.meta.result;
+  if (r === null || r === undefined) return null;
+  if (r.draw === true) return 0;
+  if (r.winner === me) return 10;
+  if (typeof r.winner === "string") return -10;
+  return 0;
+}
+
+function search(snapshot: never, toMove: string, me: string, depth: number, alpha: number, beta: number): number {
+  const terminal = evaluate(snapshot as never, me);
+  if (terminal !== null) return terminal - Math.sign(terminal) * depth;
+
+  const moves = legalForSnapshot(snapshot as never, toMove);
+  if (moves.length === 0) return 0;
+
+  if (toMove === me) {
+    let best = -Infinity;
+    for (const action of moves) {
+      const sim = simulate(ticTacToe, snapshot, toMove as never, action);
+      if (!sim.ok) continue;
+      best = Math.max(best, search(sim.next as never, OTHER[toMove]!, me, depth + 1, alpha, beta));
+      alpha = Math.max(alpha, best);
+      if (alpha >= beta) break;
+    }
+    return best;
+  }
+  let best = Infinity;
+  for (const action of moves) {
+    const sim = simulate(ticTacToe, snapshot, toMove as never, action);
+    if (!sim.ok) continue;
+    best = Math.min(best, search(sim.next as never, OTHER[toMove]!, me, depth + 1, alpha, beta));
+    beta = Math.min(beta, best);
+    if (alpha >= beta) break;
+  }
+  return best;
+}
+
+export const minimaxBot = defineBot<typeof ticTacToe>({
+  name: "minimax",
+  thinkingBudgetMs: 5_000,
+  decide({ legalActions, snapshot, playerID }) {
+    if (legalActions.length === 0) throw new Error("minimaxBot: no legal actions");
+    if (snapshot === null) return legalActions[0]!;     // hosted host: simulate unavailable
+
+    let bestAction = legalActions[0]!;
+    let bestScore = -Infinity;
+    for (const action of legalActions) {
+      const sim = simulate(ticTacToe, snapshot, playerID, action);
+      if (!sim.ok) continue;
+      const score = search(sim.next as never, OTHER[playerID]!, playerID, 1, -Infinity, Infinity);
+      if (score > bestScore) { bestScore = score; bestAction = action; }
+    }
+    return bestAction;
+  },
+});
+```
+
+Three things keep this honest:
+
+- We use `simulate` from `@openturn/bot` to dry-run candidates. It clones the snapshot, applies the move, and returns the resulting snapshot — the live session is never touched.
+- Alpha-beta pruning + depth-as-tiebreaker (`terminal - Math.sign(terminal) * depth`) makes the bot prefer faster wins and slower losses.
+- The hosted-host fallback (`snapshot === null`) returns a legal action — search-based bots run as in-process bots; over the network, switch to a heuristic strategy.
+
+### `bots/src/index.ts`
+
+```ts
+export { randomBot } from "./random";
+export { minimaxBot } from "./minimax";
+```
+
+## 5. Wire bots into the CLI
+
+The CLI already pulls `createLocalSession` and the game definition. Patch it to accept a `--bot <seat>=<name>` flag:
+
+```ts
+import { stdout } from "node:process";
+import { attachLocalBots, type Bot } from "@openturn/bot";
+import { createLocalSession, type PlayerID } from "@openturn/core";
+import { minimaxBot, randomBot } from "@my/tic-tac-toe-bots";
+import { ticTacToe } from "@my/tic-tac-toe-game";
+
+const cliArgs = Bun.argv.slice(2);
+const botFlags = parseBotFlags(cliArgs);     // e.g. { "1": "random" }
+
+const raw = createLocalSession(ticTacToe, { match: { players: ticTacToe.playerIDs } });
+
+const bots: Partial<Record<PlayerID, Bot<typeof ticTacToe>>> = {};
+for (const [seat, name] of Object.entries(botFlags)) {
+  const bot = name === "random" ? randomBot : name === "minimax" ? minimaxBot : null;
+  if (bot === null) {
+    console.error(`Unknown bot "${name}". Available: random, minimax.`);
+    process.exit(1);
+  }
+  bots[seat] = bot;
+}
+
+const { session, isBot, whenIdle, detachAll } = attachLocalBots({
+  session: raw,
+  game: ticTacToe,
+  bots,
+});
+
+try {
+  await play();
+} finally {
+  detachAll();
+}
+
+async function play() {
+  while (true) {
+    const snapshot = session.getState();
+    if (snapshot.meta.result?.winner) {
+      console.log(`Winner: ${snapshot.meta.result.winner}`);
+      return;
+    }
+    if (snapshot.meta.result?.draw) {
+      console.log("Draw");
+      return;
+    }
+
+    const playerID = snapshot.derived.activePlayers[0]!;
+
+    if (isBot(playerID)) {
+      console.log(`Bot ${playerID} thinking...`);
+      await whenIdle(playerID);
+      continue;
+    }
+
+    // ... existing human-input path: read stdin, parse, applyEvent
+  }
+}
+
+function parseBotFlags(args: readonly string[]): Record<PlayerID, string> {
+  const out: Record<PlayerID, string> = {};
+  for (let i = 0; i < args.length; i += 1) {
+    if (args[i] !== "--bot") continue;
+    const value = args[i + 1];
+    if (value === undefined) throw new Error("--bot expects <seat>=<name>");
+    const eq = value.indexOf("=");
+    if (eq < 0) throw new Error(`--bot value "${value}" must be <seat>=<name>`);
+    out[value.slice(0, eq)] = value.slice(eq + 1);
+  }
+  return out;
+}
+```
+
+Key details:
+
+- We call `applyEvent` on the **returned `session`**, not the raw one. The facade notifies the runner so the bot wakes up after each human move.
+- `isBot(playerID)` and `whenIdle(playerID)` come from the same return value — no per-bot bookkeeping.
+- `detachAll()` runs in `finally` so the runner is always cleaned up, even on errors.
+
+## 6. Run it
+
+```bash
+# Random bot opponent
+bun run cli/src/index.ts --bot 1=random
+
+# Optimal-play opponent
+bun run cli/src/index.ts --bot 1=minimax
+
+# Two bots play each other (no human input expected)
+bun run cli/src/index.ts --bot 0=minimax --bot 1=random
+```
+
+Against `random`, you should win most games as long as you take the center first. Against `minimax`, the best you can do is force a draw — depth-9 alpha-beta solves tic-tac-toe.
+
+## 7. Add tests
+
+The pure-functional engine makes integration tests cheap. A 1000-match random-vs-random suite verifies the runner end-to-end in a few seconds:
+
+```ts
+// bots/src/index.test.ts
+import { describe, expect, test } from "bun:test";
+import { attachLocalBots } from "@openturn/bot";
+import { createLocalSession } from "@openturn/core";
+import { ticTacToe } from "@my/tic-tac-toe-game";
+import { randomBot } from "./random";
+
+test("1000 matches: every match terminates legally", async () => {
+  const matches = 1000;
+  const buckets = { winner0: 0, winner1: 0, draw: 0 };
+
+  for (let i = 0; i < matches; i += 1) {
+    const raw = createLocalSession(ticTacToe, {
+      match: { players: ticTacToe.playerIDs },
+      seed: `r-${i}`,
+    });
+    const { session, isBot, whenIdle, detachAll } = attachLocalBots({
+      session: raw,
+      game: ticTacToe,
+      bots: { "0": randomBot, "1": randomBot },
+    });
+
+    for (let step = 0; step < 20; step += 1) {
+      const snapshot = session.getState();
+      if (snapshot.meta.result !== null) break;
+      const active = snapshot.derived.activePlayers[0]!;
+      if (isBot(active)) await whenIdle(active);
+    }
+
+    const r = session.getState().meta.result;
+    expect(r).not.toBeNull();
+    if (r?.draw) buckets.draw += 1;
+    else if (r?.winner === "0") buckets.winner0 += 1;
+    else if (r?.winner === "1") buckets.winner1 += 1;
+
+    detachAll();
+  }
+
+  expect(buckets.winner0 + buckets.winner1 + buckets.draw).toBe(matches);
+  expect(buckets.draw).toBeGreaterThan(0);
+}, 60_000);
+```
+
+`bun test` runs it.
+
+## What you have built
+
+- One additive field on the game (`legalActions`) that the engine ignores and the bot runtime uses.
+- A sibling `bots` package with a 5-line random bot and a 60-line alpha-beta minimax bot.
+- A CLI that takes `--bot <seat>=<name>` and drives the same loop for human-vs-human, human-vs-bot, and bot-vs-bot.
+- An integration test that proves the runner terminates 1000 matches legally.
+
+The same `defineBot` shape works for LLM-backed bots — see [How-to: add a bot](/how-to/add-a-bot#llm-backed-bot--async-with-cancellation). Cloud play uses `attachHostedBot` against a `HostedClient`, with the bot living in a separate sidecar process — see [Concepts: bots](/concepts/bots#cloud-deployment).
+
+## Related
+
+- [Tutorial: tic-tac-toe with gamekit](/tutorials/tic-tac-toe-gamekit) — the base game this builds on.
+- [Concepts: AI bots](/concepts/bots) — design rationale.
+- [Reference: `@openturn/bot`](/reference/bot) — full API.
+- [How-to: add a bot](/how-to/add-a-bot) — practical recipes for heuristic and LLM bots.

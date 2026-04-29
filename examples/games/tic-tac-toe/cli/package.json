@@ -1,0 +1,19 @@
+{
+  "name": "@openturn/example-tic-tac-toe-cli",
+  "private": true,
+  "type": "module",
+  "openturn": {
+    "runtime": "bun"
+  },
+  "scripts": {
+    "demo": "bun run src/index.ts",
+    "typecheck": "bun x tsc -p tsconfig.json --pretty false"
+  },
+  "dependencies": {
+    "@openturn/bot": "workspace:*",
+    "@openturn/core": "workspace:*",
+    "@openturn/example-tic-tac-toe-bots": "workspace:*",
+    "@openturn/example-tic-tac-toe-game": "workspace:*",
+    "@openturn/replay": "workspace:*"
+  }
+}

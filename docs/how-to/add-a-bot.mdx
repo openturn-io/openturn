@@ -1,0 +1,250 @@
+---
+title: Add an AI bot to a game
+description: Drop a computer opponent into any seat — random, heuristic, search-based, or LLM-backed — without changing the engine or the game logic.
+sidebarTitle: Add a bot
+---
+
+You have an authored game and you want a player to be able to play against the computer. The bot layer is built for exactly this. Five lines of bot code, three lines of wiring.
+
+## Step 1 — Add the `legalActions` hook (one time, per game)
+
+The bot runtime needs to know which moves a seat may legally play. Add an enumerator to `defineGame`:
+
+```ts {5-18}
+import { defineGame, turn } from "@openturn/gamekit";
+
+export const ticTacToe = defineGame({
+  maxPlayers: 2,
+  setup: () => ({ board: [[null, null, null], [null, null, null], [null, null, null]] }),
+  legalActions: ({ G, derived }, playerID) => {
+    if (!derived.activePlayers.includes(playerID)) return [];
+    const out = [];
+    for (let row = 0; row < 3; row += 1) {
+      for (let col = 0; col < 3; col += 1) {
+        if (G.board[row]![col] === null) {
+          out.push({ event: "placeMark", payload: { row, col }, label: `(${row},${col})` });
+        }
+      }
+    }
+    return out;
+  },
+  turn: turn.roundRobin(),
+  moves: ({ move }) => ({ /* ... */ }),
+  views: { /* ... */ },
+});
+```
+
+The engine never reads this field. Only the bot runtime does. Authors who don't ship bots can omit it.
+
+If you cannot or do not want to modify the game definition, a bot can ship its own enumerator via the `enumerate` field — see [Reference: bot](/reference/bot#legal-action-enumeration).
+
+## Step 2 — Define the bot
+
+```ts
+// bots/random.ts
+import { defineBot } from "@openturn/bot";
+import type { ticTacToe } from "../game";
+
+export const randomBot = defineBot<typeof ticTacToe>({
+  name: "random",
+  decide: ({ legalActions, rng }) => rng.pick(legalActions),
+});
+```
+
+`rng` is forked from the snapshot's RNG and salted by bot name + seat + turn, so two bots on the same snapshot get different (but reproducible) streams.
+
+## Step 3 — Attach to a session
+
+For a single bot opponent:
+
+```ts
+import { createLocalSession } from "@openturn/core";
+import { attachLocalBots } from "@openturn/bot";
+import { ticTacToe } from "./game";
+import { randomBot } from "./bots/random";
+
+const raw = createLocalSession(ticTacToe, { match: { players: ticTacToe.playerIDs } });
+
+const { session, isBot, whenIdle, detachAll } = attachLocalBots({
+  session: raw,
+  game: ticTacToe,
+  bots: { "1": randomBot },           // seat "1" is the computer
+});
+```
+
+**Use the returned `session`, not `raw`, in your game loop.** The facade notifies the runner on every dispatch.
+
+## Step 4 — Drive the loop
+
+```ts
+while (true) {
+  const snapshot = session.getState();
+  if (snapshot.meta.result !== null) break;
+
+  const active = snapshot.derived.activePlayers[0]!;
+
+  if (isBot(active)) {
+    await whenIdle(active);             // wait for the bot to dispatch
+    continue;
+  }
+
+  // human input...
+  const move = await readMoveFromStdin();
+  session.applyEvent(active, "placeMark", move);
+}
+
+detachAll();
+```
+
+`whenIdle(playerID)` resolves once the runner has finished thinking and dispatched (or errored). The bot watches the snapshot autonomously — you do not call `decide` yourself.
+
+## Recipes
+
+### Heuristic bot — score and sort
+
+```ts
+export const heuristicBot = defineBot<typeof ticTacToe>({
+  name: "heuristic",
+  decide({ legalActions }) {
+    const score = (a) => {
+      const { row, col } = a.payload;
+      if (row === 1 && col === 1) return 3;       // center
+      if (row !== 1 && col !== 1) return 2;       // corners
+      return 1;                                    // edges
+    };
+    return [...legalActions].sort((a, b) => score(b) - score(a))[0]!;
+  },
+});
+```
+
+### Search-based bot — alpha-beta minimax
+
+For deterministic optimal play, recurse with `simulate`:
+
+```ts
+import { defineBot, simulate } from "@openturn/bot";
+import { ticTacToe } from "../game";
+
+const OTHER: Record<string, string> = { "0": "1", "1": "0" };
+
+function score(snapshot, me) {
+  const r = snapshot.meta.result;
+  if (r?.draw) return 0;
+  if (r?.winner === me) return 10;
+  if (r?.winner) return -10;
+  return null;     // non-terminal
+}
+
+function search(snapshot, toMove, me, depth, alpha, beta) {
+  const terminal = score(snapshot, me);
+  if (terminal !== null) return terminal - Math.sign(terminal) * depth;
+
+  const moves = enumerate(snapshot, toMove);
+  if (moves.length === 0) return 0;
+
+  if (toMove === me) {
+    let best = -Infinity;
+    for (const m of moves) {
+      const sim = simulate(ticTacToe, snapshot, toMove, m);
+      if (!sim.ok) continue;
+      best = Math.max(best, search(sim.next, OTHER[toMove], me, depth + 1, alpha, beta));
+      alpha = Math.max(alpha, best);
+      if (alpha >= beta) break;
+    }
+    return best;
+  }
+  let best = Infinity;
+  for (const m of moves) {
+    const sim = simulate(ticTacToe, snapshot, toMove, m);
+    if (!sim.ok) continue;
+    best = Math.min(best, search(sim.next, OTHER[toMove], me, depth + 1, alpha, beta));
+    beta = Math.min(beta, best);
+    if (alpha >= beta) break;
+  }
+  return best;
+}
+
+export const minimaxBot = defineBot<typeof ticTacToe>({
+  name: "minimax",
+  decide({ legalActions, snapshot, playerID }) {
+    if (snapshot === null) return legalActions[0]!;   // hosted host: no full snapshot
+    let bestAction = legalActions[0]!;
+    let bestScore = -Infinity;
+    for (const action of legalActions) {
+      const sim = simulate(ticTacToe, snapshot, playerID, action);
+      if (!sim.ok) continue;
+      const s = search(sim.next, OTHER[playerID]!, playerID, 1, -Infinity, Infinity);
+      if (s > bestScore) { bestScore = s; bestAction = action; }
+    }
+    return bestAction;
+  },
+});
+```
+
+The `enumerate(snapshot, toMove)` helper re-runs the same legal-action logic against a simulated snapshot — define it inline or factor it out. See the [tic-tac-toe bot tutorial](/tutorials/tic-tac-toe-bot) for the complete file.
+
+### LLM-backed bot — async with cancellation
+
+```ts
+import Anthropic from "@anthropic-ai/sdk";
+import { defineBot, type LegalAction } from "@openturn/bot";
+
+const anthropic = new Anthropic();
+
+export const claudeBot = defineBot({
+  name: "claude",
+  thinkingBudgetMs: 10_000,
+  async decide({ view, legalActions, signal }) {
+    const res = await anthropic.messages.create(
+      {
+        model: "claude-sonnet-4-6",
+        max_tokens: 256,
+        messages: [{ role: "user", content: renderBoardForLLM(view, legalActions) }],
+      },
+      { signal },
+    );
+    return parseChoice(res, legalActions);
+  },
+});
+```
+
+Pass `signal` into the SDK call. When the snapshot moves on while the model is thinking — typically because the opponent disconnected and the room re-synced — the runner aborts and a stale call exits early instead of being charged.
+
+## Verifying
+
+A few moments worth running before you ship:
+
+- **Unit:** call your `decide` with a hand-built `DecideContext` and assert the chosen action is in `legalActions`.
+- **Integration:** play many random-vs-random matches and assert every match terminates with a legal `winner | draw`. The runner notification bus is easy to wire wrong; this catches it.
+- **Deterministic regression:** fix `seed` on `createLocalSession` and assert the full move log is identical across runs. Useful to detect accidental non-determinism (e.g. a bot that calls `Math.random` instead of `rng`).
+
+The repo's `examples/games/tic-tac-toe/bots` package has both unit and integration test suites you can crib from.
+
+## Cloud play
+
+In cloud `/play`, run bots as separate processes that connect to the room over WebSocket using the same protocol as a human:
+
+```ts
+import { createHostedClient } from "@openturn/client";
+import { attachHostedBot } from "@openturn/bot";
+
+const client = createHostedClient({ /* roomID, playerID, getRoomToken */ });
+await client.connect();
+
+const runner = attachHostedBot({
+  client,
+  playerID: "1",
+  bot: randomBot,
+  game: ticTacToe,
+});
+```
+
+`simulate` is unavailable on hosted hosts. Search-based bots run as in-process bots (CLI, server-side sidecar) where the full snapshot is reachable.
+
+The recommended topology and supervisor pattern is in [Concepts: bots](/concepts/bots#cloud-deployment).
+
+## Related
+
+- [Concepts: AI bots](/concepts/bots) — design rationale.
+- [Reference: `@openturn/bot`](/reference/bot) — full API.
+- [Tutorial: tic-tac-toe with bots](/tutorials/tic-tac-toe-bot) — full walkthrough.

@@ -1,0 +1,283 @@
+---
+title: "@openturn/bridge"
+description: The wire between a game iframe and its hosting shell — fragment protocol, postMessage schema, and capability registry.
+sidebarTitle: Bridge
+---
+
+Browser-targeted. Owns the single protocol that connects a game iframe to the shell that hosts it: the URL-fragment handshake, the postMessage message set, and the capability registry that lets games advertise utilities (reset, share, replay, inspector toggle, …) to the shell.
+
+## Install
+
+```bash
+bun add @openturn/bridge
+```
+
+## The wire
+
+A host mounts a game iframe with a `#openturn-bridge=<base64-json>` fragment. Inside the iframe, the game side decodes it with `createGameBridge()`; the host side uses `createBridgeHost()` to manage the iframe lifecycle. Both sides talk exclusively via namespaced postMessage messages defined in this package.
+
+## Game side (inside the iframe)
+
+### `createGameBridge(options?)`
+
+Resolve the bridge for this iframe. Reads the fragment from the URL (override with `options.readInit`) and returns the handle.
+
+```ts
+const bridge = createGameBridge();
+// bridge.init            → decoded BridgeInit (roomID, userID, scope, ...)
+// bridge.token           → live room token (reflects the latest refresh)
+// bridge.connection      → HostedConnectionDescriptor (game scope only)
+// bridge.capabilities    → CapabilityRegistry; call .enable(preset, run, options?)
+// bridge.lifecycle       → BridgeLifecycle; call .on("pause" | "resume" | "close", listener)
+// bridge.refreshToken(): Promise<string>
+```
+
+Throws `BridgeUnavailableError` if the fragment is missing.
+
+### `GameBridge`
+
+The game-side handle. Exposes the decoded `init`, the live `token` getter, a `HostedConnectionDescriptor` for the WebSocket client, a capability registry, a lifecycle event emitter, and a token refresher. Read room/user/scope/websocketURL off `bridge.init.*` — prior builds mirrored those fields onto the bridge directly; that mirror was removed in favor of a single source of truth.
+
+Additional methods:
+
+- `bridge.lifecycle.on(event, listener)` — subscribe to host-driven `"pause" | "resume" | "close"` lifecycle events. Returns an unsubscribe.
+- `bridge.registerBatchSource(source: BatchSourceHandle | null)` — register an initial-snapshot + ongoing-batch source so the host can request a live inspector stream. Most recent registration wins; pass `null` to clear.
+- `bridge.allowBatchStreaming(allow: boolean)` — author-side opt-out. When `false`, host-initiated stream requests resolve to `"denied-by-game"`. Defaults to `true`.
+- `bridge.setMatchActive(active: boolean)` — announce whether a match is currently live. The shell uses this to enable/disable match-only controls (e.g. Reset). Coalesces duplicates.
+- `bridge.getRoomToken()` — alias of `refreshToken()` that plugs into transport clients expecting a `getRoomToken()` function.
+- `bridge.dispose()` — release the message listener and clear capabilities.
+
+### `CreateGameBridgeOptions`
+
+```ts
+interface CreateGameBridgeOptions {
+  readInit?: () => BridgeInit | null;          // default: fragment decode
+  parent?: Pick<Window, "postMessage"> | null;  // default: window.parent
+  refreshSkewSeconds?: number;                  // default: 15
+}
+```
+
+### `BatchSourceHandle<TInitial, TBatch>`
+
+```ts
+interface BatchSourceHandle<TInitial, TBatch> {
+  getInitialSnapshot(): TInitial;
+  subscribe(listener: (batch: TBatch) => void): () => void;
+}
+```
+
+### `CapabilityRegistry`
+
+```ts
+const off = bridge.capabilities.enable("new-game", async () => match.reset());
+// later: off()                                    // disable this preset
+bridge.capabilities.disable("new-game");           // or call disable directly
+bridge.capabilities.list();                        // current descriptors
+```
+
+```ts
+interface CapabilityRegistry {
+  enable(preset: BridgeCapabilityPreset, run: CapabilityRunner, options?: CapabilityEnableOptions): () => void;
+  disable(preset: BridgeCapabilityPreset): void;
+  list(): readonly BridgeCapabilityDescriptor[];
+}
+
+type CapabilityRunner = (args: unknown) => Promise<unknown> | unknown;
+
+interface CapabilityEnableOptions {
+  disabled?: boolean;
+  badge?: string | number;
+}
+```
+
+Capabilities are picked from a fixed set of presets — the shell renders each in a known slot with a known label and icon. See [`BridgeCapabilityPreset`](#bridgecapabilitypreset--bridge_capability_presets) below.
+
+### `BridgeLifecycle` / `BridgeLifecycleEvent`
+
+```ts
+type BridgeLifecycleEvent = "pause" | "resume" | "close";
+
+interface BridgeLifecycle {
+  on(event: BridgeLifecycleEvent, listener: () => void): () => void;
+}
+
+const offPause = bridge.lifecycle.on("pause", () => pauseTimers());
+```
+
+The host emits `pause`/`resume` when the iframe leaves and re-enters the foreground; `close` fires before the host detaches the iframe.
+
+## Host side (in the shell)
+
+### `createBridgeHost(options)`
+
+```ts
+const host = createBridgeHost({
+  bundleURL: "https://cdn.example/deployments/abc/index.html",
+  init,                 // BridgeInit built server-side from the room record
+  refreshToken,         // async callback that mints a fresh room token
+  expectOrigin,         // iframe origin; "*" for local dev only
+});
+// <iframe src={host.src} />
+// host.capabilities — live list the game has advertised
+// host.invoke(id, args?) — round-trip RPC into the game
+// host.pause() / host.resume() / host.close() — lifecycle
+```
+
+### `BridgeHost`
+
+Shell-side handle with:
+
+- `src: string` — iframe `src` with the fragment baked in.
+- `capabilities: readonly BridgeCapabilityDescriptor[]` — live list the game has advertised.
+- `matchActive: boolean` — current match-active state. Defaults to `init.scope === "game"`; updated via `match-state-changed` events.
+- `invoke(id, args?, timeoutMs?)` — capability RPC.
+- `pause()` / `resume()` / `close()` — lifecycle control.
+- `on(event, listener)` — subscribe to `BridgeHostEvent`s. Returns an unsubscribe function.
+- `requestBatchStream(timeoutMs?)` — ask the game to start streaming initial snapshot + batches. Resolves to a `BatchStreamStatus` (`"allowed" | "denied-by-game" | "no-source"`).
+- `stopBatchStream()` — ask the game to stop streaming. Safe to call when idle.
+- `onBatch(listener)` — subscribe to streamed batches. Immediately replays the last-seen snapshot/batch. Returns an unsubscribe function.
+- `dispose()` — release the window listener and reject pending invocations.
+
+### `BridgeHostEvent` / `BridgeHostEventMap`
+
+The events a `BridgeHost` emits via `host.on(...)`:
+
+```ts
+type BridgeHostEventMap = {
+  ready: { origin: string };
+  "capability-changed": { capabilities: readonly BridgeCapabilityDescriptor[] };
+  "lifecycle-close": Record<string, never>;
+  "match-state-changed": { matchActive: boolean };
+};
+type BridgeHostEvent = keyof BridgeHostEventMap;
+```
+
+### `BridgeHostTokenContext` / `BridgeHostTokenRefreshResult`
+
+Passed to / returned from `BridgeHostOptions.refreshToken`:
+
+```ts
+interface BridgeHostTokenContext {
+  roomID: string;
+  userID: string;
+  scope: BridgeScope;
+}
+
+interface BridgeHostTokenRefreshResult {
+  token: string;
+  tokenExpiresAt?: number;
+}
+```
+
+### Batch-stream types
+
+```ts
+type BatchStreamStatus = "allowed" | "denied-by-game" | "no-source";
+
+interface BatchStreamPayload<TInitial, TBatch> {
+  initialSnapshot: TInitial | null;
+  lastBatch: TBatch | null;
+}
+
+type BatchStreamListener<TInitial, TBatch> = (
+  payload: BatchStreamPayload<TInitial, TBatch>,
+) => void;
+```
+
+## Schema
+
+### `BridgeInit`
+
+The decoded fragment payload. Carries `roomID`, `userID`, `scope`, `token`, `tokenExpiresAt`, `websocketURL`, `playerID?`, the player range (`minPlayers`, `maxPlayers`, `targetCapacity`), and host info (`isHost`, `hostUserID`). Zod-validated on both sides.
+
+`targetCapacity` is the room's effective seat count (host-mutable in `[minPlayers, maxPlayers]`); `maxPlayers` equals the manifest's `players.length`. For fixed-size games the three numbers are equal.
+
+### `BridgeMessage`
+
+Discriminated union of all postMessage payloads: `ready`, `token-refresh-request` / `token-refresh-response`, `capability-expose` / `capability-retire` / `capability-invoke` / `capability-result`, `lifecycle-pause` / `lifecycle-resume` / `lifecycle-close`, `batch-stream-start` / `batch-stream-stop` / `batch-stream-response`, `initial-snapshot` / `batch-applied`, and `match-state` (all under the `openturn:bridge:*` namespace).
+
+### `BRIDGE_FRAGMENT_KEY`
+
+The URL hash key under which `BridgeInit` is stored: `openturn-bridge`.
+
+### `BridgeScope`
+
+`"lobby" | "game"` — matches `RoomTokenClaims["scope"]`. Determines whether the bridge exposes a connection descriptor.
+
+### `BridgeCapabilityPreset` / `BRIDGE_CAPABILITY_PRESETS`
+
+The fixed set of shell capabilities a game can enable. Each preset has a known `label`, `icon`, and `slot` declared in `BRIDGE_CAPABILITY_PRESETS`.
+
+```ts
+type BridgeCapabilityPreset = "share-invite" | "current-turn" | "new-game" | "rules";
+type BridgeCapabilitySlot = "header" | "menu";
+
+interface BridgeCapabilityPresetMeta {
+  label: string;
+  icon: string;
+  slot: BridgeCapabilitySlot;
+}
+```
+
+Default mapping (from `BRIDGE_CAPABILITY_PRESETS`):
+
+| Preset | Label | Icon | Slot |
+| --- | --- | --- | --- |
+| `share-invite` | "Share invite" | `share` | `menu` |
+| `current-turn` | "Current turn" | `info` | `header` |
+| `new-game` | "New game" | `refresh` | `header` |
+| `rules` | "Rules" | `book` | `menu` |
+
+### `BridgeCapabilityDescriptor(Schema)`
+
+Descriptor the game registers through `bridge.capabilities.enable(...)`. The schema is intentionally tiny — the descriptor only carries dynamic state; the static label/icon/slot live in `BRIDGE_CAPABILITY_PRESETS`.
+
+```ts
+interface BridgeCapabilityDescriptor {
+  preset: BridgeCapabilityPreset;
+  disabled?: boolean;
+  badge?: string | number;
+}
+```
+
+`BridgeCapabilityDescriptorSchema` validates the shape over the wire.
+
+### `encodeBridgeFragment(init)` / `decodeBridgeFragment(hash)`
+
+Lossless round-trip between `BridgeInit` and the URL-fragment string.
+
+### `readBridgeFragmentFromLocation()`
+
+Decodes the `BridgeInit` from `window.location.hash` (returns `null` when running outside a browser or when no fragment is present). This is the default `readInit` for `createGameBridge`; export it for custom bootstraps that want the same fallback.
+
+### `BRIDGE_MESSAGE_NAMESPACE`
+
+Prefix used by every bridge postMessage type (`openturn:bridge:*`). Filter on this before schema validation when sharing a window with other postMessage traffic.
+
+## Local-dev transport
+
+### `createDevTransport(options?)`
+
+Talks to a running `openturn dev` server directly. Returns a `DevTransport` that can create and join rooms, then produces a `BridgeInit` via `toBridgeInit()`.
+
+```ts
+const dev = createDevTransport({ baseURL: "http://localhost:4010" });
+const snapshot = await dev.createRoom();
+const init = dev.toBridgeInit(snapshot);
+```
+
+### Dev-transport types
+
+- `DevTransport` — the returned handle (`createRoom`, `joinRoom`, `toBridgeInit`, …).
+- `DevTransportOptions` — constructor options (`baseURL`, `fetch`, `getUserID`, …).
+- `AnonymousSession` — the session descriptor the dev server mints for unauthenticated users.
+- `DevLobbySnapshot` — lobby state returned by `createRoom` / `joinRoom` and consumed by `toBridgeInit`.
+
+## Re-exports
+
+- `HostedConnectionDescriptor` (from `@openturn/client`)
+
+## See also
+
+- [Reference: react](/reference/react) for the hooks that build on this package.
+- [How-to: run a local hosted stack](/how-to/run-local-hosted) for the dev transport context.

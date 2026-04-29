@@ -1,0 +1,103 @@
+---
+title: Examples
+description: The openturn repo ships several runnable games. This is the cross-reference.
+sidebarTitle: Examples
+---
+
+Every example lives under `examples/<purpose>/<name>` in the monorepo. Most have a `game` worker package (the authored game) and either an `app` browser package (React UI), a `cli` Bun package (terminal), or both.
+
+<Note>
+  Looking up a specific package name, path, or `bun --filter` command? See the [Examples index](/reference/examples) — every shipped package with its path and run command in one table.
+</Note>
+
+## End-to-end games
+
+Complete, polished demos under `examples/games/`.
+
+| Example | Authoring | Local UI | Hosted | Replay | Hidden info | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| [tic-tac-toe](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/tic-tac-toe) | gamekit | React + CLI | — | capture | no | The main onboarding example. Reused across multiplayer and replay viewer. |
+| [pig-dice](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/pig-dice) | gamekit | CLI | — | — | no | Simple 2-player dice push-your-luck CLI. |
+| [battleship](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/battleship) | gamekit | React | hosted | — | yes | Hidden fleets, multi-phase (planning → battle → gameOver), hosted multiplayer. |
+
+## Authoring with raw `@openturn/core`
+
+Under `examples/using-core/` — same games as their gamekit counterparts, written without gamekit.
+
+| Example | Notes |
+| --- | --- |
+| [tic-tac-toe-core](https://github.com/openturn-io/openturn/tree/main/openturn/examples/using-core/tic-tac-toe-core) | Tic-tac-toe authored with `@openturn/core` directly. |
+| [paper-scissors-rock-core](https://github.com/openturn-io/openturn/tree/main/openturn/examples/using-core/paper-scissors-rock-core) | Simultaneous-move RPS in raw core. |
+| [persistent-wins-core](https://github.com/openturn-io/openturn/tree/main/openturn/examples/using-core/persistent-wins-core) | Profile lifecycle in raw core. |
+
+## Persistent player profiles
+
+Under `examples/using-profiles/` — hydrate → play → commit → apply.
+
+| Example | Notes |
+| --- | --- |
+| [persistent-wins](https://github.com/openturn-io/openturn/tree/main/openturn/examples/using-profiles/persistent-wins) | Gamekit demo of the profile lifecycle. |
+| [card-discovery](https://github.com/openturn-io/openturn/tree/main/openturn/examples/using-profiles/card-discovery) | Card memory game showing the host-side commit hook. |
+
+## By concept
+
+Each example is the canonical demo for one openturn concept.
+
+| Concept | Example | Notes |
+| --- | --- | --- |
+| Simultaneous moves | [paper-scissors-rock](https://github.com/openturn-io/openturn/tree/main/openturn/examples/simultaneous-moves/paper-scissors-rock) | Hidden submissions until everyone has played. 3 players. Also available in [raw core](https://github.com/openturn-io/openturn/tree/main/openturn/examples/using-core/paper-scissors-rock-core). |
+| Hosted multiplayer | [tic-tac-toe-multiplayer](https://github.com/openturn-io/openturn/tree/main/openturn/examples/hosted-multiplayer/tic-tac-toe-multiplayer) | `<OpenturnProvider>` + `useRoom`. Runs against `openturn dev` locally and openturn-cloud in production. |
+| Replay capture & playback | [tic-tac-toe-replay-viewer](https://github.com/openturn-io/openturn/tree/main/openturn/examples/replays/tic-tac-toe-replay-viewer) | Load a saved replay JSON and scrub through it. |
+| Plugin integration | [tic-tac-toe-with-chat](https://github.com/openturn-io/openturn/tree/main/openturn/examples/plugins/tic-tac-toe-with-chat) | Tic-tac-toe with the chat plugin wired in. |
+| AI bots | [tic-tac-toe/bots](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/tic-tac-toe/bots) | Sibling package to `tic-tac-toe/game`. Random bot + alpha-beta minimax. Wired into the CLI via `--bot 1=random` / `--bot 1=minimax`. |
+
+## Run them
+
+From the monorepo root. For the complete list of packages and commands (including library packages with no `dev` script), see the [Examples index](/reference/examples).
+
+```bash
+# Local tic-tac-toe (React)
+bun --filter @openturn/example-tic-tac-toe-app dev --port 3000
+
+# Tic-tac-toe CLI with replay capture
+bun --filter @openturn/example-tic-tac-toe-cli demo -- --save-replay out.json
+
+# Tic-tac-toe CLI vs an AI bot (random or minimax)
+bun --filter @openturn/example-tic-tac-toe-cli demo -- --bot 1=random
+bun --filter @openturn/example-tic-tac-toe-cli demo -- --bot 1=minimax
+
+# Tic-tac-toe multiplayer (local hosted)
+bun --filter @openturn/example-tic-tac-toe-multiplayer-app dev
+
+# Replay viewer
+bun --filter @openturn/example-tic-tac-toe-replay-viewer-app dev --port 3001
+
+# Paper-scissors-rock (gamekit and raw core)
+bun --filter @openturn/example-paper-scissors-rock-app dev --port 3003
+bun --filter @openturn/example-paper-scissors-rock-core-app dev --port 3004
+
+# Tic-tac-toe with the chat plugin
+bun --filter @openturn/example-tic-tac-toe-with-chat-app dev
+
+# Pig dice (CLI only)
+bun --filter @openturn/example-pig-dice-cli demo
+
+# Battleship
+bun --filter @openturn/example-battleship-app dev
+```
+
+## By tutorial
+
+- [Tic-tac-toe with gamekit](/tutorials/tic-tac-toe-gamekit) walks the `tic-tac-toe` example end to end.
+- [Tic-tac-toe multiplayer](/tutorials/tic-tac-toe-multiplayer) walks `tic-tac-toe-multiplayer`.
+- [Tic-tac-toe replay](/tutorials/tic-tac-toe-replay) walks `tic-tac-toe-replay-viewer`.
+- [Tic-tac-toe with core](/tutorials/tic-tac-toe-core) walks `tic-tac-toe-core`.
+- [Tic-tac-toe with bots](/tutorials/tic-tac-toe-bot) walks the `tic-tac-toe/bots` package and the bot-aware CLI.
+
+## By how-to
+
+- [Model hidden information](/how-to/model-hidden-info) uses battleship snippets.
+- [Handle simultaneous moves](/how-to/handle-simultaneous-moves) uses paper-scissors-rock.
+- [Handle randomness](/how-to/handle-randomness) uses pig-dice.
+- [Add a CLI front-end](/how-to/add-a-cli) covers the tic-tac-toe and pig-dice CLIs.
+- [Persist player state](/how-to/persist-player-state) uses `persistent-wins` (gamekit) and `persistent-wins-core`.

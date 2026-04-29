@@ -1,0 +1,86 @@
+---
+title: Gamekit permissions and turns
+description: canPlayer, active players, and when to write custom turn logic.
+sidebarTitle: Permissions
+---
+
+Permissions decide who is *allowed* to dispatch a move. Turn policy decides *whose turn it is*. They look similar but are different layers.
+
+## `canPlayer`
+
+Each move can declare `canPlayer`. It runs before `run`, and if it returns `false`, the engine rejects the dispatch with `inactive_player`.
+
+```ts
+import { permissions } from "@openturn/gamekit";
+
+moves: {
+  placeMark: move({
+    canPlayer: permissions.currentPlayer,
+    run({ G, args, move, player }) { /* ... */ },
+  }),
+},
+```
+
+`permissions.currentPlayer` is the built-in predicate: it returns `true` only when `player.id === turn.currentPlayer`. That is what most turn-based games want.
+
+Write your own for anything else:
+
+```ts
+move({
+  canPlayer: ({ player, G }) => G.hasAlreadyVoted[player.id] === false,
+  run: /* ... */,
+}),
+```
+
+`canPlayer` reads the same context as `run`: `G`, `C` (computed), `phase`, `player`, `turn`, `rng`. It must be pure.
+
+## `phases` on a move
+
+A move that is only valid in some phases can list them:
+
+```ts
+moves: ({ move }) => ({
+  fire: move<FireArgs>({
+    phases: ["battle"],
+    run: /* ... */,
+  }),
+  placeShip: move<PlaceShipArgs>({
+    phases: ["planning"],
+    run: /* ... */,
+  }),
+}),
+```
+
+If a move omits `phases`, it is valid in every phase. The engine still rejects it if `canPlayer` returns `false` or if the current phase does not include the move.
+
+## Active players (per phase)
+
+A phase's `activePlayers` governs which seats the engine will even consider during that phase. If you omit it, the turn policy picks (round-robin by default: one seat per turn).
+
+Override it for simultaneous phases:
+
+```ts
+phases: {
+  planning: {
+    activePlayers: ({ G }) => PLAYERS.filter((id) => !G.players[id].ready),
+    label: "Place your fleet",
+  },
+  battle: {
+    label: "Fire!",
+    // no override; round-robin gives a single currentPlayer
+  },
+},
+```
+
+When `activePlayers` returns a list, every seat on that list can dispatch moves; `canPlayer` still runs per dispatch.
+
+## Custom turn policies
+
+Today gamekit ships one turn policy: `turn.roundRobin()`. If your game is strictly alternating, use it. If not, rely on `activePlayers` and the move's own `canPlayer` to enforce ordering, and leave `turn` off.
+
+For fully custom progression (skip turns, reversed order, elimination), author the game with `@openturn/core` directly. See [how-to: author with core](/how-to/author-with-core).
+
+## What to read next
+
+- [Gamekit moves and outcomes](/concepts/gamekit-moves-and-outcomes) is the outcome reference.
+- [How-to: handle simultaneous moves](/how-to/handle-simultaneous-moves) shows a concrete simultaneous pattern.

@@ -1,0 +1,455 @@
+---
+title: "@openturn/react"
+description: React hooks and components for local matches, hosted matches, and lobbies.
+sidebarTitle: React
+---
+
+Browser-targeted. The React layer. The runtime is declared once in `createOpenturnBindings`, and a zero-prop `<OpenturnProvider>` auto-resolves transport so the same component runs unchanged under `openturn dev` and openturn-cloud.
+
+## Install
+
+```bash
+bun add @openturn/react
+```
+
+## Authoring surface
+
+### `createOpenturnBindings(game, options)`
+
+Turns a game definition into a typed binding bundle. The runtime + initial match are declared once at the call site.
+
+```ts
+const {
+  OpenturnProvider,
+  createLocalMatch,
+  useMatch,          // discriminated MatchView — works in local and hosted
+  useRoom,           // full HostedRoomState — lobby, bridge, invite URL (multiplayer only)
+  useInspector,      // inspector timeline + state for the active match
+  useReplayInspector, // replay-only variant (no live match required)
+  runtime,           // mirrors options.runtime for downstream branching
+} = createOpenturnBindings(game, {
+  runtime: "local",        // or "multiplayer"
+  match: { players: game.playerIDs },   // required for "local"; ignored for "multiplayer"
+  hosted: { /* HostedMatchOptions */ }, // optional, applied in multiplayer mode
+});
+```
+
+`options` is required on the first call for a given game definition. Subsequent calls (e.g. an experience component sharing the same `game` import) may omit options and reuse the cached bindings.
+
+### `CreateOpenturnBindingsOptions<TGame>`
+
+```ts
+interface CreateOpenturnBindingsOptions<TGame> {
+  runtime: "local" | "multiplayer";
+  match?: MatchInput<GamePlayers<TGame>>;
+  hosted?: HostedMatchOptions;
+}
+```
+
+### `OpenturnBindings<TGame>`
+
+The return type. Exposes the provider, the match-store factory, the consolidated hooks, and the resolved `runtime` literal.
+
+## The consolidated API
+
+### `<OpenturnProvider>`
+
+Zero-prop in normal app code:
+
+```tsx
+<OpenturnProvider>
+  <Board />
+</OpenturnProvider>
+```
+
+The provider auto-resolves what to do based on the `runtime` declared in `createOpenturnBindings`:
+
+- `runtime: "local"` → in-process session backed by the bindings' `match`.
+- `runtime: "multiplayer"` → connects via the `#openturn-bridge=…` URL fragment that the host shell injects (`openturn dev` locally, openturn-cloud in production).
+
+The single optional prop is `match` — pass an `OpenturnMatchStore` to override the in-process session for tests, Storybook, or a load-saved-game flow:
+
+```tsx
+<OpenturnProvider match={fixtureStore}>{children}</OpenturnProvider>
+```
+
+If `runtime: "multiplayer"` is declared but no bridge fragment is present (and no `hosted.readInit` was set), the provider throws — so "I forgot to launch under a host shell" surfaces at mount instead of silently doing nothing.
+
+### `useMatch()`
+
+Returns a mode-discriminated `MatchView<TGame>` for the active match:
+
+```ts
+type MatchView<TGame> =
+  | { mode: "local"; snapshot; dispatch; status; state: OpenturnMatchState<TGame> }
+  | { mode: "hosted"; snapshot; dispatch; status; state: HostedMatchState<TGame> };
+```
+
+Branch on `view.mode` and read the right fields without knowing the transport. Throws if no match is active yet (pre-connect in hosted mode); call `useRoom()` instead if you need to render a pre-game UI.
+
+### `useRoom()`
+
+In `runtime: "multiplayer"` bindings rendered under a host shell, returns the full `HostedRoomState` — phase, lobby, game, bridge handle, invite URL. Throws when called outside a multiplayer provider.
+
+```tsx
+function Page() {
+  const room = useRoom();
+
+  if (room.phase === "missing_backend") return <MissingBackend />;
+  if (room.lobby !== null) return <Lobby lobby={room.lobby} />;
+  if (room.game !== null) return <InGame match={room.game} />;
+  return <Connecting />;
+}
+```
+
+Use `room.bridge.capabilities.enable(preset, handler, options?)` — or the `useCapability(...)` hook below — to advertise preset shell utilities (`new-game`, `share-invite`, `current-turn`, `rules`).
+
+### `useInspector(options?)`
+
+Build the inspector timeline + interaction state for the active match. Returns `UseInspectorResult | null` (null when no match is connected yet). The result is structurally compatible with `InspectorContextValue` from `@openturn/inspector-ui`, so it can drive any custom inspector UI.
+
+```tsx
+function DebugPane() {
+  const inspector = bindings.useInspector();
+  if (inspector === null) return null;
+  // Feed `inspector` into a custom inspector layout, or use
+  // `<InspectorPanel>` from `@openturn/inspector-ui` for a shell-owned view.
+  return <CustomInspectorLayout inspector={inspector} />;
+}
+```
+
+One hook covers both local and hosted modes, picking the correct timeline source from `useMatch()`.
+
+### `useReplayInspector(source, options?)`
+
+Standalone replay viewer. Takes either a saved-replay envelope or a pre-materialized timeline; returns the same shape as `useInspector`. No live match required:
+
+```tsx
+const inspector = bindings.useReplayInspector({ envelope: loadedEnvelope });
+```
+
+### `UseInspectorResult`
+
+Shape returned by `useInspector`/`useReplayInspector`:
+
+```ts
+interface UseInspectorResult {
+  state: InspectorState;
+  dispatch: (action: InspectorAction) => void;
+  timeline: InspectorTimeline;
+  currentFrame: InspectorFrame;
+  canReturnToLive: boolean;
+  canReplay: boolean;
+  maxRevision: number;
+  minReplayRevision: number;
+  effectiveRevision: number;
+}
+```
+
+Structurally compatible with `InspectorContextValue` from `@openturn/inspector-ui`.
+
+## Local match store
+
+### `createLocalMatch(options)`
+
+Build an `OpenturnMatchStore<TGame>` from a match and session options. Wrap the store in `<OpenturnProvider match={store} />` and read it with `useMatch()`.
+
+### `OpenturnMatchStore<TGame, TMatch>`
+
+The underlying store. `{ dispatch, getLastBatch, getReplayData, getSnapshot, getPlayerView, getStatus, subscribe, reset? }`. You typically do not touch it; `useMatch()` wraps it.
+
+### `OpenturnMatchState<TGame>`
+
+Shape of `useMatch().state` when `match.mode === "local"`:
+
+```ts
+interface OpenturnMatchState<TGame> {
+  dispatch: GameDispatchMap<TGame>;
+  game: TGame;
+  lastBatch: GameSuccessResult<TGame>["batch"] | null;
+  replayData: GameReplayData<TGame>;
+  snapshot: GameSnapshot<...>;
+  status: SessionStatus;
+  reset: () => void;
+  getPlayerView: (playerID) => GamePlayerView<TGame>;
+}
+```
+
+Narrow on the discriminant before reading:
+
+```tsx
+const match = useMatch();
+if (match.mode !== "local") throw new Error("expected local match");
+const { dispatch, snapshot, getPlayerView } = match.state;
+```
+
+## Hosted state types
+
+### `HostedMatchState<TGame, TPublicState, TResult>`
+
+Surfaced via `useMatch()` (hosted/dev mode) and `useRoom().game`.
+
+```ts
+interface HostedMatchState<TGame, TPublicState, TResult> {
+  activePlayers: readonly string[];
+  batchHistory: readonly BatchApplied[];
+  canAct: (event) => boolean;
+  canDispatch: HostedCanDispatchMap<TGame>;
+  dispatch: HostedDispatchMap<TGame>;
+  disconnect: () => void;
+  error: string | null;
+  initialSnapshot: HostedSnapshot | null;
+  isActivePlayer: boolean;
+  isFinished: boolean;
+  lastAcknowledgedActionID: string | null;
+  lastBatch: BatchApplied | null;
+  playerID: string | null;
+  reconnect: () => Promise<void>;
+  requestResync: () => void;
+  requestSync: () => void;
+  result: TResult | null;
+  roomID: string | null;
+  self: { playerID; isActive } | null;
+  snapshot: HostedSnapshot | null;
+  status: HostedMatchStatus;
+}
+```
+
+### `HostedDispatchMap<TGame>` / `HostedCanDispatchMap<TGame>`
+
+Typed dispatch map and per-event availability flags. Each dispatcher returns `Promise<HostedDispatchResult>` — awaiting it surfaces the server's real ack or rejection, matching the `{ ok, error }` shape from the local session:
+
+```tsx
+const outcome = await match.dispatch.placeMark({ row: 0, col: 0 });
+if (!outcome.ok) {
+  setError(outcome.error); // server rejection, disconnect, or send failure
+}
+```
+
+### `HostedMatchStatus`
+
+`"idle" | "connecting" | "connected" | "disconnected" | "error"`.
+
+### `HostedLastAction<TGame>`
+
+A discriminated shortcut on `hostedMatch.lastAction` that carries the most recent player-authored action in a form that narrows by event name:
+
+```ts
+type HostedLastAction<TGame> = {
+  [E in keyof TGame["events"] & string]: {
+    event: E;
+    payload: TGame["events"][E];
+    playerID: string;
+    actionID: string;
+    turn: number;
+    revision: number;
+  };
+}[keyof TGame["events"] & string];
+```
+
+Replaces manually drilling into `lastBatch.steps.find(s => s.kind === "action")?.event.payload`. Narrow on `lastAction.event` to type the payload:
+
+```ts
+const last = match.lastAction;
+if (last?.event === "placeMark") {
+  const { row, col } = last.payload; // typed
+}
+```
+
+`null` when the match has not produced a player action yet (initial connect, or last batch contained only internal events).
+
+### `HostedDispatchResult`
+
+The resolved value of `dispatch.<event>(payload)` promises: `{ ok: true; clientActionID }` on ack, or `{ ok: false; error; reason?; details?; clientActionID? }` on rejection, disconnect, or send failure.
+
+### `SessionStatus`
+
+`"ready" | "syncing" | "disconnected" | "error"`. The `status` field on `OpenturnMatchState` (local mode).
+
+### `DispatchResult` / `DispatchSuccessResult`
+
+`DispatchResult = DispatchSuccessResult | GameErrorResult` where `DispatchSuccessResult = { ok: true }`. The resolved value of a local-mode `dispatch.<event>(payload)` promise.
+
+### `LocalSavedSnapshot<TGame>`
+
+Snapshot shape accepted by `createLocalMatch({ initialSavedSnapshot })` to warm-start a local session from a decoded save envelope.
+
+### `UseInspectorOptions<TGame>` / `UseReplayInspectorSource<TGame>`
+
+Option shapes accepted by `useInspector(options?)` and `useReplayInspector(source, options?)`. `UseReplayInspectorSource` is `{ envelope } | { timeline }`.
+
+### `HostedMatchOptions`
+
+`CreateGameBridgeOptions & { retainBatchHistory?, inspector? }`. Passed as `hosted: {...}` on `createOpenturnBindings`. `inspector: "deny"` opts out of shell-owned inspector batch streaming.
+
+### `HostedMatchOverride<TGame>` / `HostedMatchOverrideContext`
+
+Advanced: inject a synthetic `HostedMatchState` for testing or inspector previews. `createFrozenHostedMatchState(...)` builds a read-only state. Used internally by the `HostedInspector` component in `@openturn/inspector-ui`.
+
+### `createFrozenHostedMatchState(...)`
+
+Build a frozen state object from a snapshot and history. Used by the hosted replay inspector.
+
+## Shell capabilities
+
+### `useCapability(bridge, preset, handler, options?)`
+
+Enable a single shell capability preset for the lifetime of the component. Handles the effect, disposer, and null-bridge case.
+
+```tsx
+useCapability(room.bridge, "new-game", () => match.reset());
+
+// Pass `false` / null for `preset` to conditionally skip registration —
+// useful when the capability depends on data that may be unavailable.
+useCapability(
+  room.bridge,
+  inviteURL !== null && "share-invite",
+  async () => { await navigator.clipboard?.writeText(inviteURL ?? ""); },
+);
+
+// `options` accepts `{ disabled?, badge? }` — the same `CapabilityEnableOptions`
+// from `@openturn/bridge`.
+useCapability(room.bridge, "current-turn", () => {}, { badge: turnNumber });
+```
+
+`preset` is one of the `BridgeCapabilityPreset` values — `"share-invite"`, `"current-turn"`, `"new-game"`, `"rules"`. The handler closure is always up-to-date via an internal ref, so no `useCallback` is needed. The effect re-registers only when the bridge, preset, or option fields (`badge`, `disabled`) change.
+
+## Dispatch errors
+
+### `formatDispatchError(outcome, options?)`
+
+Map a rejected dispatch outcome to a user-facing string. Covers the common `ProtocolErrorCode`s (`game_over`, `inactive_player`, `invalid_event`, `stale_revision`, `disconnected`, …) out of the box and lets you override per-reason.
+
+```ts
+const outcome = await match.dispatch.placeMark({ row, col });
+if (!outcome.ok) {
+  setMessage(formatDispatchError(outcome, {
+    byReason: { occupied: "That square is already occupied." },
+  }));
+}
+```
+
+Resolution order: `options.byReason[reason]` → `options.byError[error]` → built-in default → `options.fallback` (`"That move was rejected."`).
+
+### `DispatchErrorLike` / `FormatDispatchErrorOptions`
+
+```ts
+interface DispatchErrorLike {
+  error: string;
+  reason?: string;
+  details?: ProtocolValue;
+}
+
+interface FormatDispatchErrorOptions {
+  byError?: Readonly<Record<string, string>>;
+  byReason?: Readonly<Record<string, string>>;   // wins over byError
+  fallback?: string;
+}
+```
+
+## Hosted room UI
+
+### `<HostedRoom>`
+
+Phase-routing component that handles the standard `missing_backend / connecting / lobby / game / closed / error` tree. Pass render functions per phase; defaults fall through to a shared `fallback`.
+
+```tsx
+<HostedRoom
+  room={room}
+  missingBackend={<MissingBackend />}
+  connecting={<Connecting />}
+  closed={<Closed />}
+  error={(msg) => <Error msg={msg} />}
+  fallback={<Loading />}
+  lobby={(lobby) => <Lobby lobby={lobby} />}
+  game={(match) => <Game match={match} />}
+/>
+```
+
+Only `room`, `lobby`, and `game` are required; everything else falls back to `fallback` or null. Use `HostedRoom` whenever a component renders a full hosted-room shell — it keeps the phase-branching logic out of your game UI.
+
+### `HostedRoomProps<TGame, TPublicState, TResult>`
+
+Full prop shape — see the IDE hover for each slot.
+
+## Rooms with lobbies
+
+### `HostedRoomState<TGame, TPublicState, TResult>`
+
+Returned by `useRoom()`. Phase-aware — a single shape covering connecting, lobby, live game, closed.
+
+```ts
+interface HostedRoomState<TGame> {
+  phase: HostedRoomPhase;
+  error: string | null;
+  roomID: string | null;
+  userID: string | null;
+  userName: string | null;
+  isHost: boolean;
+  inviteURL: string | null;
+  lobby: LobbyView | null;
+  game: HostedMatchState<TGame> | null;
+  bridge: GameBridge | null;
+}
+```
+
+### `HostedRoomPhase`
+
+`"idle" | "missing_backend" | "connecting" | "lobby" | "transitioning" | "game" | "closed" | "error"`.
+
+### `Lobby`
+
+Opinionated lobby UI component. Pass it `room.lobby`. Hosted shells should expose invite sharing through the bridge capability menu instead of the embedded lobby UI.
+
+### `useLobbyChannel(options)`
+
+Low-level lobby WebSocket hook. Use when building a custom lobby UI.
+
+### `buildLobbyView(channel)`
+
+Turn a raw lobby channel into a `LobbyView` (the same shape `useRoom()` exposes).
+
+### `LobbyChannelHandle` / `LobbyChannelStatus`
+
+The handle returned by `useLobbyChannel` and its connection status (`"idle" | "connecting" | "connected" | "disconnected" | "error"`). Use `buildLobbyView(handle)` to project into the same shape `useRoom()` exposes.
+
+## Shell integration
+
+Advanced — for dev shells and outer hosts that need to observe the hosted match state rendered by an inner user-authored `<Page>` without threading it through the page's tree.
+
+### `<HostedMatchShellObserver>`
+
+Wrap the user's subtree. Activates the observer channel so hosted match state is published into a shared `WeakMap` keyed by the game definition.
+
+### `useShellHostedMatch(game)`
+
+Call from outside the wrapped subtree to read the observed `HostedMatchState<TGame> | null`. Null until the inner subtree mounts a hosted provider. Normal app code should reach for `useMatch()` or `useRoom()` instead — this hook is for shell wrappers only.
+
+```tsx
+function DevShell({ children }) {
+  const observed = useShellHostedMatch(game);
+  return (
+    <>
+      <InspectorToolbar state={observed} />
+      <HostedMatchShellObserver>{children}</HostedMatchShellObserver>
+    </>
+  );
+}
+```
+
+Generated by `openturn dev` to render the dev-shell inspector alongside the user page.
+
+## Re-exports
+
+For convenience, `@openturn/react` re-exports common types from its dependencies:
+
+- From `@openturn/client`: `HostedConnectionDescriptor`, `HostedDispatchOutcome`, `HostedSnapshot`, `ProtocolValue`.
+- From `@openturn/protocol`: `BatchApplied`.
+- From `@openturn/core`: `MatchInput`.
+- From `./lobby`: `Lobby`, `useLobbyChannel`, `buildLobbyView`, `LobbyChannelHandle`, `LobbyChannelStatus`, `LobbyView`.
+
+## See also
+
+- [How-to: bind a game to React](/how-to/bind-to-react) is the recipe.
+- [Tutorial: tic-tac-toe with gamekit](/tutorials/tic-tac-toe-gamekit) uses the local binding.
+- [Tutorial: tic-tac-toe multiplayer](/tutorials/tic-tac-toe-multiplayer) uses `useRoom()`.

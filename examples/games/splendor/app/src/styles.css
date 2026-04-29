@@ -1,0 +1,213 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@source "../../../../../packages/react/src";
+@source "../../../../../packages/lobby/src";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --font-sans: "Instrument Sans", "Avenir Next", sans-serif;
+  --font-display: "Cinzel", "Playfair Display", "Georgia", serif;
+
+  /* Felt + frame palette */
+  --color-felt-deep: #0d3a1f;
+  --color-felt-mid: #155f33;
+  --color-felt-warm: #1f7a44;
+  --color-wood-dark: #2a1810;
+  --color-wood-mid: #4a2c1a;
+  --color-wood-light: #7a4a2a;
+  --color-wood-edge: #2a1810;
+  --color-parchment: #f4ead4;
+  --color-parchment-edge: #c9b88a;
+
+  /* Gem palette — base, highlight, shadow, glow per color */
+  --color-gem-white: #f5f5f5;
+  --color-gem-white-glow: #ffffff;
+  --color-gem-white-shadow: #cfcfcf;
+  --color-gem-white-ink: #5a5a5a;
+
+  --color-gem-blue: #1c5fc9;
+  --color-gem-blue-glow: #5e9bff;
+  --color-gem-blue-shadow: #0d3576;
+  --color-gem-blue-ink: #d8e5fb;
+
+  --color-gem-green: #1d8a3a;
+  --color-gem-green-glow: #5fdb7f;
+  --color-gem-green-shadow: #0a4319;
+  --color-gem-green-ink: #d6f5dd;
+
+  --color-gem-red: #c1273e;
+  --color-gem-red-glow: #f06677;
+  --color-gem-red-shadow: #65111d;
+  --color-gem-red-ink: #fad6db;
+
+  --color-gem-black: #1c1c20;
+  --color-gem-black-glow: #4a4a52;
+  --color-gem-black-shadow: #050507;
+  --color-gem-black-ink: #d3d3d8;
+
+  --color-gem-gold: #d9a72c;
+  --color-gem-gold-glow: #ffe18a;
+  --color-gem-gold-shadow: #7c5a10;
+  --color-gem-gold-ink: #4a3208;
+
+  --color-noble-gold: #b8902e;
+  --color-noble-gold-edge: #5a4310;
+}
+
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --radius: 0.625rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  * {
+    box-sizing: border-box;
+    border-color: var(--color-border);
+  }
+
+  html,
+  body {
+    width: 100%;
+    min-height: 100%;
+    height: 100%;
+    margin: 0;
+  }
+
+  body {
+    @apply min-h-screen font-sans antialiased text-parchment;
+    color: var(--color-parchment);
+    background:
+      radial-gradient(ellipse at 50% 30%, var(--color-felt-warm) 0%, var(--color-felt-mid) 50%, var(--color-felt-deep) 100%),
+      var(--color-felt-deep);
+    background-attachment: fixed;
+  }
+
+  body > div {
+    height: 100%;
+    min-height: 100%;
+    width: 100%;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+}
+
+/* Subtle linen texture for the felt — pure CSS noise via SVG data URI. */
+@layer base {
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.18;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='4'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.4 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    mix-blend-mode: overlay;
+    z-index: 0;
+  }
+}
+
+@keyframes stage-rise {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 225, 138, 0.0), inset 0 0 0 1px rgba(255, 225, 138, 0.0); }
+  50% { box-shadow: 0 0 22px 4px rgba(255, 225, 138, 0.55), inset 0 0 0 1px rgba(255, 225, 138, 0.7); }
+}
+
+@keyframes prestige-pop {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+
+/* Reusable utility classes */
+@layer components {
+  .felt-panel {
+    background:
+      linear-gradient(160deg, rgba(255,255,255,0.04) 0%, rgba(0,0,0,0.18) 100%),
+      var(--color-felt-mid);
+    border: 1px solid rgba(0, 0, 0, 0.25);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      inset 0 -2px 4px rgba(0, 0, 0, 0.25);
+    border-radius: 16px;
+  }
+
+  .wood-frame {
+    background:
+      linear-gradient(180deg, var(--color-wood-light) 0%, var(--color-wood-mid) 50%, var(--color-wood-dark) 100%);
+    border: 1px solid var(--color-wood-edge);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.18),
+      inset 0 -2px 0 rgba(0, 0, 0, 0.5);
+  }
+
+  .parchment {
+    background:
+      radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.5) 0%, transparent 60%),
+      linear-gradient(180deg, #faf2dc 0%, var(--color-parchment) 60%, #e6d8af 100%);
+    color: #2a1d08;
+    border: 1px solid var(--color-parchment-edge);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.6),
+      inset 0 -2px 4px rgba(83, 58, 16, 0.18);
+  }
+
+  .text-shadow-soft {
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  }
+}

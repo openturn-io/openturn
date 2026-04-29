@@ -1,0 +1,146 @@
+---
+title: "@openturn/cli"
+description: The `openturn` binary. `create`, `dev`, `build`, `deploy`, `login`.
+sidebarTitle: CLI
+---
+
+Bun-targeted. Installs the `openturn` command-line binary.
+
+```bash
+bun add -g @openturn/cli
+```
+
+## Commands
+
+### `openturn create <project-dir> [--template local|multiplayer]`
+
+Scaffold a new project in an empty directory.
+
+```bash
+openturn create my-game --template local
+```
+
+Writes `package.json`, `tsconfig.json`, `app/game.ts`, `app/page.tsx`, `app/openturn.ts`. The game template is a two-player counter; swap it out once you have things running. Templates:
+
+- `local` — single-device React app. `metadata.runtime = "local"`.
+- `multiplayer` — cloud-ready React app. `metadata.runtime = "multiplayer"` with `gameKey` and `schemaVersion`.
+
+### `openturn dev [project-dir] [--port <port>]`
+
+Run the project under a Bun-backed dev server with Vite HMR and live reload of `app/game.ts`.
+
+```bash
+openturn dev .
+openturn dev ./apps/my-game --port 3001
+```
+
+For projects whose `metadata.runtime` is `multiplayer`, the dev server also mounts `@openturn/server`, persists rooms in SQLite, and accepts WebSocket connections. Anonymous authentication is provided via `@better-auth` so every browser window gets its own user.
+
+### `openturn dev <deployment-module> [--port <port>] [--db <path>]`
+
+Run a pre-built deployment module (a `GameDeployment<TGame>` exported from a module) against the local hosted stack. Useful for loading an already-deployed-shaped artifact locally.
+
+### `openturn build [project-dir] [--out <dir>] [--deployment-id <id>] [--project-id <id>]`
+
+Run the build pipeline. Output defaults to `.openturn/deploy`.
+
+```bash
+openturn build . --out .openturn/dist
+```
+
+Prints the deployment ID, runtime, and entry after building. See [reference: deploy](/reference/deploy) for what the output contains.
+
+### `openturn deploy [project-dir] [--project <slug>] [--name <name>] [--url <url>] [--token <token>]`
+
+Build and upload the project to the cloud control plane.
+
+```bash
+openturn deploy . --project my-game
+```
+
+Requires prior `openturn login`. See [how-to: deploy to Cloudflare](/how-to/deploy-to-cloudflare).
+
+### `openturn login [--url <url>] [--token <token>]`
+
+Store a cloud auth token.
+
+```bash
+openturn login --token <token>
+```
+
+Saved to `~/.openturn/cloud-auth.json`. `--url` overrides the default control plane (for staging).
+
+### `openturn logout`
+
+Clear stored credentials.
+
+## Programmatic API
+
+The CLI also exports its local dev server for integration.
+
+### `startLocalDevServer(options)`
+
+```ts
+import { startLocalDevServer } from "@openturn/cli";
+import { loadGameDeployment } from "@openturn/server";
+
+const deployment = loadGameDeployment(await import("./deployment.ts"));
+const server = await startLocalDevServer({ deployment, port: 4010 });
+
+console.log(server.url);
+await server.stop();
+```
+
+### `LocalDevServerOptions`
+
+```ts
+interface LocalDevServerOptions {
+  deployment: GameDeployment;
+  port?: number;                      // default 4010
+  dbPath?: string;                    // default .openturn/local-dev.sqlite
+  secret?: string;                    // JWT signing secret
+  iframe?: { bundleURL: string; deploymentID: string; gameName: string };
+  static?: { deploymentID: string; gameName: string; outDir: string };
+}
+```
+
+- `iframe` — mount an externally-hosted iframe bundle against the local authoritative backend.
+- `static` — serve a pre-built deployment (e.g. `openturn build` output) from `outDir` and embed it as the iframe.
+
+### `LocalDevServer`
+
+```ts
+interface LocalDevServer {
+  url: string;
+  port: number;
+  stop(): Promise<void>;
+  swapDeployment(next: GameDeployment): Promise<void>;
+}
+```
+
+### `createOpenturnProject(options)`
+
+The underlying `openturn create` implementation:
+
+```ts
+createOpenturnProject({ projectDir, template?: "local" | "multiplayer" })
+```
+
+### `removeDatabaseFile(path)`
+
+Delete a local dev SQLite database. Use for reset helpers.
+
+## Persistence schema
+
+The SQLite database has these tables:
+
+- `openturn_rooms` — room state (branch, checkpoint, log, match, seed, deployment version).
+- `openturn_room_players` — seat assignments.
+- `openturn_audit_events` — audit log.
+- `user`, `session`, `account`, `verification` — Better Auth tables for anonymous sessions.
+
+## See also
+
+- [How-to: run a local hosted stack](/how-to/run-local-hosted)
+- [How-to: deploy to Cloudflare](/how-to/deploy-to-cloudflare)
+- [Reference: deploy](/reference/deploy), [reference: server](/reference/server)

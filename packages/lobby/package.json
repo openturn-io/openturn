@@ -1,0 +1,91 @@
+{
+  "name": "@openturn/lobby",
+  "version": "0.0.0",
+  "type": "module",
+  "openturn": {
+    "runtime": "browser"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./protocol": "./src/protocol/index.ts",
+    "./runtime": "./src/runtime/index.ts",
+    "./react": "./src/react/index.ts",
+    "./registry": "./src/registry.ts",
+    "./supervisor": "./src/supervisor/index.ts"
+  },
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "bun x tsc -p tsconfig.json --pretty false",
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "bun run build",
+    "prepack": "node ../../scripts/prepack.mjs",
+    "postpack": "node ../../scripts/postpack.mjs"
+  },
+  "dependencies": {
+    "@openturn/bot": "workspace:*",
+    "@openturn/client": "workspace:*",
+    "@openturn/core": "workspace:*",
+    "@openturn/protocol": "workspace:*",
+    "@openturn/server": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": "^19.2.0"
+  },
+  "devDependencies": {
+    "@openturn/gamekit": "workspace:*",
+    "@testing-library/react": "^16.3.0",
+    "@types/react": "^19.2.0",
+    "jsdom": "^29.0.1",
+    "vitest": "^3.2.4"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openturn-io/openturn.git",
+    "directory": "packages/lobby"
+  },
+  "homepage": "https://github.com/openturn-io/openturn/tree/main/packages/lobby#readme",
+  "bugs": {
+    "url": "https://github.com/openturn-io/openturn/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "main": "./dist/index.js",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./protocol": {
+        "types": "./dist/protocol/index.d.ts",
+        "import": "./dist/protocol/index.js"
+      },
+      "./runtime": {
+        "types": "./dist/runtime/index.d.ts",
+        "import": "./dist/runtime/index.js"
+      },
+      "./react": {
+        "types": "./dist/react/index.d.ts",
+        "import": "./dist/react/index.js"
+      },
+      "./registry": {
+        "types": "./dist/registry.d.ts",
+        "import": "./dist/registry.js"
+      },
+      "./supervisor": {
+        "types": "./dist/supervisor/index.d.ts",
+        "import": "./dist/supervisor/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ]
+}

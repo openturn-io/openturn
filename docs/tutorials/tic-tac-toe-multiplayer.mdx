@@ -1,0 +1,145 @@
+---
+title: Tic-tac-toe as hosted multiplayer
+description: Reuse the tic-tac-toe game package from tutorial 1, host it on a local dev server, then deploy to Cloudflare.
+sidebarTitle: Multiplayer
+---
+
+This tutorial assumes you finished [tic-tac-toe with gamekit](/tutorials/tic-tac-toe-gamekit) and have a working `@my/tic-tac-toe-game` package. Here we host the same game with `@openturn/server`, connect to it from a React app with `<OpenturnProvider cloud>` + `useRoom`, and deploy it to Cloudflare with `openturn deploy`.
+
+Reference code: [`examples/hosted-multiplayer/tic-tac-toe-multiplayer`](https://github.com/openturn-io/openturn/tree/main/openturn/examples/hosted-multiplayer/tic-tac-toe-multiplayer).
+
+## 1. Switch the app metadata to multiplayer
+
+Take the `app/app/openturn.ts` from the previous tutorial and update it:
+
+```ts
+export const metadata = {
+  name: "Tic Tac Toe Multiplayer",
+  runtime: "multiplayer",
+  multiplayer: {
+    gameKey: "tic-tac-toe-multiplayer",
+    schemaVersion: "1",
+  },
+};
+```
+
+`runtime: "multiplayer"` tells `openturn build` to emit a Cloudflare Worker bundle alongside the client. `gameKey` is the stable identifier used when deploying; `schemaVersion` lets you force-reset rooms when you break save compatibility.
+
+`app/app/game.ts` stays the same. The same `game` and `match` values drive both local and hosted play.
+
+## 2. Wrap the page in `<OpenturnProvider>` and read `useRoom`
+
+Replace the local-only experience with a lobby-aware one:
+
+```tsx
+// app/src/components/TicTacToeMultiplayerExperience.tsx
+import { createOpenturnBindings, Lobby, type HostedRoomState } from "@openturn/react";
+import { ticTacToe } from "@my/tic-tac-toe-game";
+
+const { OpenturnProvider, useRoom } = createOpenturnBindings(ticTacToe, {
+  runtime: "multiplayer",
+});
+
+export function TicTacToeMultiplayerExperience() {
+  return (
+    <OpenturnProvider>
+      <TicTacToeRoom />
+    </OpenturnProvider>
+  );
+}
+
+function TicTacToeRoom() {
+  const room = useRoom();
+
+  if (room.phase === "missing_backend") {
+    return <p>Open this app through an openturn play URL.</p>;
+  }
+  if (room.lobby !== null) {
+    return <Lobby lobby={room.lobby} title="Tic Tac Toe" />;
+  }
+  if (room.game !== null) {
+    return <HostedBoard match={room.game} />;
+  }
+  return <p>{room.phase === "connecting" ? "Connecting…" : "Loading…"}</p>;
+}
+
+function HostedBoard({ match }: { match: NonNullable<HostedRoomState<typeof ticTacToe>["game"]> }) {
+  const snapshot = match.snapshot;
+  if (snapshot === null) return <p>Waiting for initial snapshot.</p>;
+
+  return (
+    <div>
+      {snapshot.G.board.map((row, r) =>
+        row.map((cell, c) => (
+          <button
+            key={`${r}-${c}`}
+            disabled={!match.canDispatch.placeMark || cell !== null}
+            onClick={() => match.dispatch.placeMark({ row: r, col: c })}
+          >
+            {cell ?? "·"}
+          </button>
+        )),
+      )}
+      <p>
+        Status: {match.status} · You are player {match.playerID ?? "?"}
+      </p>
+    </div>
+  );
+}
+```
+
+`useRoom()` returns a phase-aware state object:
+
+- `phase` is one of `idle | missing_backend | connecting | lobby | transitioning | game | closed | error`.
+- `lobby` is a `LobbyView` while players are still joining.
+- `game` is a `HostedMatchState` once the lobby hands off to the match.
+- `inviteURL` is a sharable link that puts a new player in the same room.
+
+You do not pass a `playerID` to dispatch: the server already knows who you are from your room token.
+
+## 3. Run the local hosted stack
+
+The CLI can run your game with a local Bun-backed server, no cloud needed:
+
+```bash
+openturn dev app
+```
+
+(From the `tic-tac-toe-multiplayer` package root. `app` is the project directory containing `app/game.ts`, `app/page.tsx`, `app/openturn.ts`.)
+
+The CLI prints a play URL. Open it in two browser windows. Each window is assigned an anonymous user; the first window creates a room, shares the invite URL, the second window joins the lobby, and both are routed into the hosted match. Moves are dispatched to the server over WebSocket; the server validates them with the same authoritative `ticTacToe` reducer, then broadcasts batches back to each client's player view.
+
+Under the hood: `@openturn/cli` runs a Bun HTTP server backed by SQLite. It uses `@openturn/server`'s `createRoomRuntime` plus `LobbyRuntime` to manage rooms, and `@better-auth` to issue anonymous session tokens. The dev shell injects the same `#openturn-bridge=…` URL fragment that openturn-cloud injects in production, so the React app's `<OpenturnProvider>` connects through `@openturn/bridge` without any code change between dev and prod.
+
+## 4. Deploy to Cloudflare
+
+When you are happy locally, build and ship:
+
+```bash
+openturn login --token <your-cloud-token>
+openturn build app
+openturn deploy app
+```
+
+`openturn build` writes a bundle to `.openturn/deploy/` containing:
+
+- `index.html` + client JS and CSS.
+- A Cloudflare Worker script with a Durable Object namespace for your rooms (`GameRoom`).
+- An `openturn.manifest.json` with `gameKey`, `schemaVersion`, a SHA256 digest, and Worker bindings.
+
+`openturn deploy` uploads the bundle to the cloud control plane, which provisions the Durable Objects and returns a play URL. That play URL embeds a backend fragment that `@openturn/bridge` decodes to find the WebSocket endpoint.
+
+See [how-to: deploy to Cloudflare](/how-to/deploy-to-cloudflare) for flags and troubleshooting.
+
+## What you learned
+
+- A single game definition drives local and hosted play unchanged. Only the React hook and the metadata differ.
+- The hosted stack is lobby → room. `useRoom()` exposes both phases.
+- `openturn dev` gives you production-shaped hosted play on localhost with no configuration.
+- `openturn build` + `openturn deploy` ship to Cloudflare Durable Objects.
+
+## What to do next
+
+- [Tutorial: tic-tac-toe replay](/tutorials/tic-tac-toe-replay) captures matches and scrubs them back.
+- [How-to: build a lobby](/how-to/build-a-lobby) goes deeper on lobby state and seat assignment.
+- [Reference: server](/reference/server) is the API for the authoritative room runtime.

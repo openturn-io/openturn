@@ -1,0 +1,69 @@
+{
+  "name": "@openturn/deploy",
+  "version": "0.0.0",
+  "type": "module",
+  "openturn": {
+    "runtime": "bun"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "bun x tsc -p tsconfig.json --pretty false",
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "bun run build",
+    "prepack": "node ../../scripts/prepack.mjs",
+    "postpack": "node ../../scripts/postpack.mjs"
+  },
+  "dependencies": {
+    "@openturn/core": "workspace:*",
+    "@openturn/json": "workspace:*",
+    "@openturn/manifest": "workspace:*",
+    "@openturn/protocol": "workspace:*",
+    "@openturn/server": "workspace:*",
+    "@tailwindcss/vite": "^4.2.2",
+    "@vitejs/plugin-react": "^6.0.1",
+    "tailwindcss": "^4.2.2",
+    "vite": "^8.0.8",
+    "zod": "^4.1.12"
+  },
+  "peerDependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openturn-io/openturn.git",
+    "directory": "packages/deploy"
+  },
+  "homepage": "https://github.com/openturn-io/openturn/tree/main/packages/deploy#readme",
+  "bugs": {
+    "url": "https://github.com/openturn-io/openturn/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "main": "./dist/index.js",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ]
+}

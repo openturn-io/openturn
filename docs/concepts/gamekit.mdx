@@ -1,0 +1,109 @@
+---
+title: "Gamekit: the move-first layer"
+description: How `@openturn/gamekit` turns phase + move + outcome authoring into a pure core game definition.
+sidebarTitle: Overview
+---
+
+`@openturn/gamekit` is a sugar layer over `@openturn/core`. You author phases and moves; gamekit compiles them into core states and transitions. The output is a normal `GameDefinition<...>`, so everything downstream (replay, inspector, hosted runtime) treats a gamekit game exactly like a hand-authored core game.
+
+Use gamekit when your game has a natural "a player picks one of a few things to do on their turn" shape. Drop to core when the state graph is the interesting part.
+
+## The authoring surface
+
+```ts
+import { defineGame, move, permissions, turn, view } from "@openturn/gamekit";
+
+export const game = defineGame({
+  maxPlayers: 2,
+  setup: () => ({ /* initial G */ }),
+  turn: turn.roundRobin(),
+  initialPhase: "play",
+  phases: {
+    play: { label: "Take your turn" },
+  },
+  computed: {
+    /* selectors, available as C in move run contexts */
+  },
+  moves: ({ move, queue }) => ({
+    /* move definitions */
+  }),
+  views: {
+    public: ({ G, turn }) => ({ /* ... */ }),
+    player: ({ G, turn }, player) => ({ /* ... */ }),
+  },
+});
+```
+
+There are four things to notice:
+
+1. **`setup`** returns a plain state `G`. Gamekit wraps it with internal bookkeeping (see "wrapping core" below); you never touch the wrapper.
+2. **`phases`** are named high-level steps (planning, bidding, play). Each compiles to a core state.
+3. **`moves`** is the only place logic lives. Each move declares its args, optional permissions, optional phase gate, and a `run` function.
+4. **`views`** is identical to core: `public` and `player` project `G` into JSON.
+
+## Moves
+
+A move is a pure function from `(G, args, player, turn, phase, computed)` to an outcome:
+
+```ts
+moves: ({ move }) => ({
+  placeMark: move<PlaceMarkArgs>({
+    run({ G, args, move, player }) {
+      const board = placeMark(G.board, args.row, args.col, player.id);
+      if (board === null) return move.invalid("occupied", args);
+      if (isWinner(board)) return move.win(player.id, { board });
+      if (isFull(board)) return move.draw({ board });
+      return move.endTurn({ board });
+    },
+  }),
+}),
+```
+
+See [gamekit moves and outcomes](/concepts/gamekit-moves-and-outcomes) for the full outcome set (`stay`, `endTurn`, `goto`, `win`, `draw`, `invalid`).
+
+## Permissions and turns
+
+Permissions gate who can dispatch a move. `permissions.currentPlayer` is the most common: only the current round-robin player may act. Write your own for anything else:
+
+```ts
+move({
+  canPlayer: ({ player, turn, G }) => player.id === turn.currentPlayer && G.cards[player.id].length > 0,
+  run: /* ... */,
+}),
+```
+
+See [gamekit permissions and turns](/concepts/gamekit-permissions-and-turns).
+
+## Views and computed
+
+Computed values are selectors under a friendlier name. You read them as `C` inside permissions, moves, and views. Use them to avoid recomputing derived facts in every code path.
+
+See [gamekit views and computed](/concepts/gamekit-views-and-computed).
+
+## Wrapping core
+
+Gamekit wraps `G` in an internal `__gamekit` field to track whether the game ended with a result. The wrapper is invisible: your move `run` receives `G` without `__gamekit`, and your views never see it. If you ever need to read it (you probably do not), `snapshot.meta.result` carries the same data.
+
+If gamekit cannot express what you need, drop through to core transitions with the `core` field:
+
+```ts
+defineGame({
+  maxPlayers: 2,
+  setup: () => ({ ... }),
+  moves: { ... },
+  core: {
+    states: { archived: { activePlayers: () => [] } },
+    transitions: [/* raw core transitions */],
+  },
+});
+```
+
+## Randomness
+
+Every move context has `rng: DeterministicRng` from `@openturn/core`. Use it for all randomness, never `Math.random()`. See [how-to: handle randomness](/how-to/handle-randomness).
+
+## What to read next
+
+- [Gamekit moves and outcomes](/concepts/gamekit-moves-and-outcomes) is the outcome cheatsheet.
+- [Gamekit permissions and turns](/concepts/gamekit-permissions-and-turns) covers `canPlayer` patterns.
+- [Gamekit views and computed](/concepts/gamekit-views-and-computed) covers projection and derivation.

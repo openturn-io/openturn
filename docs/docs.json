@@ -1,0 +1,191 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "openturn",
+  "colors": {
+    "primary": "#16A34A",
+    "light": "#07C983",
+    "dark": "#15803D"
+  },
+  "favicon": "/favicon.svg",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get started",
+            "pages": [
+              "index",
+              "get-started/install-and-run",
+              "get-started/your-first-game"
+            ]
+          },
+          {
+            "group": "Tutorial",
+            "pages": [
+              "tutorials/tic-tac-toe-gamekit",
+              "tutorials/tic-tac-toe-multiplayer",
+              "tutorials/tic-tac-toe-replay",
+              "tutorials/tic-tac-toe-core",
+              "tutorials/tic-tac-toe-bot"
+            ]
+          },
+          {
+            "group": "Foundations",
+            "pages": [
+              "concepts/mental-model",
+              "concepts/authoritative-state",
+              "concepts/events-states-transitions",
+              "concepts/reducers-and-queued-events",
+              "concepts/turns-phases-control",
+              "concepts/selectors-and-player-views",
+              "concepts/persistent-profiles",
+              "how-to/author-with-core"
+            ]
+          },
+          {
+            "group": "GameKit",
+            "pages": [
+              "concepts/gamekit",
+              "how-to/author-with-gamekit",
+              "concepts/gamekit-moves-and-outcomes",
+              "concepts/gamekit-permissions-and-turns",
+              "concepts/gamekit-views-and-computed"
+            ]
+          },
+          {
+            "group": "Recipes",
+            "pages": [
+              "how-to/handle-randomness",
+              "how-to/model-hidden-info",
+              "how-to/handle-simultaneous-moves",
+              "how-to/persist-player-state"
+            ]
+          },
+          {
+            "group": "AI bots",
+            "pages": [
+              "concepts/bots",
+              "how-to/add-a-bot",
+              "how-to/play-against-bots"
+            ]
+          },
+          {
+            "group": "Hosting",
+            "pages": [
+              "concepts/runtime-boundaries",
+              "concepts/local-vs-hosted",
+              "how-to/run-a-local-session",
+              "how-to/run-local-hosted",
+              "how-to/deploy-to-cloudflare"
+            ]
+          },
+          {
+            "group": "Tools",
+            "pages": [
+              "how-to/bind-to-react",
+              "how-to/add-a-cli",
+              "how-to/debug-with-inspector",
+              "how-to/capture-replays",
+              "how-to/build-a-lobby"
+            ]
+          },
+          {
+            "group": "More",
+            "pages": [
+              "examples",
+              "development",
+              "type-layers"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "Authoring",
+            "pages": [
+              "reference/packages",
+              "reference/core",
+              "reference/gamekit",
+              "reference/bot",
+              "reference/json"
+            ]
+          },
+          {
+            "group": "Hosting",
+            "pages": [
+              "reference/protocol",
+              "reference/manifest",
+              "reference/server",
+              "reference/client",
+              "reference/bridge"
+            ]
+          },
+          {
+            "group": "UI & tools",
+            "pages": [
+              "reference/react",
+              "reference/lobby",
+              "reference/inspector",
+              "reference/inspector-ui",
+              "reference/replay",
+              "reference/cli",
+              "reference/deploy",
+              "reference/examples"
+            ]
+          }
+        ]
+      }
+    ],
+    "global": {
+      "anchors": [
+        {
+          "anchor": "Examples",
+          "href": "/examples",
+          "icon": "flag"
+        },
+        {
+          "anchor": "Package reference",
+          "href": "/reference/packages",
+          "icon": "blocks"
+        }
+      ]
+    }
+  },
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Examples",
+        "href": "/examples"
+      },
+      {
+        "label": "Reference",
+        "href": "/reference/packages"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Get started",
+      "href": "/get-started/install-and-run"
+    }
+  },
+  "contextual": {
+    "options": [
+      "copy",
+      "view",
+      "chatgpt",
+      "claude",
+      "perplexity",
+      "mcp",
+      "cursor",
+      "vscode"
+    ]
+  }
+}

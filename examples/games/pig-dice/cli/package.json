@@ -1,0 +1,16 @@
+{
+  "name": "@openturn/example-pig-dice-cli",
+  "private": true,
+  "type": "module",
+  "openturn": {
+    "runtime": "bun"
+  },
+  "scripts": {
+    "demo": "bun run src/index.ts",
+    "typecheck": "bun x tsc -p tsconfig.json --pretty false"
+  },
+  "dependencies": {
+    "@openturn/core": "workspace:*",
+    "@openturn/example-pig-dice-game": "workspace:*"
+  }
+}

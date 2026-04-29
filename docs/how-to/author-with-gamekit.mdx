@@ -1,0 +1,131 @@
+---
+title: Author a game with gamekit
+description: The move-first authoring recipe. Setup, phases, moves, permissions, views.
+sidebarTitle: Authoring
+---
+
+Use `@openturn/gamekit` when your game is naturally "a player picks one of a few moves on their turn." It is the shortest path from design to a playable reducer.
+
+## Skeleton
+
+```ts
+import { defineGame, move, permissions, turn } from "@openturn/gamekit";
+
+export const game = defineGame({
+  maxPlayers: 2,                  // pool size — generates IDs "0",..,"N-1"
+  // minPlayers: 2,                // optional; defaults to maxPlayers
+  // playerIDs: ["white","black"] as const,  // opt-in for named seats instead
+  setup: () => ({ /* initial G */ }),
+  turn: turn.roundRobin(),
+  initialPhase: "play",       // optional; defaults to "play"
+  phases: {                    // optional; auto-derived from moves otherwise
+    play: { label: "Take your turn" },
+  },
+  computed: {                  // optional selectors
+    // ...
+  },
+  moves: ({ move }) => ({
+    // ...
+  }),
+  views: {                     // optional but recommended
+    public: ({ G, turn }) => ({ /* ... */ }),
+  },
+});
+```
+
+## Declare moves
+
+```ts
+moves: ({ move, queue }) => ({
+  attack: move<{ target: PlayerID }>({
+    canPlayer: permissions.currentPlayer,
+    phases: ["combat"],            // only valid in this phase
+    run({ G, C, args, move, player, rng }) {
+      if (G.players[args.target].hp <= 0) return move.invalid("already_defeated");
+      const damage = rng.int(6) + 1;
+      const nextHp = G.players[args.target].hp - damage;
+      if (nextHp <= 0 && allDefeated(G)) return move.win(player.id, { ... });
+      return move.endTurn({ players: { ...G.players, [args.target]: { hp: nextHp } } });
+    },
+  }),
+}),
+```
+
+Each move declares:
+
+- **`args?`** — the payload type. Use `move<T>` to type it explicitly.
+- **`canPlayer?`** — predicate gating the dispatch.
+- **`phases?`** — restrict the move to specific phases.
+- **`run`** — the pure state transition. Must return an outcome from `move.stay | endTurn | goto | win | draw | invalid`.
+
+`queue(kind, payload?)` is a helper for building internal events to enqueue from `run`.
+
+## Permissions
+
+`permissions.currentPlayer` is the built-in for "only the round-robin current player can act." Write your own for anything else:
+
+```ts
+canPlayer: ({ player, G }) => G.hasPaid[player.id] === true,
+```
+
+See [gamekit permissions and turns](/concepts/gamekit-permissions-and-turns) for the full pattern.
+
+## Phases
+
+Phases group moves by game stage. Each phase can override `activePlayers` (for simultaneous play) and `label`:
+
+```ts
+phases: {
+  planning: {
+    activePlayers: ({ G }) => PLAYERS.filter((id) => !G.ready[id]),
+    label: "Place your units",
+  },
+  combat: {
+    label: ({ G }) => `Round ${G.round}`,
+  },
+},
+initialPhase: "planning",
+```
+
+Transition phases with `move.goto("phaseName")`.
+
+## Computed values
+
+Expose derived facts as selectors. They are available as `C` inside moves, permissions, and views, and also show up in `snapshot.derived.selectors`:
+
+```ts
+computed: {
+  aliveCount: ({ G }) => PLAYERS.filter((id) => G.players[id].hp > 0).length,
+},
+```
+
+## Views
+
+```ts
+views: {
+  public: ({ G, turn }) => ({
+    currentPlayer: turn.currentPlayer,
+    board: G.board,              // public info
+  }),
+  player: ({ G, turn }, player) => ({
+    currentPlayer: turn.currentPlayer,
+    board: G.board,
+    myHand: G.hands[player.id],  // private info
+  }),
+},
+```
+
+`views.public` is the default; `views.player` runs once per seat. Both must return JSON.
+
+## When to reach for core
+
+- You need more than one event per move (rare).
+- You want states that are not phase-shaped (e.g. "waiting for reconnect").
+- You need custom state labels or `control` metadata that doesn't fit `phases`.
+
+Drop to core via the `core` field or rewrite the game with `@openturn/core` directly. See [how-to: author with core](/how-to/author-with-core).
+
+## Related
+
+- [Concepts: gamekit](/concepts/gamekit) is the conceptual deep dive.
+- [Reference: gamekit](/reference/gamekit) is the API reference.

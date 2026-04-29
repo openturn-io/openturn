@@ -1,0 +1,116 @@
+---
+title: Capture and replay matches
+description: Serialize a match to JSON with `@openturn/replay`, load it later, and materialize it into an inspectable timeline.
+sidebarTitle: Replays
+---
+
+A completed match can be captured as a self-contained JSON envelope that any machine with the game definition can replay. This is the foundation for spectator views, analysis tools, and inspector.
+
+## Capture from a local session
+
+```ts
+import { createSavedReplayFromSession, serializeSavedReplay } from "@openturn/replay";
+
+const envelope = createSavedReplayFromSession({
+  gameID: "example/tic-tac-toe",
+  playerID: "0",
+  session,
+  metadata: { label: "Opening match" },
+});
+
+const text = serializeSavedReplay(envelope);
+// text is pure JSON; write to a file, upload, store in a blob, whatever
+```
+
+The `session` argument can be an actual `LocalGameSession` or any object that exposes `getReplayData()`. React's `useMatch().state.replayData` exposes it in local mode; pass `{ getReplayData: () => replayData }` if you want to capture from a component.
+
+### Envelope shape
+
+```ts
+interface SavedReplayEnvelope<TPlayers, TMatchData> {
+  version: 1;                            // SavedReplayVersion
+  gameID: string;                        // stable identifier for this game
+  playerID?: TPlayers[number];           // who captured the replay, optional
+  seed: string;                          // RNG seed
+  initialNow: number;                    // initial time in ms
+  match: MatchInput<TPlayers, TMatchData>;
+  actions: readonly GameActionRecord[];  // the action log
+  metadata?: Readonly<Record<string, JsonValue>>;
+}
+```
+
+Everything is JSON. You can store the envelope anywhere strings go.
+
+## Load and materialize
+
+```ts
+import { materializeSavedReplay, parseSavedReplay } from "@openturn/replay";
+import { ticTacToe } from "./game";
+
+const envelope = parseSavedReplay(await readFile("replay.json", "utf-8"));
+if (envelope.gameID !== "example/tic-tac-toe") throw new Error("wrong game");
+
+const timeline = materializeSavedReplay(ticTacToe, envelope);
+```
+
+`materializeSavedReplay` replays the action log against a fresh reducer and returns a `ReplayTimeline<TGame>`:
+
+```ts
+interface ReplayTimeline<TGame> {
+  frames: readonly ReplayFrame<TGame>[];
+  actions: readonly GameActionRecord[];
+  branches: readonly ReplayBranch[];
+  seed: string;
+  initialNow: number;
+}
+
+interface ReplayFrame<TGame> {
+  snapshot: GameSnapshot<...>;
+  step: GameStep<TGame> | null;
+  action: GameActionRecord | null;
+  revision: number;
+  playerView: GamePlayerView<TGame> | null;
+}
+```
+
+Each frame has the full snapshot at that point, the transition that produced it, and an optional player view.
+
+## Scrub with a cursor
+
+```ts
+import { createReplayCursor } from "@openturn/replay";
+
+const cursor = createReplayCursor(timeline);
+cursor.play();
+cursor.pause();
+cursor.seekTurn(3);
+cursor.seekAction(actionID);
+cursor.undo();
+cursor.redo();
+
+const state = cursor.getState();
+// state.currentFrame is the current frame, state.isPlaying is boolean
+```
+
+The cursor drives scrub-style replay UIs. Every mutating method returns the new `ReplayCursorState` so you can feed it into React state yourself.
+
+## Branching
+
+For "what if" analysis, fork the timeline at an action and replay new actions from there:
+
+```ts
+import { addReplayBranch } from "@openturn/replay";
+
+const branched = addReplayBranch(timeline, actionID, "branch-1", /* parent = main */ null);
+```
+
+Branches share the prefix up to the fork point but diverge after. Devtools uses this to let you try different moves from a captured state.
+
+## Load in inspector
+
+For an interactive inspector, wrap the timeline with the `ReplayInspector` from `@openturn/inspector-ui`'s `createInspector(bindings)`. See [how-to: debug with inspector](/how-to/debug-with-inspector).
+
+## Related
+
+- [Tutorial: tic-tac-toe replay](/tutorials/tic-tac-toe-replay) walks through capture and load end to end.
+- [Reference: replay](/reference/replay) is the full API reference.

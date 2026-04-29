@@ -1,0 +1,73 @@
+{
+  "name": "@openturn/bridge",
+  "version": "0.0.0",
+  "type": "module",
+  "openturn": {
+    "runtime": "browser"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./game": "./src/game.ts",
+    "./host": "./src/host.ts",
+    "./dev-transport": "./src/dev-transport.ts"
+  },
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "bun x tsc -p tsconfig.json --pretty false",
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "bun run build",
+    "prepack": "node ../../scripts/prepack.mjs",
+    "postpack": "node ../../scripts/postpack.mjs"
+  },
+  "dependencies": {
+    "@openturn/client": "workspace:*",
+    "@openturn/json": "workspace:*",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "jsdom": "^29.0.1",
+    "vitest": "^4.1.2"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openturn-io/openturn.git",
+    "directory": "packages/bridge"
+  },
+  "homepage": "https://github.com/openturn-io/openturn/tree/main/packages/bridge#readme",
+  "bugs": {
+    "url": "https://github.com/openturn-io/openturn/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "main": "./dist/index.js",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./game": {
+        "types": "./dist/game.d.ts",
+        "import": "./dist/game.js"
+      },
+      "./host": {
+        "types": "./dist/host.d.ts",
+        "import": "./dist/host.js"
+      },
+      "./dev-transport": {
+        "types": "./dist/dev-transport.d.ts",
+        "import": "./dist/dev-transport.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ]
+}

@@ -1,0 +1,100 @@
+---
+title: Events, states, and transitions
+description: The three primitives that make up a core game definition.
+sidebarTitle: Events
+---
+
+`@openturn/core` exposes three authoring primitives. Everything else in openturn (gamekit moves, hosted dispatch, replay, inspector) is built on top of them.
+
+If you are using gamekit, you will only touch these directly when you hit the [core escape hatch](/concepts/gamekit). Read on anyway, because gamekit's moves compile down to these primitives and knowing them makes the debugger legible.
+
+## Events
+
+Events are the input to your game. Each event has a name and a payload shape:
+
+```ts
+import { defineEvent, defineGame } from "@openturn/core";
+
+const game = defineGame({
+  maxPlayers: 2,
+  events: {
+    placeMark: defineEvent<{ row: number; col: number }>(),
+    concede: defineEvent(),
+  },
+  // ...
+});
+```
+
+Events are finite and declared up front. The engine rejects any dispatch whose name is not in `events`.
+
+## States
+
+States are the nodes of your game graph. Each state declares who is active, how it is labelled, and what metadata the engine should project:
+
+```ts
+states: {
+  play: {
+    activePlayers: ({ match, position }) =>
+      [match.players[(position.turn - 1) % match.players.length]!],
+    label: "Take your turn",
+    control: () => ({ status: "playing" }),
+  },
+  won: {
+    activePlayers: () => [],
+    label: "Match over",
+    control: () => ({ status: "won" }),
+  },
+},
+initial: "play",
+```
+
+- **`activePlayers`** is the single source of truth for who is allowed to dispatch right now. The engine uses it to reject moves from inactive seats.
+- **`label`** is a human-readable summary, used by inspector and UIs.
+- **`control`** and **`metadata`** are arbitrary JSON payloads you attach to a state. Selectors, views, and inspector read them.
+
+## Transitions
+
+Transitions are how state changes. Each transition says "from state X, when event Y fires, run this resolver; if it returns a result, move to state Z."
+
+```ts
+transitions: ({ transition }) => [
+  transition("placeMark", {
+    from: "play",
+    to: "play",
+    turn: "increment",
+    resolve: ({ G, event }) => {
+      const board = placeMark(G.board, event.payload.row, event.payload.col);
+      if (board === null) return null;     // branch does not match
+      return { G: { board } };             // branch matches, return next G
+    },
+  }),
+],
+```
+
+The resolver is a pure function of the current context (`G`, `event`, `playerID`, `position`, `rng`, `now`) and returns one of:
+
+- `null` / `undefined` / `false` — this branch does not match; try the next one.
+- `rejectTransition(code, details)` — the event is invalid; the engine rejects it with your error code.
+- `{ G, enqueue?, result?, turn? }` — this branch matches; here is the next snapshot fragment.
+
+## Matching is strict
+
+When an event fires, the engine evaluates every transition `from: currentState` whose `event` matches. If exactly one resolver returns a result, that branch wins. If multiple return a result, the engine raises `ambiguous_transition`. If none do, the event is rejected.
+
+This strictness is what makes replay, validation, and inspector deterministic. You never wonder "which branch ran" at runtime; the engine logs the resolved branch on every step.
+
+## Turn and enqueue
+
+A resolver can return:
+
+- `turn: "increment"` to bump `position.turn` by one.
+- `turn: "preserve"` (the default) to keep the turn unchanged (sticky turns).
+- `enqueue: [{ kind, payload }]` to queue internal events that run after the current one, before the next player action.
+
+Internal events flow through the same reducer; they cannot do anything an authored event could not. See [reducers and queued events](/concepts/reducers-and-queued-events) for when to reach for them.
+
+## What to read next
+
+- [Reducers and queued events](/concepts/reducers-and-queued-events) on labelled resolvers and deterministic internal events.
+- [Turns, phases, and control](/concepts/turns-phases-control) explains the active-player machinery.
+- [How-to: author with core](/how-to/author-with-core) is the step-by-step when you want to skip gamekit.

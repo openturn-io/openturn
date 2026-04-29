@@ -1,0 +1,190 @@
+---
+title: "@openturn/replay"
+description: Saved replay envelopes, timeline materialization, cursor-based playback, branching.
+sidebarTitle: Replay
+---
+
+Worker-safe. The canonical replay artifact and the tools to load and scrub it.
+
+## Install
+
+```bash
+bun add @openturn/replay
+```
+
+## Envelopes
+
+### `SavedReplayEnvelope<TPlayers, TMatchData>`
+
+Serializable JSON artifact produced by a completed or in-progress match.
+
+```ts
+interface SavedReplayEnvelope<TPlayers, TMatchData> {
+  version: SavedReplayVersion;             // currently 1
+  gameID: string;                          // your stable identifier
+  playerID?: TPlayers[number];
+  seed: string;
+  initialNow: number;
+  match: MatchInput<TPlayers, TMatchData>;
+  actions: readonly GameActionRecord[];
+  metadata?: SavedReplayMetadata;
+}
+```
+
+### `SavedReplayVersion`
+
+Currently `1`. Bumps when the envelope format changes in an incompatible way.
+
+### `SavedReplayMetadata`
+
+Arbitrary JSON attached to an envelope.
+
+## Creating envelopes
+
+### `createSavedReplayEnvelope(options)`
+
+Build an envelope from explicit parts.
+
+```ts
+createSavedReplayEnvelope({
+  gameID,
+  seed,
+  initialNow,
+  match,
+  actions,
+  playerID?,
+  metadata?,
+})
+```
+
+### `createSavedReplayFromSession(options)`
+
+Build an envelope from a `LocalGameSession` (or anything exposing `getReplayData`):
+
+```ts
+createSavedReplayFromSession({
+  gameID,
+  session,
+  playerID?,
+  metadata?,
+})
+```
+
+## Serialization
+
+- `serializeSavedReplay(envelope)` — produce a JSON string.
+- `parseSavedReplay(text)` — parse a string back into an envelope, validating the version and shape.
+- `parseSavedReplayValue(value)` — parse a JSON value without going through text.
+
+All three throw with clear errors on mismatch.
+
+## Timelines
+
+### `ReplayTimeline<TGame>`
+
+In-memory replay, suitable for an inspector.
+
+```ts
+interface ReplayTimeline<TGame> {
+  frames: readonly ReplayFrame<TGame>[];
+  actions: readonly GameActionRecord[];
+  branches: readonly ReplayBranch[];
+  seed: string;
+  initialNow: number;
+}
+```
+
+### `ReplayFrame<TGame>`
+
+```ts
+interface ReplayFrame<TGame> {
+  snapshot: GameSnapshot<...>;
+  step: GameStep<TGame> | null;     // null only on the initial frame
+  action: GameActionRecord | null;
+  revision: number;
+  playerView: GamePlayerView<TGame> | null;
+}
+```
+
+### `ReplayBranch`
+
+A branching timeline created with `addReplayBranch`.
+
+```ts
+interface ReplayBranch {
+  branchID: string;
+  parentBranchID: string | null;
+  createdAtActionID: string | null;
+  createdAtRevision: number;
+  /**
+   * Last action that belongs to this branch's playback line. Used by cursors
+   * to bound playback when scrubbing inside a non-trunk branch.
+   * `null` for empty/initial-frame branches.
+   */
+  headActionID: string | null;
+}
+```
+
+### `materializeReplay(game, options)`
+
+Replay an explicit action list against a fresh session:
+
+```ts
+const timeline = materializeReplay(myGame, {
+  match,
+  seed,
+  initialNow,
+  actions,
+});
+```
+
+### `materializeSavedReplay(game, envelope)`
+
+Shortcut: take an envelope, return a timeline.
+
+### `ReplayMaterializeOptions<TGame>`
+
+```ts
+interface ReplayMaterializeOptions<TGame> {
+  actions: readonly GameActionRecord[];
+  match: MatchInput<GamePlayers<TGame>>;
+  initialNow?: number;
+  playerID?: GamePlayers<TGame>[number];
+  seed?: string;
+}
+```
+
+Branching is layered on top with `addReplayBranch` after materialization — it is not an option on the materialize call.
+
+## Playback
+
+### `createReplayCursor(timeline)`
+
+Cursor-based navigation.
+
+```ts
+interface ReplayCursor<TGame> {
+  getState(): ReplayCursorState<TGame>;
+  play(): ReplayCursorState<TGame>;
+  pause(): ReplayCursorState<TGame>;
+  undo(): ReplayCursorState<TGame>;
+  redo(): ReplayCursorState<TGame>;
+  seekAction(actionID: string | null): ReplayCursorState<TGame>;
+  seekRevision(revision: number): ReplayCursorState<TGame>;
+  seekTurn(turn: number): ReplayCursorState<TGame>;
+  setBranch(branchID: string): ReplayCursorState<TGame>;
+  setSpeed(speed: number): ReplayCursorState<TGame>;
+}
+```
+
+Every method returns the new cursor state. `ReplayCursorState<TGame>` is `{ branch, currentFrame, isPlaying, speed }`.
+
+### `addReplayBranch(timeline, actionID, branchID, parentBranchID?)`
+
+Fork a new branch at a given action. Returns a new timeline.
+
+## See also
+
+- [How-to: capture replays](/how-to/capture-replays) is the recipe.
+- [Tutorial: tic-tac-toe replay](/tutorials/tic-tac-toe-replay) uses these APIs end to end.
+- [Reference: inspector](/reference/inspector) and [reference: inspector-ui](/reference/inspector-ui) for building UIs on top.

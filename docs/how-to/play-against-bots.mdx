@@ -1,0 +1,251 @@
+---
+title: Play against bots in the lobby
+description: Wire a typed `BotRegistry` into a game, render `<LobbyWithBots>` with per-seat dropdowns, and let humans pick their computer opponent before the match starts. Works for local single-device, OSS hosted dev, and openturn-cloud.
+sidebarTitle: Play against bots
+---
+
+The bot layer lets a developer drop a computer player into a seat. The lobby layer lets the **player** pick which computer player goes in which seat — random, minimax-easy, minimax-hard — from a typed registry, before the match starts. Five files, four steps, same code path for local and hosted play.
+
+## Step 1 — Register your bots
+
+Build a `BotRegistry` once. Put it next to your game's bot implementations:
+
+```ts
+// examples/games/tic-tac-toe/bots/src/index.ts
+import { defineBotRegistry, attachBots } from "@openturn/lobby/registry";
+import { ticTacToe } from "@openturn/example-tic-tac-toe-game";
+
+import { randomBot } from "./random";
+import { makeMinimaxBot } from "./minimax";
+
+export const ticTacToeBotRegistry = defineBotRegistry([
+  { botID: "random",       label: "Random",         difficulty: "easy", bot: randomBot },
+  { botID: "minimax-easy", label: "Minimax · easy", difficulty: "easy", bot: makeMinimaxBot({ depth: 2 }) },
+  { botID: "minimax-hard", label: "Minimax · hard", difficulty: "hard", bot: makeMinimaxBot({ depth: 9 }) },
+]);
+
+// Re-export the game with the registry attached at game.bots.
+// Apps import `ticTacToeWithBots` and the lobby runtime/manifest see the
+// registry without the game package depending on the bots package.
+export const ticTacToeWithBots = attachBots(ticTacToe, ticTacToeBotRegistry);
+```
+
+`defineBotRegistry` validates `botID` uniqueness at definition time. Different difficulties are distinct bot instances — there is no runtime-tunable param.
+
+The `attachBots(game, registry)` helper sidesteps a circular package dep: the bots package imports the game's types, so the game can't import the bots back. Apps import the bot-attached game from the bots package instead.
+
+## Step 2 — Render the lobby with bot dropdowns
+
+`<LobbyWithBots>` is the same as `<Lobby>` but each seat is a `<LobbySeatControl>` with an "Assign bot ▾" dropdown for host viewers. The bot catalog comes from `lobby.availableBots`, which the server populates from the registry — apps don't have to thread bots into the UI.
+
+### Local single-device
+
+```tsx
+// examples/games/tic-tac-toe/app/src/components/LocalLobbyTicTacToe.tsx
+import { useState, type ReactNode } from "react";
+
+import { LobbyWithBots, buildLobbyView, useLocalLobbyChannel } from "@openturn/lobby/react";
+import { ticTacToeWithBots, ticTacToeBotRegistry } from "@openturn/example-tic-tac-toe-bots";
+import { ticTacToe } from "@openturn/example-tic-tac-toe-game";
+
+const HOST_USER_ID = "local-host";
+
+export function LocalLobbyTicTacToe(): ReactNode {
+  const [phase, setPhase] = useState<"lobby" | "game">("lobby");
+  const [botMap, setBotMap] = useState<Record<string, string>>({});
+
+  const channel = useLocalLobbyChannel({
+    game: ticTacToeWithBots,
+    hostUserID: HOST_USER_ID,
+    hostUserName: "You",
+    registry: ticTacToeBotRegistry,
+    onTransitionToGame: ({ assignments }) => {
+      const next: Record<string, string> = {};
+      for (const a of assignments) {
+        if (a.kind === "bot" && a.botID !== null) next[a.playerID] = a.botID;
+      }
+      setBotMap(next);
+      setPhase("game");
+    },
+  });
+
+  const view = buildLobbyView({
+    channel,
+    userID: HOST_USER_ID,
+    capacityFallback: ticTacToeWithBots.playerIDs.length,
+    minPlayersFallback: ticTacToeWithBots.minPlayers,
+    hostUserIDFallback: HOST_USER_ID,
+  });
+
+  if (phase === "lobby") {
+    return <LobbyWithBots lobby={view} title="Tic-tac-toe · pick your seats" />;
+  }
+  return <Board botMap={botMap} />;
+}
+```
+
+Open the page, click "Assign bot ▾" on seat 1, pick "Minimax · hard", click "Start". The transition fires; `botMap` is `{ "1": "minimax-hard" }`. The game phase mounts and the bot starts playing.
+
+### Hosted multiplayer (dev server + cloud)
+
+The hosted lobby uses the WebSocket-backed `useLobbyChannel` instead of `useLocalLobbyChannel`, but the rest is identical:
+
+```tsx
+import { LobbyWithBots, buildLobbyView, useLobbyChannel } from "@openturn/lobby/react";
+
+function HostedLobby({ token, websocketURL, userID }) {
+  const channel = useLobbyChannel({ websocketURL, token });
+  const view = buildLobbyView({ channel, userID });
+  return <LobbyWithBots lobby={view} title="Tic-tac-toe" />;
+}
+```
+
+The OSS dev server (`openturn dev`) and the cloud Durable Object both read `game.bots` and feed `buildKnownBots(registry)` into `LobbyEnv.knownBots` automatically — no app glue. The dropdowns appear as soon as `attachBots(game, registry)` is set on the deployed game.
+
+## Step 3 — Wire bots into the freshly-started session
+
+The transition gives you the seat→bot map. You need to attach `Bot<TGame>` instances to the corresponding seats so they dispatch moves.
+
+### Pattern A — `useBotAttachOnTransition` (simplest)
+
+For apps that hold a raw `LocalGameSession` directly:
+
+```tsx
+import { useBotAttachOnTransition } from "@openturn/lobby/react";
+import { createLocalSession } from "@openturn/core";
+
+function Game({ channel }) {
+  const [rawSession] = useState(() =>
+    createLocalSession(ticTacToe, { match: { players: ticTacToe.playerIDs } }),
+  );
+  const facade = useBotAttachOnTransition({
+    channel,
+    game: ticTacToe,
+    registry: ticTacToeBotRegistry,
+    session: rawSession,
+  });
+
+  // Drive the UI with `facade ?? rawSession`. The facade is non-null
+  // only when at least one bot seat exists; using it routes human
+  // dispatches through the runner so bots see them.
+  const session = facade ?? rawSession;
+  return <BoardUI session={session} />;
+}
+```
+
+### Pattern B — `createLocalBotSupervisor` (no React)
+
+For non-React drivers, CLIs, or test harnesses:
+
+```ts
+import { createLocalBotSupervisor } from "@openturn/lobby/supervisor";
+
+const supervisor = createLocalBotSupervisor({
+  session: rawSession,
+  game: ticTacToe,
+  registry: ticTacToeBotRegistry,
+});
+
+await supervisor.start(
+  channel.transition.playerAssignments
+    .filter((a) => a.kind === "bot")
+    .map((a) => ({ seatIndex: a.seatIndex, playerID: a.playerID, botID: a.botID! })),
+);
+
+const session = supervisor.getSession();   // bot-aware facade — drive with this
+```
+
+### Inspector-aware bot driver
+
+If you use `createOpenturnBindings({ runtime: "local" })` and want bot moves to flow through the same `matchStore` (so the inspector timeline tracks them alongside human moves), wire bots manually with a small effect keyed on `snapshot`:
+
+```tsx
+import { useEffect, useRef } from "react";
+import { findBot } from "@openturn/lobby/registry";
+import { enumerateLegalActions, forkRng, simulate } from "@openturn/bot";
+import { ticTacToeBotRegistry } from "./bots";
+
+function useBotDriver({ botMap, snapshot, dispatch, getPlayerView }) {
+  const inflightTurnRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (snapshot.meta.result !== null) {
+      inflightTurnRef.current = null;
+      return;
+    }
+    const active = snapshot.derived.activePlayers as readonly string[];
+    const botSeat = active.find((p) => botMap[p] !== undefined);
+    if (botSeat === undefined) return;
+
+    const descriptor = findBot(ticTacToeBotRegistry, botMap[botSeat]!);
+    if (descriptor === null) return;
+
+    const turn = snapshot.position.turn;
+    if (inflightTurnRef.current === turn) return;
+    inflightTurnRef.current = turn;
+
+    const abort = new AbortController();
+    let cancelled = false;
+
+    void (async () => {
+      const action = await descriptor.bot.decide({
+        playerID: botSeat as never,
+        view: getPlayerView(botSeat) as never,
+        snapshot: snapshot as never,
+        legalActions: enumerateLegalActions(ticTacToe, snapshot, getPlayerView(botSeat), botSeat, descriptor.bot),
+        rng: forkRng(snapshot.meta.rng, descriptor.bot.name, botSeat, snapshot.position.turn),
+        deadline: { remainingMs: () => 5_000, expired: () => false },
+        signal: abort.signal,
+        simulate: (a) => simulate(ticTacToe, snapshot, botSeat, a),
+      });
+      if (cancelled) return;
+      const handler = dispatch[action.event];
+      if (typeof handler === "function") handler(botSeat, action.payload);
+    })();
+
+    return () => {
+      cancelled = true;
+      abort.abort();
+    };
+  }, [botMap, snapshot, dispatch, getPlayerView]);
+}
+```
+
+This pattern is what the in-tree tic-tac-toe app uses. It's slightly more code than `useBotAttachOnTransition` but every dispatch — human and bot — flows through the bindings' `matchStore`, so the inspector shows the full timeline.
+
+## Step 4 — Verify
+
+Smoke test in three modes:
+
+1. **Local React app:**
+   ```bash
+   bun --filter @openturn/example-tic-tac-toe-app dev
+   ```
+   Open the page, pick "Bot · Minimax · hard" for seat 1, click Start. The bot plays.
+
+2. **OSS hosted dev:**
+   ```bash
+   bun --filter @openturn/example-tic-tac-toe-multiplayer-app dev
+   ```
+   In tab A, pick "Bot · Random" for seat 1. In tab B, take seat 0. Click Start in tab A. Both browsers see the bot play.
+
+3. **Cloud:** deploy a build with `attachBots(game, registry)` set and play a public room. The cloud Durable Object reads the manifest's `availableBots` and instantiates the in-DO `BotDriver` automatically.
+
+## Common rejections
+
+- `seat_has_human` — you tried to `assignBot` to a seat someone is sitting in. Use `clearSeat` first or pick a different seat.
+- `seat_has_bot` — a non-host viewer tried to `takeSeat` on a bot seat. Bot seats are host-controlled; the host has to `clearSeat` first.
+- `unknown_bot` — the wire `botID` isn't in `LobbyEnv.knownBots`. Usually means the deployed game wasn't built with `attachBots`. Rebuild and redeploy.
+
+## Limitations
+
+- **Different difficulties are distinct bot instances.** No runtime-tunable params yet. If you want a "depth slider", instantiate one descriptor per slider value or extend `BotDescriptor` with `params?: Record<string, unknown>` and pipe it through `lobby:assign_bot`.
+- **The local channel auto-seats the host.** Single-device play assumes one human; the host takes seat 0 on mount. To skip auto-seat (rare), pass `autoSeatIndex: null` to `useLocalLobbyChannel`.
+- **No bot-vs-bot starting condition for hosted.** The host has to take a seat for `start()` to gate properly. If you want a "headless host" who only configures and starts, lower `minPlayers` and don't auto-seat.
+
+## Related
+
+- [Reference: `@openturn/lobby`](/reference/lobby) — full API surface.
+- [How-to: build a lobby](/how-to/build-a-lobby) — the lobby itself, without bots.
+- [How-to: add an AI bot](/how-to/add-a-bot) — author the underlying `Bot` instances.
+- [Concepts: AI bots](/concepts/bots) — design rationale.

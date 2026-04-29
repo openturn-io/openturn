@@ -1,0 +1,71 @@
+---
+title: Development notes
+description: Working on the openturn monorepo. Runtime boundaries, docs updates, and the rules the repo enforces.
+sidebarTitle: Development
+---
+
+## Repo structure
+
+```
+openturn/
+├── packages/       — the @openturn/* packages
+├── examples/       — game and app packages using openturn as workspace deps
+├── docs/           — this documentation site (Mintlify)
+├── scripts/        — Bun scripts (runtime checker, demo runners)
+└── design.md       — internal planning; NOT public docs
+```
+
+## Runtime rules
+
+Every package is classified as **worker**, **browser**, or **Bun**. The classification is stored in `package.json` under `openturn.runtime`, and `bun run check:runtimes` verifies it before CI.
+
+- Worker packages cannot import Node builtins (`fs`, `path`, `crypto`), Bun globals (`Bun`, `process.exit`), or `Buffer`.
+- Browser packages can use DOM and React. They still cannot import Node.
+- Bun packages are unrestricted.
+
+See [concepts: runtime boundaries](/concepts/runtime-boundaries) for the user-facing explanation.
+
+## Common commands
+
+```bash
+bun install
+bun run typecheck:packages
+bun run typecheck:worker
+bun run typecheck:browser
+bun run typecheck:bun
+bun test
+bun run check:runtimes
+```
+
+Specific package commands use `--filter`:
+
+```bash
+bun --filter @openturn/core typecheck
+bun --filter @openturn/example-tic-tac-toe-app dev
+```
+
+## Updating docs
+
+The docs site is a [Mintlify](https://mintlify.com/) project rooted at `openturn/docs/`. The nav is defined in `docs.json`. Every page is `.mdx` with frontmatter `title`, `description`, and optional `sidebarTitle`.
+
+When you add a new API or change an existing one, update:
+
+1. The matching **reference page** with the new function/type.
+2. The relevant **how-to guide** if the change affects a task.
+3. The relevant **concept page** if the change affects a mental model.
+
+Avoid dumping everything into the introduction or a single catch-all page. Each page has a specific job; keep them scoped.
+
+## When to update `design.md`
+
+`design.md` is internal planning, not public. Update it for:
+
+- Package-boundary decisions.
+- Upcoming architecture work that is not yet part of the public docs contract.
+- Cutover plans.
+
+Do not write user-facing prose there. When a design lands, move the relevant content into the docs and prune the design note.
+
+## Cutover over compatibility
+
+Pre-launch, we prefer cutover changes. Compatibility shims, deprecated aliases, and dual-track APIs are not introduced unless there is a clear reason. If you see a shim, consider whether the underlying change is ready to land fully.

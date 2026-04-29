@@ -1,0 +1,65 @@
+---
+title: Introduction
+description: Openturn is a TypeScript framework for turn-based games — local prototypes, replays, and cloud-hosted multiplayer all from one authored game definition.
+sidebarTitle: Introduction
+---
+
+Openturn lets you write a turn-based game once in TypeScript and run it anywhere turns make sense: on a single device, in a local dev stack, or as a cloud-hosted multiplayer service. You describe the game as a plain value (state, moves, who can act, what each player sees); openturn handles the rest — running the rules, validating moves, syncing players, recording replays.
+
+A 30-second taste:
+
+```ts
+import { defineGame, move, permissions } from "@openturn/gamekit";
+
+export const game = defineGame({
+  maxPlayers: 2,
+  setup: () => ({ value: 0 }),
+  moves: {
+    increment: move({
+      canPlayer: permissions.currentPlayer,
+      run({ G, move, player }) {
+        const value = G.value + 1;
+        if (value >= 5) return move.win(player.id, { value });
+        return move.endTurn({ value });
+      },
+    }),
+  },
+  views: {
+    public: ({ G, turn }) => ({ value: G.value, currentPlayer: turn.currentPlayer }),
+  },
+});
+```
+
+That single value drives a local React app, a CLI, a hosted multiplayer server, an inspector, and replays — no extra wiring per surface.
+
+## What you get
+
+- **A game is a plain value.** You declare a state, a roster, moves, and views. The engine runs them. Nothing is hidden inside the framework — no globals, no implicit side effects.
+- **One definition, every surface.** The same `defineGame(...)` value powers a local React app, a CLI, a hosted multiplayer server, and a cloud deployment. Switching surfaces does not require touching the game.
+- **Two authoring layers.** `@openturn/gamekit` is the shortcut: declare phases, moves, permissions, and outcomes. `@openturn/core` is the lower level — events, states, and transitions — for when you need full control of the state graph.
+- **Deterministic replay and inspection.** Every match produces a JSON log. Re-dispatch it and you get the exact same state, every time. The inspector lets you scrub through frames.
+- **First-class hidden information.** `views.public` and `views.player` decide what each audience sees, at the engine level — opponents never receive secrets they should not see.
+- **Plug-and-play AI bots.** Write a `decide` function (random, heuristic, MCTS, or LLM-backed) and drop it into any seat. The same bot runs locally and over the network.
+
+## When to reach for openturn
+
+- You are building a turn-based, round-based, or phase-based game (chess, poker, deckbuilders, negotiation, tactics, party).
+- You want server-authoritative rules and clients that never receive secrets.
+- You want replays, undo, and a debug inspector without building them yourself.
+- You prefer plain TypeScript definitions over config files or a DSL.
+
+## When something else might fit better
+
+- Real-time action games (shooters, racers) where state ticks every frame.
+- Games dominated by physics or continuous simulation rather than discrete moves.
+- Non-game workflows that happen to be turn-shaped — a task queue or generic state machine library has less surface area.
+
+## Where to go from here
+
+If you have never seen openturn before, follow these in order:
+
+1. [**Install and run the examples**](/get-started/install-and-run) — five minutes, just to see what the running games look like.
+2. [**Your first game**](/get-started/your-first-game) — scaffold a project with `openturn create` and edit your way to a playable React game in ten minutes.
+3. [**Tic-tac-toe with gamekit**](/tutorials/tic-tac-toe-gamekit) — the full guided tour: a real game, a React UI, and an optional CLI. Subsequent tutorials reuse it for [hosted multiplayer](/tutorials/tic-tac-toe-multiplayer), [replays](/tutorials/tic-tac-toe-replay), [raw core authoring](/tutorials/tic-tac-toe-core), and [bots](/tutorials/tic-tac-toe-bot).
+
+Prefer the mental model before the hands-on tour? Start with [concepts: mental model](/concepts/mental-model).

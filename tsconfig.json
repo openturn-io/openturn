@@ -1,0 +1,21 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/manifest" },
+    { "path": "./packages/core" },
+    { "path": "./packages/bridge" },
+    { "path": "./packages/gamekit" },
+    { "path": "./packages/protocol" },
+    { "path": "./packages/deploy" },
+    { "path": "./packages/react" },
+    { "path": "./packages/inspector" },
+    { "path": "./packages/inspector-ui" },
+    { "path": "./examples/simultaneous-moves/paper-scissors-rock/game" },
+    { "path": "./examples/simultaneous-moves/paper-scissors-rock/app" },
+    { "path": "./examples/games/tic-tac-toe/game" },
+    { "path": "./examples/games/tic-tac-toe/cli" },
+    { "path": "./examples/games/tic-tac-toe/app" },
+    { "path": "./examples/games/pig-dice/game" },
+    { "path": "./examples/games/pig-dice/cli" }
+  ]
+}

@@ -1,0 +1,90 @@
+---
+title: Packages overview
+description: Every openturn package, its runtime, and when to reach for it.
+sidebarTitle: Packages
+---
+
+Openturn is split across fourteen packages. This page is the decision tree: "I want to do X, which one do I import."
+
+## Authoring
+
+| Package | Runtime | Why |
+| --- | --- | --- |
+| [`@openturn/core`](/reference/core) | worker | The engine. `defineGame`, `definePlayerIDs`, events, states, transitions, `createLocalSession`. |
+| [`@openturn/gamekit`](/reference/gamekit) | worker | Move-first sugar over core: `defineGame`, moves, phases, outcomes. Use this unless you need the core escape hatch. |
+| [`@openturn/json`](/reference/json) | worker | `JsonValue` types, `JsonValueSchema`, and validators. Re-exported by most packages; you will import it directly for explicit JSON validation. |
+| [`@openturn/bot`](/reference/bot) | worker | Plug-and-play AI bots over a game. `defineBot({ decide })`, `attachLocalBot` / `attachLocalBots` / `attachHostedBot`, `simulate`. Same bot shape for random, heuristic, MCTS, and LLM-backed players. |
+
+## Hosting and transport
+
+| Package | Runtime | Why |
+| --- | --- | --- |
+| [`@openturn/protocol`](/reference/protocol) | worker | Wire protocol: `ClientAction`, `BatchApplied`, lobby messages, Zod schemas. Shared between client and server. |
+| [`@openturn/server`](/reference/server) | worker | Authoritative `RoomRuntime`, `LobbyRuntime`, `createGameWorker` factory for Cloudflare, room tokens, persistence. |
+| [`@openturn/client`](/reference/client) | worker | WebSocket client. `createHostedClient` handles connect, dispatch, and state synchronization. |
+| [`@openturn/bridge`](/reference/bridge) | browser | Iframe↔shell wire. `createGameBridge` on the iframe, `createBridgeHost` on the shell, and the capability registry that advertises game utilities to the shell. |
+| [`@openturn/manifest`](/reference/manifest) | worker | Deployment manifest schema + HTML generator. Shared by `@openturn/deploy` (writer) and the cloud shell (reader). |
+
+## UI and tooling
+
+| Package | Runtime | Why |
+| --- | --- | --- |
+| [`@openturn/react`](/reference/react) | browser | React hooks: `createOpenturnBindings`, `<OpenturnProvider>`, `useMatch`, `useRoom`, `useInspector`, `Lobby`. |
+| [`@openturn/replay`](/reference/replay) | worker | Saved replay envelopes, timeline materialization, cursor-based playback, branching. |
+| [`@openturn/inspector`](/reference/inspector) | worker | Non-UI inspector logic: `buildInspectorTimelineFromSource` (unified replay/hosted entry), diffs, graph highlights. |
+| [`@openturn/inspector-ui`](/reference/inspector-ui) | browser | Ready-made React inspector components: `createInspector` returns `{ Inspector, ReplayInspector, HostedInspector }`. |
+| [`@openturn/deploy`](/reference/deploy) | Bun | Build pipeline: `discoverOpenturnProject`, `buildOpenturnProject`, manifest, Worker bundle generation. |
+| [`@openturn/cli`](/reference/cli) | Bun | The `openturn` binary: `create`, `dev`, `build`, `deploy`, `login`. |
+
+## Quick recipes
+
+**"I want to author a game."** — Start with [`@openturn/gamekit`](/reference/gamekit). Drop to [`@openturn/core`](/reference/core) if gamekit doesn't fit.
+
+**"I want to run a game in my React app."** — [`@openturn/react`](/reference/react)'s `createOpenturnBindings(game, { runtime, match? })` returns a zero-prop `<OpenturnProvider>` that auto-resolves transport (in-process for local, bridge fragment for multiplayer — same provider in dev and prod). Read state with `useMatch` (just the game) or `useRoom` (full room with lobby, bridge, invite URL).
+
+**"I want multiplayer."** — [`@openturn/server`](/reference/server) on the server, [`@openturn/client`](/reference/client) (via React) on the client, [`@openturn/protocol`](/reference/protocol) as the wire format, [`@openturn/bridge`](/reference/bridge) to connect an embedded iframe to its hosting shell.
+
+**"I want replays."** — [`@openturn/replay`](/reference/replay) for capture and load, [`@openturn/inspector-ui`](/reference/inspector-ui) for the inspector UI.
+
+**"I want to deploy."** — `openturn build` and `openturn deploy` from [`@openturn/cli`](/reference/cli); the build pipeline is [`@openturn/deploy`](/reference/deploy).
+
+**"I want a player to play vs the computer."** — [`@openturn/bot`](/reference/bot). `defineBot({ decide })` writes the bot, `attachLocalBot` / `attachLocalBots` binds it to a seat, the runner dispatches autonomously. Same bot works in CLI and over WebSocket via `attachHostedBot`.
+
+## Dependency layering
+
+Packages fan out from `@openturn/core`. A short dependency map (arrows point "depends on"):
+
+```
+@openturn/core ──┬── @openturn/gamekit
+                 ├── @openturn/server ──── @openturn/protocol ── @openturn/json
+                 ├── @openturn/client ────┘
+                 ├── @openturn/bot ───────┘
+                 ├── @openturn/replay
+                 └── @openturn/inspector ── @openturn/inspector-ui
+                                           └── @openturn/react ── @openturn/bridge
+                                                                 └── @openturn/manifest
+                                                                 └── @openturn/deploy ── @openturn/cli
+```
+
+Everything downstream of core treats `GameSnapshot` and `GameDefinition` as the canonical interface. You can drop any downstream package from your app and still have a working authored game.
+
+## When to reach for the uncommon packages
+
+**I need a custom transport (not WebSocket).**
+Implement `HostedTransport` in `@openturn/client` — pass it as `transport` to `createHostedClient`. The `@openturn/protocol` message types let you serialize over any duplex channel (BroadcastChannel, Web Transport, an RPC bus for tests).
+
+**I'm building my own inspector UI (not React).**
+Use `@openturn/inspector` directly — `buildInspectorTimelineFromSource` produces a replay-safe timeline of steps from snapshots, batches, and (optionally) a compiled graph. It returns plain data you can render with any UI framework.
+
+**I'm writing a CLI tool that runs games outside openturn-cloud.**
+Bun-only tools can depend on `@openturn/deploy` (build pipeline) and `@openturn/server` (local room runtime) together. See [`scripts/`](https://github.com/openturn-io/openturn/tree/main/openturn/scripts) for examples.
+
+**I want to render a saved replay without connecting to any live match.**
+Import `@openturn/replay` for the envelope schema and `@openturn/inspector-ui`'s `createInspector(bindings).ReplayInspector`. No server, no client, no bridge.
+
+**I'm embedding a game iframe into a non-openturn host.**
+`@openturn/bridge` is the whole wire. `createGameBridge` inside the iframe, `createBridgeHost` on your shell — no dependency on openturn-cloud itself.
+
+## Runtime boundaries
+
+Worker-target packages cannot import Node or Bun APIs. Browser packages cannot import Node. Bun packages can import anything. See [concepts: runtime boundaries](/concepts/runtime-boundaries) for why and how the checker enforces it.

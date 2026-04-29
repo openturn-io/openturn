@@ -1,0 +1,22 @@
+{
+  "name": "@openturn/example-tic-tac-toe-with-chat-game",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "openturn": {
+    "runtime": "worker"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "bun x tsc -p tsconfig.json --pretty false"
+  },
+  "dependencies": {
+    "@openturn/core": "workspace:*",
+    "@openturn/gamekit": "workspace:*",
+    "@openturn/plugin-chat": "workspace:*",
+    "@openturn/plugins": "workspace:*"
+  }
+}

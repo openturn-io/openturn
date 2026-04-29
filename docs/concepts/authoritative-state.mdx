@@ -1,0 +1,63 @@
+---
+title: Authoritative state and snapshots
+description: What lives in G, what lives in the snapshot around it, and the rules for deciding where something belongs.
+sidebarTitle: State
+---
+
+An openturn match has one authoritative value, but several pieces of metadata around it. Understanding the split prevents the most common authoring mistake: stashing derived or per-player data inside `G`.
+
+## The snapshot shape
+
+When the engine evaluates your game, it hands you a `GameSnapshot`. Every context object you see in transitions, selectors, and views spreads the same structure:
+
+```ts
+interface GameSnapshot<G, Result, Node, Match> {
+  G: G;                 // authoritative state you wrote
+  position: {
+    name: Node;         // current state/phase name
+    turn: number;       // monotonic turn counter, starts at 1
+  };
+  derived: {
+    activePlayers: readonly string[];
+    selectors: Record<string, JsonValue>;
+    control: ReplayValue;
+    metadata: readonly { key: string; value: JsonValue }[];
+  };
+  match: MatchInput;    // seated subset for this session
+  meta: { result: Result | null };
+}
+```
+
+- **`G`** is your state. You own its shape; the engine only requires it to be JSON-compatible.
+- **`position.name`** is the active state (core) or phase (gamekit).
+- **`position.turn`** starts at `1` and increments whenever a transition says `turn: "increment"` (or a gamekit outcome ends the turn).
+- **`derived`** is computed by the engine from your selectors, state config, and graph. It is always up to date; you never write to it directly.
+- **`match`** is the per-session input passed to `createLocalSession` — `match.players` is a non-empty subset of the game's `playerIDs` (the seated subset), plus optional `profiles` and `data`.
+- **`meta.result`** is set to the final result value once a terminal state is reached (a win, draw, or whatever shape you model).
+
+## The "where does it go" rule
+
+If a fact is authored data that drives future transitions, it belongs in `G`.
+
+If a fact is derived from `G` (and maybe `position` or `match`), it belongs in a **selector** or a **view**.
+
+If a fact is about which seats can act right now, it belongs on a **state config's `activePlayers`** (core) or a **phase config's `activePlayers`** (gamekit).
+
+If a fact is about "who won," it belongs in `meta.result`, written at the transition that ends the match.
+
+When in doubt, put it in `G` and a selector. Adding extra bookkeeping to `G` only hurts when you also cache derived data there.
+
+## JSON-only, by contract
+
+`G`, payloads, selectors, views, and results must all pass `JsonValueSchema` from [`@openturn/json`](/reference/json). Functions, `Date`, `Map`, and `Set` are rejected. This is what lets the engine:
+
+- Persist a match and resume it later on a different machine.
+- Serialize the action log as a replay you can ship to a browser.
+- Send just the right slice of state over the wire to a hosted client.
+
+Gamekit enforces this at the type level: the types will only accept state and view shapes that are `JsonCompatible`. You will see errors like `__state_must_be_json_compatible__` if you slip a non-JSON value in.
+
+## What to read next
+
+- [Events, states, and transitions](/concepts/events-states-transitions) covers the core primitives that move `G` forward.
+- [Selectors and player views](/concepts/selectors-and-player-views) explains how to derive data without duplicating it in `G`.

@@ -1,0 +1,41 @@
+// Bot-aware lobby protocol. Re-exports every Lobby* type and helper from
+// `@openturn/protocol` so consumers can import everything they need from a
+// single subpath.
+export type {
+  LobbyAssignBot,
+  LobbyAvailableBot,
+  LobbyClearSeat,
+  LobbyClientMessage,
+  LobbyClose,
+  LobbyClosedMessage,
+  LobbyCloseReason,
+  LobbyDifficulty,
+  LobbyLeaveSeat,
+  LobbyPhase,
+  LobbyPlayerAssignment,
+  LobbyRejectedMessage,
+  LobbyRejectionReason,
+  LobbySeat,
+  LobbyServerMessage,
+  LobbySetReady,
+  LobbyStart,
+  LobbyStateMessage,
+  LobbyTakeSeat,
+  LobbyTransitionToGameMessage,
+} from "@openturn/protocol";
+export {
+  isLobbyClientMessageText,
+  LobbyAvailableBotSchema,
+  LobbyClientMessageSchema,
+  LobbyDifficultySchema,
+  LobbyPhaseSchema,
+  LobbyPlayerAssignmentSchema,
+  LobbySeatSchema,
+  LobbyServerMessageSchema,
+  parseLobbyClientMessage,
+  parseLobbyClientMessageText,
+  parseLobbyServerMessage,
+  parseLobbyServerMessageText,
+  stringifyLobbyClientMessage,
+  stringifyLobbyServerMessage,
+} from "@openturn/protocol";

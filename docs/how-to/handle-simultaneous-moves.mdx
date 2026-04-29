@@ -1,0 +1,102 @@
+---
+title: Handle simultaneous moves
+description: Use phase-level `activePlayers` and `move.stay` to let players act in parallel. A pattern from paper-scissors-rock.
+sidebarTitle: Simultaneous
+---
+
+Not every game is strictly turn-based. Bidding rounds, planning phases, and games like paper-scissors-rock let multiple players act at the same time. Gamekit's phase-level `activePlayers` plus `move.stay` express this cleanly.
+
+## The idea
+
+1. Declare a phase where multiple seats are active.
+2. Each player's move does *not* end the turn; it records their input and returns `move.stay({ ... })`.
+3. When everyone has submitted, the last submission transitions (`move.endTurn` or `move.goto`).
+
+## Worked example
+
+From [`examples/simultaneous-moves/paper-scissors-rock`](https://github.com/openturn-io/openturn/tree/main/openturn/examples/simultaneous-moves/paper-scissors-rock):
+
+```ts
+const PLAYERS = ["0", "1", "2"] as const;
+
+export const paperScissorsRock = defineGame({
+  maxPlayers: 3,
+  setup: ({ match }) => ({
+    round: 1,
+    scores: roster.record(match, 0),
+    submissions: createHiddenChoices(),
+    // ...
+  }),
+  initialPhase: "plan",
+  phases: {
+    plan: {
+      activePlayers: ({ G }) => PLAYERS.filter((id) => G.submissions[id] === null),
+      label: ({ G }) => `Round ${G.round}`,
+    },
+  },
+  moves: ({ move }) => ({
+    submitChoice: move<PaperScissorsRockChoice>({
+      run({ G, args, move, player }) {
+        const submissions = { ...G.submissions, [player.id]: args };
+        const allSubmitted = PLAYERS.every((id) => submissions[id] !== null);
+
+        if (!allSubmitted) {
+          return move.stay({ submissions });
+        }
+
+        const outcome = resolveRoundOutcome(submissions);
+        const scores = applyWins(G.scores, outcome.winners);
+
+        return move.endTurn({
+          lastOutcome: outcome,
+          lastRevealed: submissions,
+          round: G.round + 1,
+          scores,
+          submissions: createHiddenChoices(),
+        });
+      },
+    }),
+  }),
+});
+```
+
+Three things to notice:
+
+1. **`activePlayers` filters by "has not submitted yet."** Players who already submitted are no longer active, so the engine rejects their retries with `inactive_player`.
+2. **`move.stay` records one submission without ending the turn.** The turn counter does not advance; the phase stays the same.
+3. **The last submission triggers the resolution.** When `allSubmitted` is true, the move returns `move.endTurn` with the next round's state, advancing the turn counter.
+
+## Hide other players' submissions
+
+Submissions are secret until everyone has committed. That is a hidden-info pattern, so use `views.player`:
+
+```ts
+views: {
+  player: ({ G }, player) => ({
+    lastOutcome: G.lastOutcome,
+    lastRevealed: G.lastRevealed,        // shown after resolution
+    mySubmission: G.submissions[player.id] ?? null,  // only your own
+    round: G.round,
+    scores: G.scores,
+  }),
+  public: ({ G }) => ({
+    // no `submissions`, no `mySubmission`
+    submittedCount: PLAYERS.filter((id) => G.submissions[id] !== null).length,
+    lastOutcome: G.lastOutcome,
+    lastRevealed: G.lastRevealed,
+    round: G.round,
+    scores: G.scores,
+  }),
+},
+```
+
+## What about deadlines?
+
+If you want a timer that forces resolution, enqueue a tick event from the first submission and use `context.now` to decide when it fires. The engine records `now` in the replay, so timer-driven transitions stay deterministic.
+
+For stricter deadline handling, use `@openturn/core`'s `deadline.after(context, durationMs)` to compute a fixed target timestamp, and store it in `G`. Moves then compare `context.now` to `G.roundDeadline`.
+
+## Related
+
+- [Concepts: turns, phases, and control](/concepts/turns-phases-control) on active players.
+- [How-to: model hidden information](/how-to/model-hidden-info) for the private-submission pattern.

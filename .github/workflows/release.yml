@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.9
+
+      # Trusted publishing requires the npm CLI to do the OIDC exchange.
+      # Bun ships its own publisher that does not yet support trusted publishing,
+      # so we install npm explicitly and let `changeset publish` shell out to it.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - run: npm install -g npm@latest
+
+      - run: bun install --frozen-lockfile
+
+      - run: bun run typecheck
+
+      - run: bun run build
+
+      - uses: changesets/action@v1
+        with:
+          version: bun run version
+          publish: bun run release
+          commit: "chore: release"
+          title: "chore: release"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"

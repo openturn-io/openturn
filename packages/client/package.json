@@ -1,0 +1,53 @@
+{
+  "name": "@openturn/client",
+  "version": "0.0.0",
+  "type": "module",
+  "openturn": {
+    "runtime": "worker"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "bun x tsc -p tsconfig.json --pretty false",
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "bun run build",
+    "prepack": "node ../../scripts/prepack.mjs",
+    "postpack": "node ../../scripts/postpack.mjs"
+  },
+  "dependencies": {
+    "@openturn/json": "workspace:*",
+    "@openturn/protocol": "workspace:*"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openturn-io/openturn.git",
+    "directory": "packages/client"
+  },
+  "homepage": "https://github.com/openturn-io/openturn/tree/main/packages/client#readme",
+  "bugs": {
+    "url": "https://github.com/openturn-io/openturn/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "main": "./dist/index.js",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ]
+}

@@ -1,0 +1,56 @@
+---
+title: Mental model
+description: The four ideas the engine relies on, and why authored games are pure values.
+sidebarTitle: Mental model
+---
+
+Openturn runs your game as a **reducer over a declared state machine**. If you internalize four ideas, most of the rest of the docs becomes obvious.
+
+## 1. The authoritative state is explicit
+
+Every match has one source of truth: the state value `G` returned by `setup` and updated by transitions. The client, the server, the CLI, replays, and inspector all read the same `G`. Hidden state is modelled *inside* `G` and projected out with `views.player` so only the right audience sees it.
+
+`G` must be JSON-serializable. That is not a guideline, it is a guarantee the engine relies on for replay, persistence, and worker safety.
+
+## 2. Events drive everything
+
+State never changes on its own. Players dispatch events (core calls them events, gamekit calls them moves), and the engine runs the matching transition. No timers, no fetch calls, no random subscriptions mutate `G` behind your back. If you need randomness, you use the deterministic RNG the engine hands you. If you need the current time, you read it from the event context.
+
+This is the determinism contract: **same seed + same action log = same state, forever.**
+
+## 3. Progression is part of the graph
+
+A match is always positioned at a named state (core) or phase (gamekit) plus a monotonic turn counter. The graph of possible transitions is declared up front, not discovered at runtime. That is what makes the engine capable of validating a game before it runs, rendering a state diagram, and computing which players are active without guessing.
+
+You do not chain callbacks. You declare: "from state X, on event Y, go to state Z if the reducer returns a result."
+
+## 4. Views are projections, not state
+
+What a player sees on their screen is a pure function of `G`. `views.public` is the redacted shape any observer can see. `views.player` is the per-seat shape (what `player 0` knows versus `player 1`). The engine calls them. You never cache a player view inside `G`, because the reducer would no longer be the single source of truth.
+
+## A tiny example
+
+```ts
+import { defineGame, move } from "@openturn/gamekit";
+
+export const game = defineGame({
+  maxPlayers: 2,
+  setup: () => ({ count: 0 }),
+  moves: {
+    bump: move({
+      run: ({ G, move }) => move.endTurn({ count: G.count + 1 }),
+    }),
+  },
+  views: {
+    public: ({ G }) => ({ count: G.count }),
+  },
+});
+```
+
+This game declares a state `{ count: number }`, accepts one move that returns a new state and ends the turn (`move.endTurn` is one of a small set of [outcomes a move can return](/concepts/gamekit-moves-and-outcomes)), and projects `count` to the public view. The engine turns this value into a reducer. Nothing is hidden.
+
+## What to read next
+
+- [Authoritative state and snapshots](/concepts/authoritative-state) goes one level deeper on what `G` is and how snapshots work.
+- [Events, states, and transitions](/concepts/events-states-transitions) explains the core authoring surface.
+- [Gamekit: the move-first layer](/concepts/gamekit) shows how moves compile back to core transitions.
