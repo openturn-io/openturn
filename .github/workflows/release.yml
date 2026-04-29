@@ -15,7 +15,7 @@ jobs:
       pull-requests: write
       id-token: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -25,8 +25,8 @@ jobs:
 
       # Trusted publishing requires the npm CLI to do the OIDC exchange.
       # Bun ships its own publisher that does not yet support trusted publishing,
-      # so we install npm explicitly and let `changeset publish` shell out to it.
-      - uses: actions/setup-node@v5
+      # so `changeset publish` shells out to npm after setup-node configures it.
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
