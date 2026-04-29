@@ -58,6 +58,9 @@ import type { ProtocolClientMessage } from "@openturn/protocol";
 
 import { DEFAULT_CLOUD_URL, cloudDeploy, loadCloudAuth, saveCloudAuth } from "./cloud";
 import { startDevBundleServer, type DevBundleServer } from "./dev-bundle";
+import { loadTelemetryConfig } from "./telemetry/config";
+import { createTelemetryClient, ensureTelemetryConfig } from "./telemetry/client";
+import { printFirstRunNotice } from "./telemetry/notice";
 
 const LOCAL_DEV_HOST = "localhost";
 const CREATE_TEMPLATES = ["local", "multiplayer"] as const;
@@ -1670,6 +1673,26 @@ async function runCli(rawArgs: readonly string[]): Promise<void> {
     process.exit(0);
   }
 
+  const isKnownCommand = CLI_COMMANDS[command] !== undefined;
+
+  let telemetryConfig = loadTelemetryConfig();
+  if (telemetryConfig === null && isKnownCommand) {
+    telemetryConfig = ensureTelemetryConfig();
+    if (telemetryConfig !== null) printFirstRunNotice();
+  }
+  const telemetry = telemetryConfig !== null ? createTelemetryClient(telemetryConfig) : null;
+
+  if (telemetry !== null && isKnownCommand) {
+    try {
+      telemetry.track("cli_command", { command });
+    } catch {}
+  }
+
+  const startedAt = Date.now();
+  let exitCode = 0;
+  let errorClass: string | null = null;
+  let caughtError: unknown = null;
+
   try {
     switch (command) {
       case "build":
@@ -1694,12 +1717,31 @@ async function runCli(rawArgs: readonly string[]): Promise<void> {
         console.error(`Unknown command: ${command}`);
         console.error("");
         printRootHelp();
-        process.exit(1);
+        exitCode = 1;
     }
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exit(1);
+    caughtError = error;
+    exitCode = 1;
+    errorClass = error instanceof Error ? error.constructor.name : "unknown";
   }
+
+  if (telemetry !== null && isKnownCommand) {
+    try {
+      telemetry.track("cli_command_finished", {
+        command,
+        duration_ms: Date.now() - startedAt,
+        exit_code: exitCode,
+        error_class: errorClass,
+      });
+      await telemetry.shutdown(500);
+    } catch {}
+  }
+
+  if (caughtError !== null) {
+    console.error(caughtError instanceof Error ? caughtError.message : String(caughtError));
+  }
+  if (telemetry !== null && telemetry.status.enabled) process.exit(exitCode);
+  if (exitCode !== 0) process.exit(exitCode);
 }
 
 async function runDevCommand(args: readonly string[]) {
