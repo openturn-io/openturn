@@ -1,5 +1,20 @@
 # @openturn/react
 
+## 0.1.1
+
+### Patch Changes
+
+- 8fe68eb: Replace `workspace:*` internal dependencies with concrete `^X.Y.Z` ranges so published tarballs install cleanly outside the monorepo. The 0.1.0 release shipped `workspace:*` literals into the npm registry, breaking external consumers.
+- Updated dependencies [8fe68eb]
+  - @openturn/bot@0.1.1
+  - @openturn/bridge@0.1.1
+  - @openturn/client@0.1.1
+  - @openturn/core@0.1.1
+  - @openturn/inspector@0.1.1
+  - @openturn/lobby@0.1.1
+  - @openturn/protocol@0.1.1
+  - @openturn/replay@0.1.1
+
 ## 0.1.0
 
 ### Minor Changes
