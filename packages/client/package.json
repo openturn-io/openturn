@@ -1,6 +1,6 @@
 {
   "name": "@openturn/client",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "openturn": {
     "runtime": "worker"
@@ -18,8 +18,8 @@
     "postpack": "node ../../scripts/postpack.mjs"
   },
   "dependencies": {
-    "@openturn/json": "^0.1.0",
-    "@openturn/protocol": "^0.1.0"
+    "@openturn/json": "^0.1.1",
+    "@openturn/protocol": "^0.1.1"
   },
   "license": "Apache-2.0",
   "repository": {
