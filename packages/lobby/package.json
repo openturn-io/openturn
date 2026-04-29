@@ -23,17 +23,17 @@
     "postpack": "node ../../scripts/postpack.mjs"
   },
   "dependencies": {
-    "@openturn/bot": "workspace:*",
-    "@openturn/client": "workspace:*",
-    "@openturn/core": "workspace:*",
-    "@openturn/protocol": "workspace:*",
-    "@openturn/server": "workspace:*"
+    "@openturn/bot": "^0.1.0",
+    "@openturn/client": "^0.1.0",
+    "@openturn/core": "^0.1.0",
+    "@openturn/protocol": "^0.1.0",
+    "@openturn/server": "^0.1.0"
   },
   "peerDependencies": {
     "react": "^19.2.0"
   },
   "devDependencies": {
-    "@openturn/gamekit": "workspace:*",
+    "@openturn/gamekit": "^0.1.0",
     "@testing-library/react": "^16.3.0",
     "@types/react": "^19.2.0",
     "jsdom": "^29.0.1",

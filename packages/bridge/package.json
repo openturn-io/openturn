@@ -21,8 +21,8 @@
     "postpack": "node ../../scripts/postpack.mjs"
   },
   "dependencies": {
-    "@openturn/client": "workspace:*",
-    "@openturn/json": "workspace:*",
+    "@openturn/client": "^0.1.0",
+    "@openturn/json": "^0.1.0",
     "zod": "^4.1.12"
   },
   "devDependencies": {

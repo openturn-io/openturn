@@ -18,12 +18,12 @@
     "postpack": "node ../../scripts/postpack.mjs"
   },
   "dependencies": {
-    "@openturn/client": "workspace:*",
-    "@openturn/core": "workspace:*",
-    "@openturn/json": "workspace:*"
+    "@openturn/client": "^0.1.0",
+    "@openturn/core": "^0.1.0",
+    "@openturn/json": "^0.1.0"
   },
   "devDependencies": {
-    "@openturn/gamekit": "workspace:*"
+    "@openturn/gamekit": "^0.1.0"
   },
   "license": "Apache-2.0",
   "repository": {
