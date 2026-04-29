@@ -1,0 +1,100 @@
+---
+title: Publish packages
+description: How maintainers publish @openturn packages to npm with Changesets and the release workflow.
+sidebarTitle: Publishing
+---
+
+Openturn publishes npm packages with [Changesets](https://github.com/changesets/changesets) and the `Release` GitHub Actions workflow.
+
+The workflow runs on every push to `main`. It has two modes:
+
+- If there are pending `.changeset/*.md` files, it opens or updates the `chore: release` pull request.
+- If the `chore: release` pull request has been merged, it publishes the bumped package versions to npm.
+
+## Prerequisites
+
+Before publishing, verify the npm side is ready:
+
+- The `@openturn` npm scope exists.
+- Each package is configured for npm trusted publishing from the `openturn-io/openturn` repository.
+- The trusted publishing entry points to the `Release` workflow and the `npm-publish` GitHub environment.
+
+The workflow uses GitHub OIDC and provenance. It does not use an `NPM_TOKEN`.
+
+## Daily release flow
+
+Add a changeset in feature work whenever a PR changes public package behavior:
+
+```bash
+bun run changeset
+```
+
+Choose the affected packages, select `patch`, `minor`, or `major`, and write a short release note. Commit the generated `.changeset/*.md` file with the feature PR.
+
+After the feature PR merges to `main`, the `Release` workflow opens or updates a pull request named:
+
+```text
+chore: release
+```
+
+That pull request contains:
+
+- Package version bumps.
+- Changelog updates.
+- Removal of the consumed changeset files.
+
+Keep merging feature PRs as needed. The same `chore: release` pull request is updated each time new changesets land on `main`.
+
+When you are ready to publish, review and merge the `chore: release` pull request. The merge commit triggers the `Release` workflow again, and this run publishes the bumped packages:
+
+```bash
+bun run release
+```
+
+The `release` script builds packages and runs `changeset publish`.
+
+## First release from an existing `main`
+
+If `main` already contains releasable code but no package has been published yet, create an initial changeset first. Do not publish the existing `0.0.0` versions.
+
+From an up-to-date `main` branch:
+
+```bash
+git checkout main
+git pull
+bun run changeset
+```
+
+Select the public `@openturn/*` packages that should be part of the first release. For the first npm release, use `minor` unless there is a reason to publish a different version.
+
+Then commit and push the changeset:
+
+```bash
+git add .
+git commit -m "chore: add initial release changeset"
+git push origin main
+```
+
+The `Release` workflow opens the `chore: release` pull request. Review it and confirm that package versions changed from `0.0.0` to the intended first version, such as `0.1.0`.
+
+Merge the `chore: release` pull request to publish the first npm release.
+
+## Versioning notes
+
+The Changesets config uses a fixed group for the publishable `@openturn/*` packages. A release usually bumps the package set together, even when only one package was selected in the changeset prompt.
+
+Examples are ignored by Changesets and are not published:
+
+```json
+{
+  "ignore": ["@openturn/example-*"]
+}
+```
+
+## What not to do
+
+Do not run `bun run release` locally for normal publishing. The GitHub workflow owns npm publishing so provenance and trusted publishing work correctly.
+
+Do not manually edit package versions for routine releases. Use `bun run changeset`, then let the release pull request apply the version bumps.
+
+Do not merge the `chore: release` pull request until the npm trusted publishing setup is ready. Once merged, the workflow will attempt to publish.
