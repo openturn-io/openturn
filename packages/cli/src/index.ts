@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { basename, dirname, join, relative, resolve } from "node:path";

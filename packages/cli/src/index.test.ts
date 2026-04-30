@@ -196,6 +196,21 @@ describe("createOpenturnProject", () => {
 });
 
 describe("@openturn/cli", () => {
+  test("declares a Bun shebang for the published bin entrypoint", () => {
+    const packageRoot = resolve(import.meta.dir, "..");
+    const packageJson = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8")) as {
+      bin?: Record<string, string>;
+      publishConfig?: {
+        bin?: Record<string, string>;
+      };
+    };
+    const sourceEntrypoint = readFileSync(resolve(packageRoot, packageJson.bin?.openturn ?? ""), "utf8");
+
+    expect(packageJson.bin?.openturn).toBe("./src/index.ts");
+    expect(packageJson.publishConfig?.bin?.openturn).toBe("./dist/index.js");
+    expect(sourceEntrypoint.startsWith("#!/usr/bin/env bun\n")).toBe(true);
+  });
+
   test("routes host+guest through lobby to game over one durable websocket each", async () => {
     const databasePath = createDatabasePath("lobby-to-game-end-to-end");
     const server = await startLocalDevServer({
