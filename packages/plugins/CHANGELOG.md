@@ -1,5 +1,13 @@
 # @openturn/plugins
 
+## 0.2.3
+
+### Patch Changes
+
+- @openturn/core@0.2.3
+- @openturn/gamekit@0.2.3
+- @openturn/json@0.2.3
+
 ## 0.2.2
 
 ### Patch Changes

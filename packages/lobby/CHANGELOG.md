@@ -1,5 +1,16 @@
 # @openturn/lobby
 
+## 0.2.3
+
+### Patch Changes
+
+- Updated dependencies [19ed132]
+  - @openturn/server@0.2.3
+  - @openturn/bot@0.2.3
+  - @openturn/client@0.2.3
+  - @openturn/core@0.2.3
+  - @openturn/protocol@0.2.3
+
 ## 0.2.2
 
 ### Patch Changes

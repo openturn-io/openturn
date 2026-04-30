@@ -1,5 +1,19 @@
 # @openturn/cli
 
+## 0.2.3
+
+### Patch Changes
+
+- Updated dependencies [19ed132]
+  - @openturn/deploy@0.2.3
+  - @openturn/server@0.2.3
+  - @openturn/bridge@0.2.3
+  - @openturn/core@0.2.3
+  - @openturn/inspector-ui@0.2.3
+  - @openturn/json@0.2.3
+  - @openturn/protocol@0.2.3
+  - @openturn/react@0.2.3
+
 ## 0.2.2
 
 ### Patch Changes
