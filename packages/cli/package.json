@@ -16,7 +16,7 @@
     "dev": "cd ../.. && bun run packages/cli/src/index.ts dev \"$@\"",
     "test": "bun test",
     "typecheck": "bun x tsc -p tsconfig.json --pretty false",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && chmod +x dist/index.js",
     "prepublishOnly": "bun run build",
     "prepack": "node ../../scripts/prepack.mjs",
     "postpack": "node ../../scripts/postpack.mjs"

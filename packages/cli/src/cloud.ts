@@ -79,6 +79,13 @@ function resolveCloudURL(baseURL: string, value: string): string {
   return new URL(value, `${baseURL}/`).toString();
 }
 
+export function resolveCloudPlayURL(
+  baseURL: string,
+  complete: { playURL: string; policyPlayURL?: string },
+): string {
+  return resolveCloudURL(baseURL, complete.policyPlayURL ?? complete.playURL);
+}
+
 function assetRelativePath(asset: string): string {
   if (asset.startsWith("./")) return asset.slice(2);
   if (asset.startsWith("/")) return asset.slice(1);
@@ -250,7 +257,7 @@ export async function cloudDeploy(options: CloudDeployOptions): Promise<CloudDep
       deploymentID: complete.deploymentID,
       projectID: complete.projectID,
       url: baseURL,
-      playURL: resolveCloudURL(baseURL, complete.playURL),
+      playURL: resolveCloudPlayURL(baseURL, complete),
       dashboardURL: resolveCloudURL(baseURL, complete.dashboardURL),
       ...(serverBundleStatus === undefined ? {} : { serverBundleStatus }),
     };

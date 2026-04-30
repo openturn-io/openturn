@@ -9,6 +9,7 @@ import { defineGame } from "@openturn/core";
 import { loadOpenturnProjectDeployment } from "@openturn/deploy";
 import { defineGameDeployment } from "@openturn/server";
 
+import { resolveCloudPlayURL } from "./cloud";
 import { startDevBundleServer } from "./dev-bundle";
 import { createOpenturnProject, removeDatabaseFile, startLocalDevServer } from "./index";
 
@@ -209,6 +210,13 @@ describe("@openturn/cli", () => {
     expect(packageJson.bin?.openturn).toBe("./src/index.ts");
     expect(packageJson.publishConfig?.bin?.openturn).toBe("./dist/index.js");
     expect(sourceEntrypoint.startsWith("#!/usr/bin/env bun\n")).toBe(true);
+  });
+
+  test("prefers the cloud shell play URL when deployment completion returns one", () => {
+    expect(resolveCloudPlayURL("https://openturn.io", {
+      playURL: "https://play.openturn.games/deployments/dep_123/index.html",
+      policyPlayURL: "/play/dep_123",
+    })).toBe("https://openturn.io/play/dep_123");
   });
 
   test("routes host+guest through lobby to game over one durable websocket each", async () => {
