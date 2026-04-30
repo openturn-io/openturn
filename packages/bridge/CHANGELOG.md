@@ -1,5 +1,16 @@
 # @openturn/bridge
 
+## 0.2.0
+
+### Minor Changes
+
+- 6d74435: Add `@openturn/bridge/shell` entry point that exports `PlayShell`, the React component used to host a deployed bundle in a browser shell. The package now declares `react@^19.2.0` as an optional peer dependency, so existing non-React consumers (`/host`, `/game`) are unaffected.
+
+### Patch Changes
+
+- @openturn/client@0.2.0
+- @openturn/json@0.2.0
+
 ## 0.1.1
 
 ### Patch Changes
