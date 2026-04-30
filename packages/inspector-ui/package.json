@@ -1,6 +1,6 @@
 {
   "name": "@openturn/inspector-ui",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "openturn": {
     "runtime": "browser"
@@ -18,11 +18,11 @@
     "postpack": "node ../../scripts/postpack.mjs"
   },
   "dependencies": {
-    "@openturn/bridge": "^0.2.0",
-    "@openturn/core": "^0.2.0",
-    "@openturn/inspector": "^0.2.0",
-    "@openturn/react": "^0.2.0",
-    "@openturn/replay": "^0.2.0",
+    "@openturn/bridge": "^0.2.1",
+    "@openturn/core": "^0.2.1",
+    "@openturn/inspector": "^0.2.1",
+    "@openturn/react": "^0.2.1",
+    "@openturn/replay": "^0.2.1",
     "@xyflow/react": "^12.10.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

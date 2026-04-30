@@ -1,5 +1,19 @@
 # @openturn/cli
 
+## 0.2.1
+
+### Patch Changes
+
+- d0f00e9: Fix `openturn dev` exiting immediately after startup when telemetry is enabled. The dev command now waits for SIGINT/SIGTERM and stops the server cleanly on shutdown.
+  - @openturn/bridge@0.2.1
+  - @openturn/core@0.2.1
+  - @openturn/deploy@0.2.1
+  - @openturn/inspector-ui@0.2.1
+  - @openturn/json@0.2.1
+  - @openturn/protocol@0.2.1
+  - @openturn/react@0.2.1
+  - @openturn/server@0.2.1
+
 ## 0.2.0
 
 ### Patch Changes
