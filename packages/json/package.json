@@ -1,6 +1,6 @@
 {
   "name": "@openturn/json",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "type": "module",
   "openturn": {
     "runtime": "worker"

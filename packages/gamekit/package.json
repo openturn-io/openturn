@@ -1,6 +1,6 @@
 {
   "name": "@openturn/gamekit",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "type": "module",
   "openturn": {
     "runtime": "worker"
@@ -18,8 +18,8 @@
     "postpack": "node ../../scripts/postpack.mjs"
   },
   "dependencies": {
-    "@openturn/core": "^0.2.2",
-    "@openturn/json": "^0.2.2"
+    "@openturn/core": "^0.2.3",
+    "@openturn/json": "^0.2.3"
   },
   "license": "Apache-2.0",
   "repository": {

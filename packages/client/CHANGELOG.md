@@ -1,5 +1,12 @@
 # @openturn/client
 
+## 0.2.3
+
+### Patch Changes
+
+- @openturn/json@0.2.3
+- @openturn/protocol@0.2.3
+
 ## 0.2.2
 
 ### Patch Changes
