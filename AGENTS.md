@@ -1,4 +1,4 @@
-Cutover change is allowed and preferred and no migration/compatibility is needed as we haven't launched yet.
+Cutover change is allowed and preferred and no migration/compatibility is needed. Add changeset mds for each PR.
 
 Runtime rules:
 
