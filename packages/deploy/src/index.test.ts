@@ -145,6 +145,10 @@ describe.serial("@openturn/deploy", () => {
       },
     ]);
 
+    const serverBundleText = readFileSync(result.serverBundle!.path, "utf8");
+    expect(serverBundleText).toContain('playerIDs: ["0", "1"]');
+    expect(serverBundleText).not.toContain('gameKey: "fixture-game",\n  match:');
+
     const metadataText = readFileSync(result.serverBundle!.metadataPath, "utf8");
     expect(metadataText).not.toContain("ROOM_TOKEN_SECRET");
     expect(metadataText).not.toContain("secret_text");
