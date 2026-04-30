@@ -149,24 +149,24 @@ function extractKnownBotsFromGame(
   return out.size > 0 ? out : null;
 }
 
-function extractMultiplayerFromMatch(match: unknown): {
+function extractMultiplayerFromGame(game: unknown): {
   players: readonly string[];
   minPlayers: number;
   maxPlayers: number;
 } {
-  if (match === null || typeof match !== "object") {
+  if (game === null || typeof game !== "object") {
     return { players: [], minPlayers: 0, maxPlayers: 0 };
   }
-  const matchObject = match as { players?: unknown; minPlayers?: unknown };
-  const players = Array.isArray(matchObject.players)
-    ? matchObject.players.filter((value): value is string => typeof value === "string")
+  const gameObject = game as { playerIDs?: unknown; minPlayers?: unknown };
+  const players = Array.isArray(gameObject.playerIDs)
+    ? gameObject.playerIDs.filter((value): value is string => typeof value === "string")
     : [];
   const maxPlayers = players.length;
   const minPlayers =
-    typeof matchObject.minPlayers === "number"
-      && Number.isFinite(matchObject.minPlayers)
-      && matchObject.minPlayers > 0
-      ? Math.min(matchObject.minPlayers, maxPlayers)
+    typeof gameObject.minPlayers === "number"
+      && Number.isFinite(gameObject.minPlayers)
+      && gameObject.minPlayers > 0
+      ? Math.min(gameObject.minPlayers, maxPlayers)
       : maxPlayers;
   return { players, minPlayers, maxPlayers };
 }
@@ -182,7 +182,7 @@ export function createGameWorker<TGame extends AnyGame>(
     players: deploymentPlayers,
     minPlayers: deploymentMinPlayers,
     maxPlayers: deploymentMaxPlayers,
-  } = extractMultiplayerFromMatch(erasedDeployment.match);
+  } = extractMultiplayerFromGame(erasedDeployment.game);
   // Bot catalog comes from `game.bots` (set via `attachBots(game, registry)`
   // in the consumer's bots package). Engine-inert; `LobbyRuntime` reads it
   // to validate `lobby:assign_bot` and to populate `lobby:state.availableBots`.
@@ -1187,8 +1187,8 @@ export function createGameWorker<TGame extends AnyGame>(
         };
 
         // Filter `match.players` down to the seated subset captured at
-        // `lobby:start`. The maximal roster lives in `deployment.match.players`
-        // (set at deploy time); for variable-player games the seated subset
+        // `lobby:start`. The maximal roster lives in `deployment.game.playerIDs`;
+        // for variable-player games the seated subset
         // can be smaller. Game logic that does `match.players.includes(...)`
         // or `roundRobin(match.players, ...)` then naturally cycles only
         // active players. When `activePlayerIDs` is null (room hasn't started
@@ -1494,7 +1494,7 @@ async function dispatchLookup(input: {
 }
 
 function respondInfo(deployment: GameDeployment): Response {
-  const { players, minPlayers, maxPlayers } = extractMultiplayerFromMatch(deployment.match);
+  const { players, minPlayers, maxPlayers } = extractMultiplayerFromGame(deployment.game);
   const info: GameWorkerInfoResponse = {
     deploymentVersion: deployment.deploymentVersion,
     gameKey: deployment.gameKey,
@@ -1507,7 +1507,7 @@ function respondInfo(deployment: GameDeployment): Response {
 }
 
 function isDeploymentPlayer(deployment: GameDeployment, playerID: PlayerID): boolean {
-  const { players } = extractMultiplayerFromMatch(deployment.match);
+  const { players } = extractMultiplayerFromGame(deployment.game);
   return players.length === 0 || players.includes(playerID);
 }
 
