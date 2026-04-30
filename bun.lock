@@ -330,7 +330,7 @@
     },
     "packages/bot": {
       "name": "@openturn/bot",
-      "version": "0.0.0",
+      "version": "0.1.1",
       "dependencies": {
         "@openturn/client": "workspace:*",
         "@openturn/core": "workspace:*",
@@ -342,20 +342,28 @@
     },
     "packages/bridge": {
       "name": "@openturn/bridge",
-      "version": "0.0.0",
+      "version": "0.1.1",
       "dependencies": {
-        "@openturn/client": "workspace:*",
-        "@openturn/json": "workspace:*",
+        "@openturn/client": "^0.1.1",
+        "@openturn/json": "^0.1.1",
         "zod": "^4.1.12",
       },
       "devDependencies": {
+        "@types/react": "^19.2.0",
         "jsdom": "^29.0.1",
+        "react": "^19.2.0",
         "vitest": "^4.1.2",
       },
+      "peerDependencies": {
+        "react": "^19.2.0",
+      },
+      "optionalPeers": [
+        "react",
+      ],
     },
     "packages/cli": {
       "name": "@openturn/cli",
-      "version": "0.0.0",
+      "version": "0.1.1",
       "bin": {
         "openturn": "./src/index.ts",
       },
@@ -381,22 +389,22 @@
     },
     "packages/client": {
       "name": "@openturn/client",
-      "version": "0.0.0",
+      "version": "0.1.1",
       "dependencies": {
-        "@openturn/json": "workspace:*",
-        "@openturn/protocol": "workspace:*",
+        "@openturn/json": "^0.1.1",
+        "@openturn/protocol": "^0.1.1",
       },
     },
     "packages/core": {
       "name": "@openturn/core",
-      "version": "0.0.0",
+      "version": "0.1.1",
       "dependencies": {
-        "@openturn/json": "workspace:*",
+        "@openturn/json": "^0.1.1",
       },
     },
     "packages/deploy": {
       "name": "@openturn/deploy",
-      "version": "0.0.0",
+      "version": "0.1.1",
       "dependencies": {
         "@openturn/core": "workspace:*",
         "@openturn/json": "workspace:*",
@@ -420,7 +428,7 @@
     },
     "packages/gamekit": {
       "name": "@openturn/gamekit",
-      "version": "0.0.0",
+      "version": "0.1.1",
       "dependencies": {
         "@openturn/core": "workspace:*",
         "@openturn/json": "workspace:*",
@@ -428,7 +436,7 @@
     },
     "packages/inspector": {
       "name": "@openturn/inspector",
-      "version": "0.0.0",
+      "version": "0.1.1",
       "dependencies": {
         "@openturn/core": "workspace:*",
         "@openturn/protocol": "workspace:*",
@@ -440,7 +448,7 @@
     },
     "packages/inspector-ui": {
       "name": "@openturn/inspector-ui",
-      "version": "0.0.0",
+      "version": "0.1.1",
       "dependencies": {
         "@openturn/bridge": "workspace:*",
         "@openturn/core": "workspace:*",
@@ -478,14 +486,14 @@
     },
     "packages/json": {
       "name": "@openturn/json",
-      "version": "0.0.0",
+      "version": "0.1.1",
       "dependencies": {
         "zod": "^4.1.12",
       },
     },
     "packages/lobby": {
       "name": "@openturn/lobby",
-      "version": "0.0.0",
+      "version": "0.1.1",
       "dependencies": {
         "@openturn/bot": "workspace:*",
         "@openturn/client": "workspace:*",
@@ -506,14 +514,14 @@
     },
     "packages/manifest": {
       "name": "@openturn/manifest",
-      "version": "0.0.0",
+      "version": "0.1.1",
       "dependencies": {
         "zod": "^4.1.12",
       },
     },
     "packages/plugin-chat": {
       "name": "@openturn/plugin-chat",
-      "version": "0.0.0",
+      "version": "0.1.1",
       "dependencies": {
         "@openturn/core": "workspace:*",
         "@openturn/gamekit": "workspace:*",
@@ -533,7 +541,7 @@
     },
     "packages/plugins": {
       "name": "@openturn/plugins",
-      "version": "0.0.0",
+      "version": "0.1.1",
       "dependencies": {
         "@openturn/core": "workspace:*",
         "@openturn/gamekit": "workspace:*",
@@ -542,16 +550,16 @@
     },
     "packages/protocol": {
       "name": "@openturn/protocol",
-      "version": "0.0.0",
+      "version": "0.1.1",
       "dependencies": {
-        "@openturn/core": "workspace:*",
-        "@openturn/json": "workspace:*",
+        "@openturn/core": "^0.1.1",
+        "@openturn/json": "^0.1.1",
         "zod": "^4.1.12",
       },
     },
     "packages/react": {
       "name": "@openturn/react",
-      "version": "0.0.0",
+      "version": "0.1.1",
       "dependencies": {
         "@openturn/bot": "workspace:*",
         "@openturn/bridge": "workspace:*",
@@ -575,7 +583,7 @@
     },
     "packages/replay": {
       "name": "@openturn/replay",
-      "version": "0.0.0",
+      "version": "0.1.1",
       "dependencies": {
         "@openturn/core": "workspace:*",
         "@openturn/json": "workspace:*",
@@ -586,7 +594,7 @@
     },
     "packages/server": {
       "name": "@openturn/server",
-      "version": "0.0.0",
+      "version": "0.1.1",
       "dependencies": {
         "@openturn/bot": "workspace:*",
         "@openturn/core": "workspace:*",
