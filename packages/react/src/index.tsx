@@ -1551,12 +1551,13 @@ function useHostedRoom<
       };
     }
 
+    const lobbyFallback = resolveLobbyCapacityFallback(game, init);
     const lobbyView = buildLobbyView({
       channel,
       userID: init.userID,
-      capacityFallback: init.targetCapacity,
-      minPlayersFallback: init.minPlayers,
-      maxPlayersFallback: init.maxPlayers,
+      capacityFallback: lobbyFallback.targetCapacity,
+      minPlayersFallback: lobbyFallback.minPlayers,
+      maxPlayersFallback: lobbyFallback.maxPlayers,
       hostUserIDFallback: init.hostUserID ?? init.userID,
     });
 
@@ -1588,6 +1589,33 @@ function useHostedRoom<
       bridge: backend,
     };
   }, [backend, backendHolder.error, channel, gameConnection, gameMatch]);
+}
+
+function resolveLobbyCapacityFallback<TGame extends AnyGame>(
+  game: TGame,
+  init: GameBridge["init"],
+): { targetCapacity: number; minPlayers: number; maxPlayers: number } {
+  const gameMaxPlayers = game.playerIDs.length;
+  const gameMinPlayers = (game as { minPlayers?: number }).minPlayers ?? gameMaxPlayers;
+  const maxPlayers = positiveIntegerOr(init.maxPlayers, gameMaxPlayers);
+  const minPlayers = positiveIntegerOr(init.minPlayers, Math.min(gameMinPlayers, maxPlayers));
+  const targetCapacity = positiveIntegerOr(init.targetCapacity, maxPlayers);
+  const resolvedMinPlayers = clampInteger(minPlayers, 1, maxPlayers);
+
+  return {
+    maxPlayers,
+    minPlayers: resolvedMinPlayers,
+    targetCapacity: clampInteger(targetCapacity, resolvedMinPlayers, maxPlayers),
+  };
+}
+
+function positiveIntegerOr(value: number, fallback: number): number {
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+function clampInteger(value: number, min: number, max: number): number {
+  if (max < min) return min;
+  return Math.max(min, Math.min(max, Math.floor(value)));
 }
 
 // ---------------------------------------------------------------------------

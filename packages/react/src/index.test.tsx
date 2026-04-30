@@ -216,6 +216,39 @@ describe("@openturn/react", () => {
 
     expect(screen.getByTestId("room-id").textContent).toBe("room_cloud");
   });
+
+  test("OpenturnProvider derives lobby capacity fallback when bridge init is zeroed", () => {
+    const cloudGame = makeCloudGame();
+    const cloudBindings = createOpenturnBindings(cloudGame, {
+      runtime: "multiplayer",
+      hosted: {
+        parent: null,
+        readInit: () => ({
+          scope: "lobby",
+          userID: "user_cloud",
+          userName: "Cloud",
+          roomID: "room_cloud",
+          token: "token_cloud",
+          websocketURL: "wss://cloud.example/rooms/room_cloud/connect",
+          targetCapacity: 0,
+          minPlayers: 0,
+          maxPlayers: 0,
+        }),
+      },
+    });
+    const Harness = makeLobbyHarness(cloudBindings);
+
+    render(
+      <cloudBindings.OpenturnProvider>
+        <Harness />
+      </cloudBindings.OpenturnProvider>,
+    );
+
+    expect(screen.getByTestId("lobby-target").textContent).toBe("2");
+    expect(screen.getByTestId("lobby-min").textContent).toBe("2");
+    expect(screen.getByTestId("lobby-max").textContent).toBe("2");
+    expect(screen.getByTestId("lobby-seats").textContent).toBe("2");
+  });
 });
 
 function SnapshotHarness() {
@@ -269,6 +302,22 @@ function makeRoomHarness(bindings: ReturnType<typeof createOpenturnBindings<type
         <div data-testid="room-id">{room.roomID ?? ""}</div>
         <div data-testid="room-error">{room.error ?? ""}</div>
         <div data-testid="room-game">{room.game === null ? "null" : room.game.status}</div>
+      </div>
+    );
+  };
+}
+
+function makeLobbyHarness(bindings: ReturnType<typeof createOpenturnBindings<typeof scoreGame>>) {
+  return function LobbyHarness() {
+    const room = bindings.useRoom();
+
+    return (
+      <div>
+        <div data-testid="room-phase">{room.phase}</div>
+        <div data-testid="lobby-target">{room.lobby?.targetCapacity ?? ""}</div>
+        <div data-testid="lobby-min">{room.lobby?.minPlayers ?? ""}</div>
+        <div data-testid="lobby-max">{room.lobby?.maxPlayers ?? ""}</div>
+        <div data-testid="lobby-seats">{room.lobby?.seats.length ?? ""}</div>
       </div>
     );
   };
