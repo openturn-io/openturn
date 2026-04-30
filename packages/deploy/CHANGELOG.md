@@ -1,5 +1,15 @@
 # @openturn/deploy
 
+## 0.2.0
+
+### Patch Changes
+
+- @openturn/core@0.2.0
+- @openturn/json@0.2.0
+- @openturn/manifest@0.2.0
+- @openturn/protocol@0.2.0
+- @openturn/server@0.2.0
+
 ## 0.1.1
 
 ### Patch Changes

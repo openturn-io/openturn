@@ -1,5 +1,13 @@
 # @openturn/inspector
 
+## 0.2.0
+
+### Patch Changes
+
+- @openturn/core@0.2.0
+- @openturn/protocol@0.2.0
+- @openturn/replay@0.2.0
+
 ## 0.1.1
 
 ### Patch Changes
