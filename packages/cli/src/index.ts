@@ -1766,6 +1766,9 @@ async function runDevCommand(args: readonly string[]) {
   console.log("");
   console.log("  Tip: toggle the Inspector with the toolbar button or Alt+I.");
   console.log("");
+
+  await waitForShutdownSignal();
+  await server.stop();
 }
 
 async function runHostedDevServer(manifestPath: string, flags: readonly string[]) {
@@ -1789,6 +1792,21 @@ async function runHostedDevServer(manifestPath: string, flags: readonly string[]
   console.log(`Openturn local hosted dev server ready at ${server.url}`);
   console.log(`Auth endpoint: ${server.url}/api/dev/session/anonymous`);
   console.log(`Room endpoint: ${server.url}/api/dev/rooms`);
+
+  await waitForShutdownSignal();
+  await server.stop();
+}
+
+function waitForShutdownSignal(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const onSignal = () => {
+      process.off("SIGINT", onSignal);
+      process.off("SIGTERM", onSignal);
+      resolve();
+    };
+    process.once("SIGINT", onSignal);
+    process.once("SIGTERM", onSignal);
+  });
 }
 
 async function runLocalBuild(
