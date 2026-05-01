@@ -80,12 +80,12 @@ export function PlayShell({
       <div
         className={
           toolbarClassName ??
-          "flex flex-none flex-wrap items-center gap-3 border-b border-slate-200 bg-white/80 px-4 py-2 text-sm text-slate-600"
+          "flex flex-none flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-200 bg-white/80 px-4 py-2 text-sm text-slate-600"
         }
       >
         <strong className="text-slate-900">{gameName}</strong>
         {toolbarLead}
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1">
           <CapabilityHeaderButtons capabilities={headerCaps} onInvoke={invoke} />
           {toolbarTrail}
           <CapabilityOverflowMenu capabilities={menuCaps} onInvoke={invoke} />

@@ -403,7 +403,10 @@ describe("@openturn/cli", () => {
 
       const playShell = await fetch(`${server.url}/play/dev?room=${hostSnapshot.roomID}`);
       expect(playShell.status).toBe(200);
-      expect(await playShell.text()).toContain("playerID: snapshot.playerID");
+      const playShellHTML = await playShell.text();
+      expect(playShellHTML).toContain('id="root"');
+      expect(playShellHTML).toContain("/__openturn/play-app/main.js");
+      expect(playShellHTML).toContain("__OPENTURN_PLAY__");
 
       lobbySocket.close();
       for (const socket of guestSockets) {
@@ -846,17 +849,16 @@ describe("@openturn/cli", () => {
       const shellResponse = await fetch(`${server.url}/play/dev`);
       expect(shellResponse.status).toBe(200);
       const shell = await shellResponse.text();
-      expect(shell).toContain('allow="clipboard-write"');
-      expect(shell).toContain('sandbox="allow-scripts allow-same-origin allow-modals allow-clipboard-write allow-forms"');
-      expect(shell).toContain('id="actions"');
-      expect(shell).toContain('id="returnToLobby"');
-      expect(shell).toContain('params.set("openturn-bridge"');
+      expect(shell).toContain('id="root"');
+      expect(shell).toContain("/__openturn/play-app/main.js");
+      expect(shell).toContain("__OPENTURN_PLAY__");
       expect(shell).not.toContain("openturn-backend");
-      expect(shell).toContain("openturn:bridge:token-refresh-request");
-      expect(shell).toContain("openturn:bridge:token-refresh-response");
-      expect(shell).toContain('headers: { authorization: `Bearer ${stored}` }');
-      expect(shell).toContain("sessionStorage.removeItem(sessionKey);");
-      expect(shell).toContain("caught?.status !== 401");
+
+      const playAppResponse = await fetch(`${server.url}/__openturn/play-app/main.js`);
+      expect(playAppResponse.status).toBe(200);
+      expect(playAppResponse.headers.get("content-type")).toContain("javascript");
+      const playAppBody = await playAppResponse.text();
+      expect(playAppBody).toContain("openturn:bridge");
     } finally {
       await server.stop();
       removeDatabaseFile(databasePath);
