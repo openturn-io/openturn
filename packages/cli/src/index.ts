@@ -21,6 +21,7 @@ import {
   loadOpenturnProjectDeployment,
   resolveOpenturnProject,
   type BuildOpenturnProjectResult,
+  type OpenturnDeploymentManifest,
   type OpenturnDeploymentRuntime,
 } from "@openturn/deploy";
 import { parseJsonText, stringifyJson } from "@openturn/json";
@@ -188,6 +189,14 @@ const authVerificationsTable = sqliteTable("verification", {
 });
 
 export interface LocalDevServerOptions {
+  /**
+   * "dev" (default) sets up better-auth with anonymous sign-in for local
+   * development. "none" skips better-auth entirely and derives userIDs from
+   * `?userID=` on each request (or generates a random UUID per request) —
+   * matches the production-shape used by `openturn start`, where auth is
+   * expected to be layered externally.
+   */
+  auth?: "dev" | "none";
   dbPath?: string;
   deployment: GameDeployment;
   iframe?: {
@@ -201,6 +210,11 @@ export interface LocalDevServerOptions {
     deploymentID: string;
     gameName: string;
     outDir: string;
+    /**
+     * When false, serve the built `<outDir>/index.html` directly at `/` and
+     * `/play/{deploymentID}` instead of the inspector play shell. Default true.
+     */
+    shell?: boolean;
   };
 }
 
@@ -224,10 +238,11 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
   const drizzleDB = drizzle({ client: sqlite });
 
   let currentDeployment = options.deployment;
+  const authMode = options.auth ?? "dev";
 
   bootstrapLocalTables(sqlite);
 
-  const auth = betterAuth({
+  const auth = authMode === "dev" ? betterAuth({
     basePath: "/api/auth",
     baseURL: url,
     database: drizzleAdapter(drizzleDB, {
@@ -244,8 +259,10 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
       enabled: false,
     },
     secret,
-  });
-  bootstrapBetterAuthTables(sqlite, auth.options);
+  }) : null;
+  if (auth !== null) {
+    bootstrapBetterAuthTables(sqlite, auth.options);
+  }
 
   const roomPersistence = createSQLiteRoomPersistence(drizzleDB);
   const saveSecret = secret;
@@ -442,7 +459,7 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
         return createCorsPreflightResponse(corsOrigin);
       }
 
-      if (requestURL.pathname.startsWith("/api/auth/")) {
+      if (auth !== null && requestURL.pathname.startsWith("/api/auth/")) {
         return withCors(await auth.handler(request), corsOrigin);
       }
 
@@ -457,11 +474,16 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
       }
 
       if (options.static !== undefined) {
-        if (request.method === "GET" && (requestURL.pathname === "/" || requestURL.pathname === `/play/${options.static.deploymentID}`)) {
-          return htmlResponse(createLocalPlayShell({
-            deploymentID: options.static.deploymentID,
-            gameName: options.static.gameName,
-          }));
+        const staticOptions = options.static;
+        const wantsShell = staticOptions.shell !== false;
+        if (request.method === "GET" && (requestURL.pathname === "/" || requestURL.pathname === `/play/${staticOptions.deploymentID}`)) {
+          if (wantsShell) {
+            return htmlResponse(createLocalPlayShell({
+              deploymentID: staticOptions.deploymentID,
+              gameName: staticOptions.gameName,
+            }));
+          }
+          return fileResponse(resolve(staticOptions.outDir, "index.html"), "text/html; charset=utf-8");
         }
 
         if (request.method === "GET" && requestURL.pathname.startsWith("/__openturn/bundle/")) {
@@ -469,7 +491,15 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
           if (relativePath.split("/").includes("..")) {
             return jsonResponse({ error: "invalid_asset_path" }, 400);
           }
-          return fileResponse(resolve(options.static.outDir, relativePath), contentTypeForPath(relativePath));
+          return fileResponse(resolve(staticOptions.outDir, relativePath), contentTypeForPath(relativePath));
+        }
+
+        if (!wantsShell && request.method === "GET" && requestURL.pathname.startsWith("/assets/")) {
+          const relativePath = requestURL.pathname.slice(1);
+          if (relativePath.split("/").includes("..")) {
+            return jsonResponse({ error: "invalid_asset_path" }, 400);
+          }
+          return fileResponse(resolve(staticOptions.outDir, relativePath), contentTypeForPath(relativePath));
         }
       }
 
@@ -481,7 +511,7 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
         }), corsOrigin);
       }
 
-      if (requestURL.pathname === "/api/dev/session/anonymous" && request.method === "POST") {
+      if (auth !== null && requestURL.pathname === "/api/dev/session/anonymous" && request.method === "POST") {
         return withCors(await auth.handler(
           new Request(new URL("/api/auth/sign-in/anonymous", url), {
             headers: request.headers,
@@ -1653,12 +1683,53 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
   }
 
   async function getSession(request: Request) {
+    if (auth === null) {
+      const userID = resolveAuthlessUserID(request);
+      const sessionID = `nosession_${userID}`;
+      return {
+        session: {
+          id: sessionID,
+          userId: userID,
+          token: sessionID,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          ipAddress: null,
+          userAgent: null,
+        },
+        user: {
+          id: userID,
+          name: userID,
+          email: `${userID}@local`,
+          emailVerified: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          image: null,
+        },
+      } as unknown as NonNullable<Awaited<ReturnType<NonNullable<typeof auth>["api"]["getSession"]>>>;
+    }
     const result = await auth.api.getSession({
       headers: request.headers,
     });
 
     return result;
   }
+}
+
+/**
+ * Pulls a userID from `?userID=` on the request URL, or falls back to a fresh
+ * UUID. Used by `startLocalDevServer({ auth: "none" })` to identify connections
+ * without better-auth.
+ */
+function resolveAuthlessUserID(request: Request): string {
+  try {
+    const requestURL = new URL(request.url);
+    const provided = requestURL.searchParams.get("userID");
+    if (provided !== null && provided.length > 0) {
+      return provided;
+    }
+  } catch {}
+  return `anon_${crypto.randomUUID()}`;
 }
 
 async function runCli(rawArgs: readonly string[]): Promise<void> {
@@ -1713,6 +1784,9 @@ async function runCli(rawArgs: readonly string[]): Promise<void> {
         break;
       case "logout":
         await runLogoutCommand();
+        break;
+      case "start":
+        await runLocalStart(args);
         break;
       default:
         console.error(`Unknown command: ${command}`);
@@ -1834,6 +1908,169 @@ function printBuildResult(result: BuildOpenturnProjectResult, label: string) {
   console.log(`Entry: ${result.manifest.entry}`);
 }
 
+async function runLocalStart(args: readonly string[]) {
+  const projectDir = readPositionalProjectDir(args);
+  const outFlag = readFlagValue(args, "--out") ?? ".openturn/deploy";
+  const portFlag = readFlagValue(args, "--port");
+  const port = portFlag === null ? 3000 : Number(portFlag);
+  const dbPath = readFlagValue(args, "--db");
+  const shellFlag = readBooleanFlag(args, "--shell");
+  const shell = shellFlag ?? true;
+
+  const absoluteProjectDir = resolve(process.cwd(), projectDir);
+  const outDir = resolve(absoluteProjectDir, outFlag);
+  const manifest = loadDeploymentManifest(outDir);
+  const deploymentID = manifest.deploymentID ?? "dep";
+
+  if (manifest.runtime === "local") {
+    const server = await startStaticServer({
+      deploymentID,
+      gameName: manifest.gameName,
+      outDir,
+      port,
+      shell,
+    });
+    const playURL = shell ? `${server.url}/play/${deploymentID}` : server.url;
+    console.log("");
+    console.log(`  ▶ Play URL:  ${playURL}`);
+    console.log(`    Mode:      single-player${shell ? "" : " (no shell)"}`);
+    console.log("");
+
+    await waitForShutdownSignal();
+    await server.stop();
+    return;
+  }
+
+  const deploymentVersion = manifest.multiplayer?.deploymentVersion ?? "dev";
+  const deployment = await loadOpenturnProjectDeployment({
+    deploymentVersion,
+    projectDir: absoluteProjectDir,
+  }) as GameDeployment;
+
+  const serverOptions: LocalDevServerOptions = {
+    auth: "none",
+    deployment,
+    port,
+    static: {
+      deploymentID,
+      gameName: manifest.gameName,
+      outDir,
+      shell,
+    },
+  };
+  if (dbPath !== null) {
+    serverOptions.dbPath = dbPath;
+  }
+
+  const server = await startLocalDevServer(serverOptions);
+  const playURL = shell ? `${server.url}/play/${deploymentID}` : server.url;
+  console.log("");
+  console.log(`  ▶ Play URL:  ${playURL}`);
+  console.log(`    Mode:      multiplayer (no-auth)${shell ? "" : ", no shell"}`);
+  console.log(`    Note:      local emulation; production uses Cloudflare Workers.`);
+  console.log("");
+
+  await waitForShutdownSignal();
+  await server.stop();
+}
+
+interface StaticServerHandle {
+  port: number;
+  stop(): Promise<void>;
+  url: string;
+}
+
+async function startStaticServer(options: {
+  deploymentID: string;
+  gameName: string;
+  outDir: string;
+  port: number;
+  shell: boolean;
+}): Promise<StaticServerHandle> {
+  await assertLocalDevPortAvailable(options.port);
+  const url = `http://${LOCAL_DEV_HOST}:${options.port}`;
+
+  const server = Bun.serve({
+    fetch(request) {
+      const requestURL = new URL(request.url);
+
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        return jsonResponse({ error: "method_not_allowed" }, 405);
+      }
+
+      if (options.shell) {
+        if (requestURL.pathname === "/" || requestURL.pathname === `/play/${options.deploymentID}`) {
+          return htmlResponse(createLocalPlayShell({
+            deploymentID: options.deploymentID,
+            gameName: options.gameName,
+          }));
+        }
+
+        if (requestURL.pathname.startsWith("/__openturn/bundle/")) {
+          const relativePath = requestURL.pathname.slice("/__openturn/bundle/".length) || "index.html";
+          if (relativePath.split("/").includes("..")) {
+            return jsonResponse({ error: "invalid_asset_path" }, 400);
+          }
+          return fileResponse(resolve(options.outDir, relativePath), contentTypeForPath(relativePath));
+        }
+
+        return jsonResponse({ error: "not_found" }, 404);
+      }
+
+      if (requestURL.pathname === "/" || requestURL.pathname === `/play/${options.deploymentID}`) {
+        return fileResponse(resolve(options.outDir, "index.html"), "text/html; charset=utf-8");
+      }
+
+      const relativePath = requestURL.pathname.replace(/^\/+/, "");
+      if (relativePath.length === 0 || relativePath.split("/").includes("..")) {
+        return jsonResponse({ error: "not_found" }, 404);
+      }
+      return fileResponse(resolve(options.outDir, relativePath), contentTypeForPath(relativePath));
+    },
+    hostname: LOCAL_DEV_HOST,
+    port: options.port,
+  });
+
+  return {
+    port: server.port ?? options.port,
+    async stop() {
+      await server.stop();
+    },
+    url,
+  };
+}
+
+function loadDeploymentManifest(outDir: string): OpenturnDeploymentManifest {
+  const manifestPath = resolve(outDir, "manifest.json");
+  if (!existsSync(manifestPath)) {
+    throw new Error(
+      `No build artifacts found at ${outDir}. Run \`openturn build\` first (or pass --out <dir>).`,
+    );
+  }
+  const raw = readFileSync(manifestPath, "utf8");
+  return JSON.parse(raw) as OpenturnDeploymentManifest;
+}
+
+/**
+ * Read a boolean flag pair like `--shell` / `--no-shell`. Returns:
+ *  - `true` when only `--name` is present (or appears after `--no-name`)
+ *  - `false` when only `--no-name` is present (or appears after `--name`)
+ *  - `undefined` when neither is present
+ */
+function readBooleanFlag(args: readonly string[], flag: string): boolean | undefined {
+  if (!flag.startsWith("--")) {
+    throw new Error(`readBooleanFlag expects a --flag name, got ${flag}`);
+  }
+  const positiveFlag = flag;
+  const negativeFlag = `--no-${flag.slice(2)}`;
+  let value: boolean | undefined;
+  for (const arg of args) {
+    if (arg === positiveFlag) value = true;
+    else if (arg === negativeFlag) value = false;
+  }
+  return value;
+}
+
 async function runCreateCommand(args: readonly string[]) {
   const projectDir = readPositionalProjectDir(args);
   const template = readFlagValue(args, "--template") ?? "local";
@@ -1921,6 +2158,7 @@ function createProjectPackageJson(input: {
     scripts: {
       dev: "openturn dev .",
       build: "openturn build .",
+      start: "openturn start .",
       deploy: "openturn deploy .",
       typecheck: "tsc -p tsconfig.json --pretty false",
     },
@@ -3041,12 +3279,29 @@ const CLI_COMMANDS: Record<string, CliCommand> = {
     ],
   },
   build: {
-    summary: "Build a deployable bundle to disk.",
+    summary: "Build a deployable bundle to disk (single-player or multiplayer).",
     usage: ["openturn build [project-dir] [--out <dir>] [--deployment-id <id>] [--project-id <id>]"],
     flags: [
       { name: "--out", value: "<dir>", description: "Output directory (default: .openturn/deploy)." },
       { name: "--deployment-id", value: "<id>", description: "Override the generated deployment ID." },
       { name: "--project-id", value: "<id>", description: "Override the generated project ID." },
+    ],
+    notes: [
+      "Runtime is read from app/openturn.ts. Multiplayer projects also emit a server bundle.",
+    ],
+  },
+  start: {
+    summary: "Run a previously-built bundle locally.",
+    usage: ["openturn start [project-dir] [--port <port>] [--out <dir>] [--no-shell] [--db <path>]"],
+    flags: [
+      { name: "--port", value: "<port>", description: "Port to bind (default: 3000)." },
+      { name: "--out", value: "<dir>", description: "Build output directory to serve (default: .openturn/deploy)." },
+      { name: "--no-shell", description: "Serve the raw built game without the inspector toolbar shell." },
+      { name: "--db", value: "<path>", description: "SQLite path for room persistence (multiplayer only)." },
+    ],
+    notes: [
+      "Requires a prior `openturn build`. Multiplayer mode runs the bun server with no auth injection — layer auth externally.",
+      "Multiplayer is local emulation; production runs on Cloudflare Workers.",
     ],
   },
   deploy: {

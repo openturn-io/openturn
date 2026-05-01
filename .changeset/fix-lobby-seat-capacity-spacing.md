@@ -2,4 +2,4 @@
 "@openturn/lobby": patch
 ---
 
-Widen the default lobby panel and round-table stage while keeping seat controls compact so seating does not crowd the table center.
+Widen the default lobby panel while keeping the round-table stage height-aware so seat controls do not crowd or overflow the viewport.
