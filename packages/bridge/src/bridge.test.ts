@@ -109,6 +109,51 @@ describe("bridge host <-> game", () => {
     game.dispose();
   });
 
+  it("host.emitShellControl buffers events fired before the iframe is ready", async () => {
+    // Build a host with no game yet, then emit a shell-control event. Once the
+    // game appears and its `ready` reaches the host, the buffered event must
+    // replay so the game's listener observes it. This protects against the
+    // user clicking a toolbar button while the iframe is still loading.
+    window.location.hash = `#${encodeBridgeFragment(sample)}`;
+    const fakeIframe = {
+      postMessage: (m: unknown) => hostToGameBus?.(m as BridgeMessage),
+    } as unknown as Window;
+    const host = createBridgeHost({
+      bundleURL: "https://game.example/bundle/index.html",
+      init: sample,
+      refreshToken: async () => null,
+      expectOrigin: "https://game.example",
+    });
+    gameToHostBus = (m) => dispatchToWindow(m, fakeIframe);
+    hostToGameBus = (m) =>
+      window.dispatchEvent(
+        new MessageEvent("message", { data: m, origin: "https://shell.example" }),
+      );
+
+    // Fire an event before any game exists. activeSource is still null.
+    host.emitShellControl("reset", "before");
+
+    // Now create the game; its `ready` post sets activeSource on the host and
+    // schedules a microtask to drain the buffer.
+    const gameParent = {
+      postMessage: (m: unknown) => gameToHostBus?.(m as BridgeMessage),
+    };
+    const game = createGameBridge({ parent: gameParent });
+
+    const events: Array<{ control: string; phase: string }> = [];
+    game.shellControl.on((e) =>
+      events.push({ control: e.control, phase: e.phase }),
+    );
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    // The buffered "before" event was replayed after activeSource was set.
+    expect(events).toEqual([{ control: "reset", phase: "before" }]);
+
+    host.dispose();
+    game.dispose();
+  });
+
   it("host.refreshToken() round-trips the new token via postMessage", async () => {
     const refresh = vi.fn(async () => ({ token: "rotated", tokenExpiresAt: 1_700_002_000 }));
     const { host, game } = setup(refresh);

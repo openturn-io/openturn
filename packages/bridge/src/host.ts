@@ -150,8 +150,35 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
   let activeSource: MessageEventSource | null = null;
   let activeOrigin: string | null = null;
 
+  // Buffer host→game messages sent before the game's first inbound message
+  // arrives. Without this, an early `emitShellControl("foo", "before")` (a click
+  // on a toolbar button before the iframe has finished loading) would be
+  // silently dropped because `activeSource` is still null. We replay buffered
+  // messages once the source is known.
+  const pendingMessages: BridgeMessage[] = [];
+
   function broadcastToGame(message: BridgeMessage) {
+    if (activeSource === null) {
+      pendingMessages.push(message);
+      return;
+    }
     postToSource(activeSource, activeOrigin ?? "*", message);
+  }
+
+  function flushPendingMessages() {
+    if (activeSource === null) return;
+    if (pendingMessages.length === 0) return;
+    // Defer via microtask so the flush mirrors real postMessage semantics
+    // (asynchronous delivery). This also lets the iframe's user code register
+    // its `shellControl.on(...)` listener after `createGameBridge()` returns
+    // before the buffered messages are delivered.
+    const buffered = pendingMessages.splice(0, pendingMessages.length);
+    queueMicrotask(() => {
+      if (activeSource === null) return;
+      for (const message of buffered) {
+        postToSource(activeSource, activeOrigin ?? "*", message);
+      }
+    });
   }
 
   async function onMessage(event: MessageEvent) {
@@ -164,8 +191,10 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
 
     // Track the most recent iframe window so we can push lifecycle messages.
     if (event.source !== null) {
+      const wasNull = activeSource === null;
       activeSource = event.source;
       activeOrigin = event.origin;
+      if (wasNull) flushPendingMessages();
     }
 
     switch (message.kind) {
@@ -299,6 +328,7 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
       }
       pendingStreamRequests.clear();
       batchListeners.clear();
+      pendingMessages.length = 0;
     },
   };
 }

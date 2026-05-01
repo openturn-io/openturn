@@ -42,7 +42,9 @@ export type BridgeInit = z.infer<typeof BridgeInitSchema>;
 // to runtime metadata by `@openturn/bridge`'s SHELL_CONTROLS. Keeping the wire
 // type loose means hosts can add new control ids without bumping the bridge
 // schema or breaking older games (which simply ignore unknown ids).
-export const BridgeShellControl = z.string();
+// 64 chars is plenty for camelCase ids; the cap exists to bound the wire
+// payload, not to restrict what counts as valid.
+export const BridgeShellControl = z.string().min(1).max(64);
 export type BridgeShellControl = string;
 
 export const BridgeShellControlPhase = z.enum(["before", "after"]);

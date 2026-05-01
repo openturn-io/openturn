@@ -22,6 +22,7 @@ import {
   type OpenturnDeploymentRuntime,
   type OpenturnInspectorPolicy,
   type OpenturnMultiplayerManifest,
+  type OpenturnShellControlsConfig,
 } from "@openturn/manifest";
 
 export type {
@@ -29,6 +30,7 @@ export type {
   OpenturnDeploymentRuntime,
   OpenturnInspectorPolicy,
   OpenturnMultiplayerManifest,
+  OpenturnShellControlsConfig,
 } from "@openturn/manifest";
 
 export interface OpenturnProjectPaths {

@@ -85,6 +85,26 @@ export const SHELL_CONTROLS = {
 
 export { SHELL_CONTROL_IDS, type OpenturnShellControl };
 
+// Trail-placement control ids derived from the registry. Used by the toolbar
+// renderer to require a handler for every trail control at compile time —
+// adding a new `placement: "toolbar-trail"` entry to SHELL_CONTROLS will fail
+// to typecheck wherever trail handlers are declared until the new id is
+// covered.
+export type TrailShellControl = {
+  [K in OpenturnShellControl]: (typeof SHELL_CONTROLS)[K]["placement"] extends "toolbar-trail"
+    ? K
+    : never;
+}[OpenturnShellControl];
+
+// Runtime narrowing helper. Games receive `BridgeShellControlEvent.control` as
+// an open string (the wire schema is intentionally loose for forward-compat;
+// see schema.ts). Use this to narrow before switching on the value so unknown
+// ids — including future ones from a newer host — are handled explicitly.
+const KNOWN_SHELL_CONTROL_IDS = new Set<string>(SHELL_CONTROL_IDS);
+export function isKnownShellControl(id: string): id is OpenturnShellControl {
+  return KNOWN_SHELL_CONTROL_IDS.has(id);
+}
+
 // Resolve a single shell control: render only when the adapter implements the
 // backing method (or the control is shell-only) AND the manifest hasn't
 // explicitly opted out. `undefined` in the manifest means "default-on if

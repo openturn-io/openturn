@@ -22,6 +22,7 @@ import {
   type BuildOpenturnProjectResult,
   type OpenturnDeploymentManifest,
   type OpenturnDeploymentRuntime,
+  type OpenturnShellControlsConfig,
 } from "@openturn/deploy";
 import { parseJsonText, stringifyJson } from "@openturn/json";
 import {
@@ -194,19 +195,6 @@ const authVerificationsTable = sqliteTable("verification", {
   value: text("value").notNull(),
 });
 
-// Mirrors the manifest's shellControls (a small set of optional booleans). We
-// duplicate the shape locally rather than depend on @openturn/manifest's exact
-// type so the CLI remains a leaf consumer.
-export interface DevShellControlsConfig {
-  readonly save?: boolean | undefined;
-  readonly load?: boolean | undefined;
-  readonly reset?: boolean | undefined;
-  readonly returnToLobby?: boolean | undefined;
-  readonly copyInvite?: boolean | undefined;
-  readonly publicRooms?: boolean | undefined;
-  readonly visibilityToggle?: boolean | undefined;
-}
-
 export interface LocalDevServerOptions {
   /**
    * "dev" (default) sets up better-auth with anonymous sign-in for local
@@ -222,7 +210,7 @@ export interface LocalDevServerOptions {
     bundleURL: string;
     deploymentID: string;
     gameName: string;
-    shellControls?: DevShellControlsConfig;
+    shellControls?: OpenturnShellControlsConfig;
   };
   port?: number;
   secret?: string;
@@ -235,7 +223,7 @@ export interface LocalDevServerOptions {
      * `/play/{deploymentID}` instead of the inspector play shell. Default true.
      */
     shell?: boolean;
-    shellControls?: DevShellControlsConfig;
+    shellControls?: OpenturnShellControlsConfig;
   };
 }
 
@@ -2858,7 +2846,7 @@ function createLocalPlayShell(input: {
   deploymentID: string;
   gameName: string;
   multiplayer?: DevPlayMultiplayerConfig;
-  shellControls?: DevShellControlsConfig;
+  shellControls?: OpenturnShellControlsConfig;
 }): string {
   const title = escapeHTML(input.gameName);
   const bundleBase = input.bundleURL ?? "/__openturn/bundle/";

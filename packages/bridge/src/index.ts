@@ -61,10 +61,12 @@ export {
   type SetVisibilityResult,
 } from "./play-types";
 export {
+  isKnownShellControl,
   isShellControlEnabled,
   SHELL_CONTROLS,
   SHELL_CONTROL_IDS,
   type OpenturnShellControl,
   type ShellControlMeta,
+  type TrailShellControl,
 } from "./shell-controls";
 export type { HostedConnectionDescriptor } from "@openturn/client";

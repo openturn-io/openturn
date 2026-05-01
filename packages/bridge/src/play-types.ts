@@ -125,7 +125,7 @@ export interface PlayShellAdapter {
   /** Pure-derived `BridgeInit` payload for the iframe URL fragment. */
   toBridgeInit(snapshot: PlayRoomSnapshot): BridgeInit;
 
-  // ── optional capabilities (UI gates on presence) ───────────────────────
+  // ── optional adapter methods (UI gates on presence) ────────────────────
 
   /** Upload a save blob and create a new room from it. */
   createRoomFromSave?(bytes: Uint8Array): Promise<PlayRoomResult>;

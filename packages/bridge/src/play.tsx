@@ -28,6 +28,7 @@ import {
   SHELL_CONTROLS,
   type OpenturnShellControl,
   type ShellControlMeta,
+  type TrailShellControl,
 } from "./shell-controls";
 
 const PUBLIC_ROOMS_REFRESH_MS = 15_000;
@@ -674,7 +675,10 @@ function RoomView({
 
   // Map of click handlers keyed by control id; the trail renderer iterates
   // SHELL_CONTROLS in declaration order so toolbar layout follows the registry.
-  const trailHandlers: Partial<Record<OpenturnShellControl, () => void>> = {
+  // The `Record<TrailShellControl, …>` constraint forces every trail-placement
+  // id in SHELL_CONTROLS to have a handler — adding a new trail control fails
+  // to compile here until it's wired up.
+  const trailHandlers: Record<TrailShellControl, () => void> = {
     save: handleSave,
     load: handleLoad,
     reset: handleReset,
@@ -758,24 +762,26 @@ function RoomToolbarActions({
 }: {
   adapter: PlayShellAdapter;
   matchActive: boolean;
-  handlers: Partial<Record<OpenturnShellControl, () => void>>;
+  handlers: Record<TrailShellControl, () => void>;
 }) {
   // Iterate SHELL_CONTROLS in declaration order and render every trail control
   // whose adapter method is present and whose manifest opt-out isn't set. This
   // keeps the toolbar driven by the registry — adding a new trail control means
-  // adding it to SHELL_CONTROLS and providing a handler in `handlers`.
+  // adding it to SHELL_CONTROLS and providing a handler in `handlers` (which is
+  // exhaustive over TrailShellControl).
   return (
     <>
       {(Object.keys(SHELL_CONTROLS) as OpenturnShellControl[])
-        .filter((id) => SHELL_CONTROLS[id].placement === "toolbar-trail")
+        .filter(
+          (id): id is TrailShellControl =>
+            SHELL_CONTROLS[id].placement === "toolbar-trail",
+        )
         .map((id) => {
           const meta: ShellControlMeta = SHELL_CONTROLS[id];
-          const handler = handlers[id];
-          if (handler === undefined) return null;
           if (!isShellControlEnabled(adapter, id)) return null;
           const disabled = meta.requiresMatchActive === true && !matchActive;
           return (
-            <ToolbarButton key={id} onClick={handler} disabled={disabled}>
+            <ToolbarButton key={id} onClick={handlers[id]} disabled={disabled}>
               {meta.label}
             </ToolbarButton>
           );
