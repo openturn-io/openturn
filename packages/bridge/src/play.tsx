@@ -16,6 +16,7 @@ import {
   describeRoomStatus,
   extractRoomID,
   snapshotToBridgeInit,
+  type PlayPdpMeta,
   type PlayRoomResult,
   type PlayRoomSnapshot,
   type PlayRoomVisibility,
@@ -254,6 +255,8 @@ function LobbyView({
         </div>
       </div>
 
+      <PdpSection pdp={meta.pdp} classes={classes} />
+
       {isShellControlEnabled(adapter, "publicRooms") ? (
         <PublicRoomsSection
           listPublicRooms={adapter.listPublicRooms!}
@@ -263,6 +266,58 @@ function LobbyView({
         />
       ) : null}
     </main>
+  );
+}
+
+function PdpSection({
+  pdp,
+  classes,
+}: {
+  pdp: PlayPdpMeta | undefined;
+  classes: PlayPageClassNames | undefined;
+}) {
+  if (pdp === undefined) return null;
+
+  const description = pdp.description?.trim() ?? "";
+  const rules = pdp.rules?.trim() ?? "";
+  const images = pdp.images ?? [];
+
+  if (description.length === 0 && rules.length === 0 && images.length === 0) return null;
+
+  return (
+    <section className="mt-8 flex flex-col gap-4">
+      {description.length > 0 ? (
+        <div className={cardClass(classes)}>
+          <h2 className="text-base font-semibold">About</h2>
+          <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{description}</p>
+        </div>
+      ) : null}
+
+      {images.length > 0 ? (
+        <div className={cardClass(classes)}>
+          <h2 className="text-base font-semibold">Screenshots</h2>
+          <ul className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {images.map((image) => (
+              <li key={image.url} className="overflow-hidden rounded-md border border-slate-200">
+                <img
+                  src={image.url}
+                  alt={image.alt ?? ""}
+                  loading="lazy"
+                  className="block h-48 w-full object-cover"
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {rules.length > 0 ? (
+        <details className={cardClass(classes)}>
+          <summary className="cursor-pointer text-base font-semibold">Rules</summary>
+          <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{rules}</p>
+        </details>
+      ) : null}
+    </section>
   );
 }
 

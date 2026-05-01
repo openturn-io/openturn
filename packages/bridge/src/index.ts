@@ -47,6 +47,8 @@ export {
   extractRoomID,
   snapshotToBridgeInit,
   type PlayMultiplayerConfig,
+  type PlayPdpImage,
+  type PlayPdpMeta,
   type PlayRoomResult,
   type PlayRoomSnapshot,
   type PlayRoomStatus,

@@ -86,6 +86,17 @@ export interface PlayMultiplayerConfig {
   players: readonly string[];
 }
 
+export interface PlayPdpImage {
+  url: string;
+  alt?: string;
+}
+
+export interface PlayPdpMeta {
+  description?: string;
+  images?: readonly PlayPdpImage[];
+  rules?: string;
+}
+
 export interface PlayShellAdapterMeta {
   deploymentID: string;
   gameName: string;
@@ -98,6 +109,13 @@ export interface PlayShellAdapterMeta {
    * method"; `false` hides the control even if the adapter supports it.
    */
   shellControls?: OpenturnShellControlsConfig | undefined;
+  /**
+   * Optional author-curated lobby content (description / images / rules).
+   * Hosts that don't expose this (e.g. CLI dev shell) leave it undefined and
+   * the lobby renders without the PDP section. Cloud populates from the
+   * deployment row; see `openturn-cloud/lib/api/rooms.ts`.
+   */
+  pdp?: PlayPdpMeta;
 }
 
 // Discriminated-status adapter interface. Each shell (CLI dev + cloud)
