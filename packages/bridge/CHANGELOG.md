@@ -1,5 +1,17 @@
 # @openturn/bridge
 
+## 0.3.0
+
+### Minor Changes
+
+- c3e9159: Share the React play shell between the CLI dev server and hosted shells, exposing the shared play adapter types from `@openturn/bridge` and serving the CLI play app bundle from the local dev server.
+
+### Patch Changes
+
+- a65c92d: Rename the play shell invite action to Copy Invite, show a sonner success toast after copying, and let player seat badges wrap cleanly in crowded room toolbars.
+  - @openturn/client@0.3.0
+  - @openturn/json@0.3.0
+
 ## 0.2.3
 
 ### Patch Changes
