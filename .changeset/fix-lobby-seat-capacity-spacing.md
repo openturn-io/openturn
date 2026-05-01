@@ -2,4 +2,4 @@
 "@openturn/lobby": patch
 ---
 
-Reserve vertical room around round-table seats so capacity controls are not covered by seat buttons.
+Widen the default lobby panel and round-table stage while keeping seat controls compact so seating does not crowd the table center.

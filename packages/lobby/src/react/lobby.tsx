@@ -417,7 +417,7 @@ function DefaultSeat(props: LobbySeatButtonProps & { isHost?: boolean }): ReactN
 // do, they take full ownership of sizing and chrome — we still apply the
 // minimum layout bones so the lobby keeps its column rhythm.
 const DEFAULT_CONTAINER_CHROME =
-  "w-full max-w-[560px] rounded-2xl border border-slate-200 bg-white p-6 shadow-sm";
+  "w-full max-w-[900px] rounded-2xl border border-slate-200 bg-white p-8 shadow-sm";
 const CONTAINER_LAYOUT = "openturn-lobby flex flex-col gap-5 text-slate-900";
 
 const STATUS_DOT_CLASS: Record<LobbyChannelStatus, string> = {
@@ -603,7 +603,7 @@ interface RoundTableProps {
 function RoundTable({ lobby, renderSeat }: RoundTableProps): ReactNode {
   return (
     <div
-      className="openturn-lobby__table relative mx-auto w-full max-w-[360px] pt-10 pb-16"
+      className="openturn-lobby__table relative mx-auto w-full max-w-[620px] pt-16 pb-24"
       role="radiogroup"
       aria-label="Pick a seat at the round table"
     >
@@ -649,7 +649,7 @@ function RoundTable({ lobby, renderSeat }: RoundTableProps): ReactNode {
           return (
             <div
               key={seat.seatIndex}
-              className="openturn-lobby__seat-slot absolute w-[28%] min-w-[84px] -translate-x-1/2 -translate-y-1/2"
+              className="openturn-lobby__seat-slot absolute w-[124px] -translate-x-1/2 -translate-y-1/2"
               data-seat-index={seat.seatIndex}
               style={{
                 left: `${leftPercent}%`,

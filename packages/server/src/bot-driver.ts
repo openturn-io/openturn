@@ -33,6 +33,12 @@ export interface BotRegistryShape<TGame extends AnyGame> {
   readonly entries: ReadonlyArray<BotEntryShape<TGame>>;
 }
 
+export interface BotSeatRecordShape {
+  readonly kind: "human" | "bot";
+  readonly seatIndex: number;
+  readonly botID?: string;
+}
+
 type ActionDelaySleeper = (ms: number, signal: AbortSignal) => Promise<void>;
 
 export function resolveBotMap<TGame extends AnyGame>(
@@ -48,6 +54,24 @@ export function resolveBotMap<TGame extends AnyGame>(
     out.set(assignment.playerID, entry.bot);
   }
   return out.size > 0 ? out : null;
+}
+
+export function resolveBotMapFromSeats<TGame extends AnyGame>(
+  registry: BotRegistryShape<TGame> | undefined,
+  seats: ReadonlyArray<BotSeatRecordShape>,
+  playerIDs: readonly string[],
+): Map<string, Bot<TGame>> | null {
+  const assignments = seats.flatMap((seat) => {
+    if (seat.kind !== "bot") return [];
+    const playerID = playerIDs[seat.seatIndex] ?? seat.botID;
+    if (playerID === undefined || seat.botID === undefined) return [];
+    return [{
+      kind: "bot" as const,
+      playerID,
+      botID: seat.botID,
+    }];
+  });
+  return resolveBotMap(registry, assignments);
 }
 
 /**
