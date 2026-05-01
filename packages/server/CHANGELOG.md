@@ -1,5 +1,15 @@
 # @openturn/server
 
+## 0.3.0
+
+### Patch Changes
+
+- 910daa2: Rehydrate cloud-hosted bot drivers from persisted active lobby seats whenever a game message arrives without an in-memory driver — both after Durable Object hibernation and on first message after `loadLobby`. Also exports `resolveBotMapFromSeats` and `BotSeatRecordShape` for callers that need to derive a bot map from persisted seats.
+  - @openturn/bot@0.3.0
+  - @openturn/core@0.3.0
+  - @openturn/json@0.3.0
+  - @openturn/protocol@0.3.0
+
 ## 0.2.3
 
 ### Patch Changes

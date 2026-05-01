@@ -1,5 +1,16 @@
 # @openturn/deploy
 
+## 0.3.0
+
+### Patch Changes
+
+- Updated dependencies [910daa2]
+  - @openturn/server@0.3.0
+  - @openturn/core@0.3.0
+  - @openturn/json@0.3.0
+  - @openturn/manifest@0.3.0
+  - @openturn/protocol@0.3.0
+
 ## 0.2.3
 
 ### Patch Changes

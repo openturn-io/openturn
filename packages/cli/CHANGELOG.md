@@ -1,5 +1,25 @@
 # @openturn/cli
 
+## 0.3.0
+
+### Minor Changes
+
+- c3e9159: Share the React play shell between the CLI dev server and hosted shells, exposing the shared play adapter types from `@openturn/bridge` and serving the CLI play app bundle from the local dev server.
+
+### Patch Changes
+
+- Updated dependencies [a65c92d]
+- Updated dependencies [c3e9159]
+- Updated dependencies [910daa2]
+  - @openturn/bridge@0.3.0
+  - @openturn/server@0.3.0
+  - @openturn/inspector-ui@0.3.0
+  - @openturn/react@0.3.0
+  - @openturn/core@0.3.0
+  - @openturn/deploy@0.3.0
+  - @openturn/json@0.3.0
+  - @openturn/protocol@0.3.0
+
 ## 0.2.3
 
 ### Patch Changes
