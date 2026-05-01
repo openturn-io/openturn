@@ -214,7 +214,7 @@ describe("@openturn/cli", () => {
 
   test("prefers the cloud shell play URL when deployment completion returns one", () => {
     expect(resolveCloudPlayURL("https://openturn.io", {
-      playURL: "https://play.openturn.games/deployments/dep_123/index.html",
+      playURL: "https://dep-123abc.openturn.games/index.html",
       policyPlayURL: "/play/dep_123",
     })).toBe("https://openturn.io/play/dep_123");
   });
