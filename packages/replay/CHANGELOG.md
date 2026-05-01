@@ -1,5 +1,12 @@
 # @openturn/replay
 
+## 0.4.0
+
+### Patch Changes
+
+- @openturn/core@0.4.0
+- @openturn/json@0.4.0
+
 ## 0.3.0
 
 ### Patch Changes

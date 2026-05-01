@@ -1,5 +1,16 @@
 # @openturn/lobby
 
+## 0.4.0
+
+### Patch Changes
+
+- cd571a5: Keep the lobby bot assignment dropdown layered above adjacent seats and the host seat-count controls.
+  - @openturn/bot@0.4.0
+  - @openturn/client@0.4.0
+  - @openturn/core@0.4.0
+  - @openturn/protocol@0.4.0
+  - @openturn/server@0.4.0
+
 ## 0.3.0
 
 ### Patch Changes
