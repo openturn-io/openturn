@@ -1,10 +1,10 @@
 ---
 title: Tic-tac-toe as hosted multiplayer
-description: Reuse the tic-tac-toe game package from tutorial 1, host it on a local dev server, then deploy to Cloudflare.
+description: Reuse the tic-tac-toe game package from tutorial 1, host it on a local dev server, then deploy to openturn cloud.
 sidebarTitle: Multiplayer
 ---
 
-This tutorial assumes you finished [tic-tac-toe with gamekit](/tutorials/tic-tac-toe-gamekit) and have a working `@my/tic-tac-toe-game` package. Here we host the same game with `@openturn/server`, connect to it from a React app with `<OpenturnProvider cloud>` + `useRoom`, and deploy it to Cloudflare with `openturn deploy`.
+This tutorial assumes you finished [tic-tac-toe with gamekit](/tutorials/tic-tac-toe-gamekit) and have a working `@my/tic-tac-toe-game` package. Here we host the same game with `@openturn/server`, connect to it from a React app with `<OpenturnProvider cloud>` + `useRoom`, and deploy it to openturn cloud with `openturn deploy`.
 
 Reference code: [`examples/hosted-multiplayer/tic-tac-toe-multiplayer`](https://github.com/openturn-io/openturn/tree/main/openturn/examples/hosted-multiplayer/tic-tac-toe-multiplayer).
 
@@ -111,7 +111,7 @@ The CLI prints a play URL. Open it in two browser windows. Each window is assign
 
 Under the hood: `@openturn/cli` runs a Bun HTTP server backed by SQLite. It uses `@openturn/server`'s `createRoomRuntime` plus `LobbyRuntime` to manage rooms, and `@better-auth` to issue anonymous session tokens. The dev shell injects the same `#openturn-bridge=…` URL fragment that openturn-cloud injects in production, so the React app's `<OpenturnProvider>` connects through `@openturn/bridge` without any code change between dev and prod.
 
-## 4. Deploy to Cloudflare
+## 4. Deploy to openturn cloud
 
 When you are happy locally, build and ship:
 
@@ -124,12 +124,12 @@ openturn deploy app
 `openturn build` writes a bundle to `.openturn/deploy/` containing:
 
 - `index.html` + client JS and CSS.
-- A Cloudflare Worker script with a Durable Object namespace for your rooms (`GameRoom`).
-- An `openturn.manifest.json` with `gameKey`, `schemaVersion`, a SHA256 digest, and Worker bindings.
+- A server script with a per-room namespace (`GameRoom`).
+- An `openturn.manifest.json` with `gameKey`, `schemaVersion`, a SHA256 digest, and runtime bindings.
 
-`openturn deploy` uploads the bundle to the cloud control plane, which provisions the Durable Objects and returns a play URL. That play URL embeds a backend fragment that `@openturn/bridge` decodes to find the WebSocket endpoint.
+`openturn deploy` uploads the bundle to the openturn cloud control plane, which provisions the per-room backends and returns a play URL. That play URL embeds a backend fragment that `@openturn/bridge` decodes to find the WebSocket endpoint.
 
-See [how-to: deploy to Cloudflare](/how-to/deploy-to-cloudflare) for flags and troubleshooting.
+See [how-to: deploy to openturn cloud](/how-to/deploy-to-openturn-cloud) for flags and troubleshooting.
 
 ## What you learned
 

@@ -1,10 +1,12 @@
 ---
-title: Deploy to Cloudflare
-description: Build your openturn project into a Cloudflare Worker bundle and ship it with `openturn deploy`.
+title: Deploy to openturn cloud
+description: Build your openturn project and ship it to openturn.io with `openturn deploy`.
 sidebarTitle: Deploy
 ---
 
-Openturn deployments run on Cloudflare Workers and Durable Objects. Your authored game compiles into a Worker script that instantiates one Durable Object per room. `openturn build` produces the bundle; `openturn deploy` uploads it.
+`openturn deploy` ships your game to the openturn.io cloud. The control plane provisions a hosted backend per game and returns a play URL anyone can open. `openturn build` produces the bundle; `openturn deploy` uploads it.
+
+Under the hood, openturn cloud runs your bundle on Cloudflare Workers and Durable Objects (one DO per room) — but you don't manage any of that. You only interact with `openturn login` and `openturn deploy`.
 
 ## Project layout
 
@@ -39,7 +41,7 @@ This produces, by default, `.openturn/deploy/`:
 
 - Static assets (`index.html`, client JS, CSS).
 - `entry.<hash>.js` — the client bundle Vite emitted.
-- `worker.js` + `openturn.worker-meta.json` — the Cloudflare Worker script and its Durable Object bindings.
+- `worker.js` + `openturn.worker-meta.json` — the server bundle and its room bindings.
 - `openturn.manifest.json` — a manifest summarizing the build.
 
 Inspect the manifest:
@@ -62,7 +64,7 @@ Fields of interest:
 openturn login --token <your-cloud-token>
 ```
 
-This writes the token to `~/.openturn/cloud-auth.json`. The default cloud URL is baked into the CLI; pass `--url` to override for a staging environment.
+This writes the token to `~/.openturn/cloud-auth.json`. The CLI defaults to openturn.io; pass `--url` to point at a staging environment.
 
 ## Deploy
 
@@ -73,7 +75,7 @@ openturn deploy app
 The CLI:
 
 1. Builds the project (equivalent to `openturn build app`).
-2. Uploads the static bundle and Worker script to the cloud control plane.
+2. Uploads the static bundle and server script to the openturn cloud control plane.
 3. Registers or updates the deployment under the `gameKey` from `openturn.ts`.
 4. Prints the play URL — a URL that encodes the backend in a fragment, so any browser can open it and join a room.
 
