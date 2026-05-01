@@ -1,9 +1,14 @@
 import { useCallback, type ReactNode } from "react";
 
-import { Lobby, type LobbyProps, type LobbySeatButtonProps, type LobbyView } from "./lobby";
+import {
+  LobbyShell,
+  type LobbyProps,
+  type LobbySeatButtonProps,
+  type LobbyView,
+} from "./lobby";
 import { LobbySeatControl } from "./seat-control";
 
-export interface LobbyWithBotsProps extends Omit<LobbyProps, "renderSeat"> {}
+export interface LobbyWithBotsProps extends LobbyProps {}
 
 /**
  * Bot-aware lobby. Renders the standard `<Lobby>` round table but replaces
@@ -29,7 +34,7 @@ export function LobbyWithBots(props: LobbyWithBotsProps): ReactNode {
     [lobby, enabled],
   );
 
-  return <Lobby {...props} renderSeat={renderSeat} />;
+  return <LobbyShell {...props} renderSeat={renderSeat} />;
 }
 
 function renderBotAwareSeat(

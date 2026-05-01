@@ -803,7 +803,7 @@ function RoomToolbarLead({
 }) {
   return (
     <>
-      <span>· {snapshot.isHost ? "you are host" : "guest"}</span>
+      <span>{snapshot.isHost ? "you are host" : "guest"}</span>
       {visibility !== undefined && onChangeVisibility !== undefined && snapshot.isHost ? (
         <VisibilityToggle value={visibility} pending={visibilityPending} onChange={onChangeVisibility} />
       ) : visibility !== undefined ? (

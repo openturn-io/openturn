@@ -292,8 +292,6 @@ function emptySeats(capacity: number): readonly LobbySeat[] {
 export interface LobbyProps {
   lobby: LobbyView;
   title?: string;
-  className?: string;
-  renderSeat?: (props: LobbySeatButtonProps) => ReactNode;
 }
 
 export interface LobbySeatButtonProps {
@@ -329,17 +327,17 @@ function seatInitials(seat: LobbySeat, index: number): string {
 type SeatTone = "open" | "mine" | "taken" | "bot";
 
 const SEAT_TONE_CLASS: Record<SeatTone, string> = {
-  open: "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:-translate-y-0.5 hover:shadow-md",
-  mine: "border-slate-900 bg-slate-900 text-slate-50 shadow-sm",
-  taken: "border-slate-200 bg-slate-50 text-slate-600",
-  bot: "border-indigo-200 bg-indigo-50 text-indigo-900",
+  open: "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:-translate-y-0.5 hover:shadow-md dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-500",
+  mine: "border-slate-900 bg-slate-900 text-slate-50 shadow-sm dark:border-slate-100 dark:bg-slate-100 dark:text-slate-950",
+  taken: "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-400",
+  bot: "border-indigo-200 bg-indigo-50 text-indigo-900 dark:border-indigo-900/70 dark:bg-indigo-950/50 dark:text-indigo-200",
 };
 
 const SEAT_AVATAR_TONE_CLASS: Record<SeatTone, string> = {
-  open: "border border-dashed border-slate-300 bg-slate-100 text-slate-400",
-  mine: "bg-slate-50 text-slate-900",
-  taken: "bg-slate-200 text-slate-700",
-  bot: "bg-indigo-100 text-indigo-900",
+  open: "border border-dashed border-slate-300 bg-slate-100 text-slate-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-500",
+  mine: "bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100",
+  taken: "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-400",
+  bot: "bg-indigo-100 text-indigo-900 dark:bg-indigo-900/80 dark:text-indigo-100",
 };
 
 function DefaultSeat(props: LobbySeatButtonProps & { isHost?: boolean }): ReactNode {
@@ -390,20 +388,20 @@ function DefaultSeat(props: LobbySeatButtonProps & { isHost?: boolean }): ReactN
             <span
               className={
                 tone === "mine"
-                  ? "rounded-full bg-slate-50/15 px-1.5 py-0.5 text-[10px] font-medium text-slate-50"
-                  : "rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] font-medium text-slate-700"
+                  ? "rounded-full bg-slate-50/15 px-1.5 py-0.5 text-[10px] font-medium text-slate-50 dark:bg-slate-950/15 dark:text-slate-950"
+                  : "rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300"
               }
             >
               Host
             </span>
           ) : null}
           {showReady ? (
-            <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+            <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
               Ready
             </span>
           ) : null}
           {showDisconnected ? (
-            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300">
               Off
             </span>
           ) : null}
@@ -413,12 +411,9 @@ function DefaultSeat(props: LobbySeatButtonProps & { isHost?: boolean }): ReactN
   );
 }
 
-// Defaults are applied when the consumer does not pass a className. When they
-// do, they take full ownership of sizing and chrome — we still apply the
-// minimum layout bones so the lobby keeps its column rhythm.
 const DEFAULT_CONTAINER_CHROME =
-  "w-[min(calc(100vw-3rem),900px)] rounded-2xl border border-slate-200 bg-white p-6 shadow-sm";
-const CONTAINER_LAYOUT = "openturn-lobby flex flex-col gap-5 text-slate-900";
+  "w-[min(calc(100vw-3rem),900px)] rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-950 dark:shadow-black/30";
+const CONTAINER_LAYOUT = "openturn-lobby flex flex-col gap-5 text-slate-900 dark:text-slate-100";
 
 const STATUS_DOT_CLASS: Record<LobbyChannelStatus, string> = {
   idle: "bg-slate-300",
@@ -430,19 +425,25 @@ const STATUS_DOT_CLASS: Record<LobbyChannelStatus, string> = {
 };
 
 export function Lobby(props: LobbyProps): ReactNode {
+  return (
+    <LobbyShell
+      {...props}
+      renderSeat={null}
+    />
+  );
+}
+
+export function LobbyShell(props: LobbyProps & {
+  renderSeat: ((props: LobbySeatButtonProps) => ReactNode) | null;
+}): ReactNode {
   const { lobby, title } = props;
 
   const startDisabled =
     !lobby.isHost || !lobby.canStart || lobby.phase !== "lobby" || lobby.status !== "connected";
   const readyDisabled = lobby.mySeatIndex === null || lobby.phase !== "lobby";
 
-  const containerClass =
-    props.className === undefined
-      ? `${CONTAINER_LAYOUT} ${DEFAULT_CONTAINER_CHROME}`
-      : `${CONTAINER_LAYOUT} ${props.className}`;
-
   return (
-    <div className={containerClass}>
+    <div className={`${CONTAINER_LAYOUT} ${DEFAULT_CONTAINER_CHROME}`}>
       <header className="openturn-lobby__header flex flex-col gap-2">
         <div className="flex items-center justify-between gap-3">
           <h2 className="openturn-lobby__title m-0 text-xl font-semibold tracking-tight">
@@ -450,7 +451,7 @@ export function Lobby(props: LobbyProps): ReactNode {
           </h2>
           <span
             aria-label={`Lobby ${lobby.status}`}
-            className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500"
+            className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400"
           >
             <span
               aria-hidden
@@ -460,7 +461,7 @@ export function Lobby(props: LobbyProps): ReactNode {
           </span>
         </div>
         <p
-          className="openturn-lobby__status m-0 text-sm text-slate-600"
+          className="openturn-lobby__status m-0 text-sm text-slate-600 dark:text-slate-400"
           aria-live="polite"
         >
           {describeLobbyStatus(lobby)}
@@ -478,8 +479,8 @@ export function Lobby(props: LobbyProps): ReactNode {
 
       <footer className="openturn-lobby__footer flex flex-wrap items-center gap-3">
         <label
-          className={`openturn-lobby__ready inline-flex select-none items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:border-slate-300 ${
-            readyDisabled ? "cursor-not-allowed opacity-60 hover:border-slate-200" : "cursor-pointer"
+          className={`openturn-lobby__ready inline-flex select-none items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 transition hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-600 ${
+            readyDisabled ? "cursor-not-allowed opacity-60 hover:border-slate-200 dark:hover:border-slate-700" : "cursor-pointer"
           }`}
         >
           <input
@@ -495,7 +496,7 @@ export function Lobby(props: LobbyProps): ReactNode {
         {lobby.isHost ? (
           <button
             type="button"
-            className="openturn-lobby__start ml-auto inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
+            className="openturn-lobby__start ml-auto inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-slate-200 dark:focus-visible:ring-offset-slate-950 dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
             disabled={startDisabled}
             onClick={() => lobby.start()}
           >
@@ -506,7 +507,7 @@ export function Lobby(props: LobbyProps): ReactNode {
         {lobby.isHost ? (
           <button
             type="button"
-            className="openturn-lobby__close inline-flex items-center justify-center rounded-md px-2 py-1 text-xs font-medium text-slate-500 transition hover:text-red-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-red-300 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:no-underline"
+            className="openturn-lobby__close inline-flex items-center justify-center rounded-md px-2 py-1 text-xs font-medium text-slate-500 transition hover:text-red-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-red-300 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:no-underline dark:text-slate-400 dark:hover:text-red-400 dark:focus-visible:ring-offset-slate-950 dark:disabled:text-slate-700"
             disabled={lobby.phase !== "lobby"}
             onClick={() => lobby.close()}
           >
@@ -519,7 +520,7 @@ export function Lobby(props: LobbyProps): ReactNode {
       {lobby.lastRejection !== null ? (
         <div
           role="alert"
-          className="openturn-lobby__rejection rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+          className="openturn-lobby__rejection rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/70 dark:bg-red-950/50 dark:text-red-300"
         >
           {describeRejection(lobby.lastRejection)}
         </div>
@@ -545,29 +546,29 @@ function CapacityPicker({ lobby }: { lobby: LobbyView }): ReactNode {
   };
   return (
     <div
-      className="openturn-lobby__capacity flex items-center justify-center gap-2 text-xs text-slate-600"
+      className="openturn-lobby__capacity flex items-center justify-center gap-2 text-xs text-slate-600 dark:text-slate-400"
       aria-label="Room capacity"
     >
-      <span className="uppercase tracking-wide text-[10px] text-slate-500">Seats</span>
+      <span className="uppercase tracking-wide text-[10px] text-slate-500 dark:text-slate-500">Seats</span>
       <button
         type="button"
         aria-label="Remove a seat"
         disabled={disabled || lobby.targetCapacity <= lobby.minPlayers}
         onClick={decrease}
-        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-40"
+        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-600"
       >
         −
       </button>
-      <span className="min-w-[2.5rem] text-center font-medium text-slate-900">
+      <span className="min-w-[2.5rem] text-center font-medium text-slate-900 dark:text-slate-100">
         {lobby.targetCapacity}
-        <span className="text-slate-400"> / {lobby.maxPlayers}</span>
+        <span className="text-slate-400 dark:text-slate-500"> / {lobby.maxPlayers}</span>
       </span>
       <button
         type="button"
         aria-label="Add a seat"
         disabled={disabled || lobby.targetCapacity >= lobby.maxPlayers}
         onClick={increase}
-        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-40"
+        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-600"
       >
         +
       </button>
@@ -608,13 +609,13 @@ function RoundTable({ lobby, renderSeat }: RoundTableProps): ReactNode {
       aria-label="Pick a seat at the round table"
     >
       <div className="relative w-full pb-[100%]">
-        <div className="openturn-lobby__table-surface absolute inset-[18%] rounded-full border border-slate-200 bg-gradient-to-br from-slate-50 to-white shadow-inner">
+        <div className="openturn-lobby__table-surface absolute inset-[18%] rounded-full border border-slate-200 bg-gradient-to-br from-slate-50 to-white shadow-inner dark:border-slate-800 dark:from-slate-900 dark:to-slate-950">
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 px-4 text-center">
-            <span className="text-xl font-semibold tracking-tight text-slate-900">
+            <span className="text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
               {lobby.seatedCount}
-              <span className="text-sm font-normal text-slate-400"> / {lobby.targetCapacity}</span>
+              <span className="text-sm font-normal text-slate-400 dark:text-slate-500"> / {lobby.targetCapacity}</span>
             </span>
-            <span className="text-[10px] uppercase tracking-wide text-slate-500">
+            <span className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-500">
               {lobby.minPlayers < lobby.maxPlayers
                 ? `seated · ${lobby.minPlayers}–${lobby.maxPlayers}`
                 : lobby.minPlayers < lobby.targetCapacity

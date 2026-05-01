@@ -4,6 +4,7 @@ export type Theme = "light" | "dark" | "system";
 export type ResolvedTheme = "light" | "dark";
 
 export const THEME_STORAGE_KEY = "openturn:theme";
+const THEME_CHANGE_EVENT = "openturn:theme-change";
 
 function isTheme(value: unknown): value is Theme {
   return value === "light" || value === "dark" || value === "system";
@@ -55,6 +56,7 @@ export function useTheme(): {
   // When in "system" mode, follow OS-level changes live.
   useEffect(() => {
     if (theme !== "system" || typeof window === "undefined") return;
+    if (typeof window.matchMedia !== "function") return;
     const mql = window.matchMedia("(prefers-color-scheme: dark)");
     const onChange = () => {
       const next = mql.matches ? "dark" : "light";
@@ -77,14 +79,35 @@ export function useTheme(): {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
+  // Same-tab sync for independent useTheme() callers. localStorage "storage"
+  // events are only delivered to other documents, so the shell broadcaster
+  // needs an explicit signal when the inline toggle changes theme.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onThemeChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ theme?: unknown }>).detail;
+      setThemeState(isTheme(detail?.theme) ? detail.theme : readStoredTheme());
+    };
+    window.addEventListener(THEME_CHANGE_EVENT, onThemeChange);
+    return () => window.removeEventListener(THEME_CHANGE_EVENT, onThemeChange);
+  }, []);
+
   const setTheme = useCallback((next: Theme) => {
     setThemeState(next);
     try {
       if (typeof window !== "undefined") {
         window.localStorage.setItem(THEME_STORAGE_KEY, next);
+        window.dispatchEvent(
+          new CustomEvent(THEME_CHANGE_EVENT, { detail: { theme: next } }),
+        );
       }
     } catch {
       // localStorage may be unavailable (private mode, disabled cookies).
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent(THEME_CHANGE_EVENT, { detail: { theme: next } }),
+        );
+      }
     }
   }, []);
 
