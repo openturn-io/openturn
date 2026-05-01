@@ -21,6 +21,7 @@ interface DevAdapterInput {
     maxPlayers: number;
     players: readonly string[];
   };
+  shellControls?: PlayShellAdapter["meta"]["shellControls"];
 }
 
 interface DevLobbySnapshotJSON {
@@ -40,7 +41,7 @@ interface DevLobbySnapshotJSON {
 }
 
 export function createDevPlayShellAdapter(input: DevAdapterInput): PlayShellAdapter {
-  const { deploymentID, gameName, bundleBase, multiplayer } = input;
+  const { deploymentID, gameName, bundleBase, multiplayer, shellControls } = input;
   const resolvedBundleURL = new URL(bundleBase, window.location.href).toString();
 
   async function sessionToken(): Promise<string | null> {
@@ -122,6 +123,7 @@ export function createDevPlayShellAdapter(input: DevAdapterInput): PlayShellAdap
         maxPlayers: multiplayer?.maxPlayers ?? 0,
         players: multiplayer?.players ?? [],
       },
+      ...(shellControls === undefined ? {} : { shellControls }),
     },
     inviteURL(roomID) {
       const url = new URL(window.location.href);

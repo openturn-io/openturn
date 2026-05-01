@@ -32,47 +32,29 @@ export const BridgeInitSchema = z.object({
 });
 export type BridgeInit = z.infer<typeof BridgeInitSchema>;
 
-export const BridgeCapabilityPreset = z.enum([
-  "share-invite",
-  "current-turn",
-  "new-game",
-  "rules",
-]);
-export type BridgeCapabilityPreset = z.infer<typeof BridgeCapabilityPreset>;
+// Adapter-driven shell controls. The host fires `shell-control` around its
+// adapter calls so games can react (e.g. clear local UI on reset). Games never
+// register these — the manifest decides which controls render and the adapter
+// implements them on the host side.
+//
+// The control id is intentionally an open string on the wire: the registry of
+// known ids lives in `@openturn/manifest`'s SHELL_CONTROL_IDS and is mirrored
+// to runtime metadata by `@openturn/bridge`'s SHELL_CONTROLS. Keeping the wire
+// type loose means hosts can add new control ids without bumping the bridge
+// schema or breaking older games (which simply ignore unknown ids).
+// 64 chars is plenty for camelCase ids; the cap exists to bound the wire
+// payload, not to restrict what counts as valid.
+export const BridgeShellControl = z.string().min(1).max(64);
+export type BridgeShellControl = string;
 
-export type BridgeCapabilitySlot = "header" | "menu";
-
-export interface BridgeCapabilityPresetMeta {
-  label: string;
-  icon: string;
-  slot: BridgeCapabilitySlot;
-}
-
-export const BRIDGE_CAPABILITY_PRESETS: Record<
-  BridgeCapabilityPreset,
-  BridgeCapabilityPresetMeta
-> = {
-  "share-invite": { label: "Copy Invite", icon: "share", slot: "menu" },
-  "current-turn": { label: "Current turn", icon: "info", slot: "header" },
-  "new-game": { label: "New game", icon: "refresh", slot: "header" },
-  "rules": { label: "Rules", icon: "book", slot: "menu" },
-};
-
-export const BridgeCapabilityDescriptorSchema = z.object({
-  preset: BridgeCapabilityPreset,
-  disabled: z.boolean().optional(),
-  badge: z.union([z.string(), z.number()]).optional(),
-});
-export type BridgeCapabilityDescriptor = z.infer<
-  typeof BridgeCapabilityDescriptorSchema
->;
+export const BridgeShellControlPhase = z.enum(["before", "after"]);
+export type BridgeShellControlPhase = z.infer<typeof BridgeShellControlPhase>;
 
 // Re-export the canonical `JsonValue` from `@openturn/json` so the bridge wire
 // shape uses the same type the rest of the workspace targets. The canonical
 // type uses `readonly` arrays — bridge messages are immutable in transit, and
 // having a single source of truth removes the ad-hoc variance bridge that
 // previously forced `as unknown as` casts at workspace boundaries.
-import { JsonValueSchema } from "@openturn/json";
 export { JsonValueSchema, type JsonValue } from "@openturn/json";
 
 export const BridgeMessageSchema = z.discriminatedUnion("kind", [
@@ -91,25 +73,9 @@ export const BridgeMessageSchema = z.discriminatedUnion("kind", [
     tokenExpiresAt: z.number().optional(),
   }),
   z.object({
-    kind: z.literal("openturn:bridge:capability-expose"),
-    descriptor: BridgeCapabilityDescriptorSchema,
-  }),
-  z.object({
-    kind: z.literal("openturn:bridge:capability-retire"),
-    preset: BridgeCapabilityPreset,
-  }),
-  z.object({
-    kind: z.literal("openturn:bridge:capability-invoke"),
-    requestID: z.string(),
-    preset: BridgeCapabilityPreset,
-    args: JsonValueSchema.optional(),
-  }),
-  z.object({
-    kind: z.literal("openturn:bridge:capability-result"),
-    requestID: z.string(),
-    ok: z.boolean(),
-    value: JsonValueSchema.optional(),
-    error: z.string().optional(),
+    kind: z.literal("openturn:bridge:shell-control"),
+    control: BridgeShellControl,
+    phase: BridgeShellControlPhase,
   }),
   z.object({ kind: z.literal("openturn:bridge:lifecycle-pause") }),
   z.object({ kind: z.literal("openturn:bridge:lifecycle-resume") }),

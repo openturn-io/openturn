@@ -1,10 +1,10 @@
 ---
 title: "@openturn/bridge"
-description: The wire between a game iframe and its hosting shell — fragment protocol, postMessage schema, and capability registry.
+description: The wire between a game iframe and its hosting shell — fragment protocol, postMessage schema, and shell-controls registry.
 sidebarTitle: Bridge
 ---
 
-Browser-targeted. Owns the single protocol that connects a game iframe to the shell that hosts it: the URL-fragment handshake, the postMessage message set, and the capability registry that lets games advertise utilities (reset, share, replay, inspector toggle, …) to the shell.
+Browser-targeted. Owns the single protocol that connects a game iframe to the shell that hosts it: the URL-fragment handshake, the postMessage message set, and the shell-controls registry that lets the host render save / load / reset / lobby chrome around the game from a manifest-driven catalog.
 
 ## Install
 
@@ -27,7 +27,7 @@ const bridge = createGameBridge();
 // bridge.init            → decoded BridgeInit (roomID, userID, scope, ...)
 // bridge.token           → live room token (reflects the latest refresh)
 // bridge.connection      → HostedConnectionDescriptor (game scope only)
-// bridge.capabilities    → CapabilityRegistry; call .enable(preset, run, options?)
+// bridge.shellControl    → BridgeShellControlChannel; call .on(listener)
 // bridge.lifecycle       → BridgeLifecycle; call .on("pause" | "resume" | "close", listener)
 // bridge.refreshToken(): Promise<string>
 ```
@@ -36,16 +36,17 @@ Throws `BridgeUnavailableError` if the fragment is missing.
 
 ### `GameBridge`
 
-The game-side handle. Exposes the decoded `init`, the live `token` getter, a `HostedConnectionDescriptor` for the WebSocket client, a capability registry, a lifecycle event emitter, and a token refresher. Read room/user/scope/websocketURL off `bridge.init.*` — prior builds mirrored those fields onto the bridge directly; that mirror was removed in favor of a single source of truth.
+The game-side handle. Exposes the decoded `init`, the live `token` getter, a `HostedConnectionDescriptor` for the WebSocket client, a shell-control event channel, a lifecycle event emitter, and a token refresher. Read room/user/scope/websocketURL off `bridge.init.*` — prior builds mirrored those fields onto the bridge directly; that mirror was removed in favor of a single source of truth.
 
 Additional methods:
 
 - `bridge.lifecycle.on(event, listener)` — subscribe to host-driven `"pause" | "resume" | "close"` lifecycle events. Returns an unsubscribe.
+- `bridge.shellControl.on(listener)` — subscribe to shell-control activations from the host (`reset`, `returnToLobby`, …). Each click fires `phase: "before"` then `phase: "after"`. See [`BridgeShellControlChannel`](#bridgeshellcontrolchannel--bridgeshellcontrolevent) below.
 - `bridge.registerBatchSource(source: BatchSourceHandle | null)` — register an initial-snapshot + ongoing-batch source so the host can request a live inspector stream. Most recent registration wins; pass `null` to clear.
 - `bridge.allowBatchStreaming(allow: boolean)` — author-side opt-out. When `false`, host-initiated stream requests resolve to `"denied-by-game"`. Defaults to `true`.
 - `bridge.setMatchActive(active: boolean)` — announce whether a match is currently live. The shell uses this to enable/disable match-only controls (e.g. Reset). Coalesces duplicates.
 - `bridge.getRoomToken()` — alias of `refreshToken()` that plugs into transport clients expecting a `getRoomToken()` function.
-- `bridge.dispose()` — release the message listener and clear capabilities.
+- `bridge.dispose()` — release the message listener and clear shell-control listeners.
 
 ### `CreateGameBridgeOptions`
 
@@ -66,31 +67,32 @@ interface BatchSourceHandle<TInitial, TBatch> {
 }
 ```
 
-### `CapabilityRegistry`
+### `BridgeShellControlChannel` / `BridgeShellControlEvent`
+
+Shell controls are host-driven, not game-advertised: the deployment manifest declares which controls render, the host adapter implements them, and the bridge notifies the game around each invocation so it can react (e.g. clear local UI on `reset`).
 
 ```ts
-const off = bridge.capabilities.enable("new-game", async () => match.reset());
-// later: off()                                    // disable this preset
-bridge.capabilities.disable("new-game");           // or call disable directly
-bridge.capabilities.list();                        // current descriptors
+interface BridgeShellControlChannel {
+  on(listener: (event: BridgeShellControlEvent) => void): () => void;
+}
+
+interface BridgeShellControlEvent {
+  control: BridgeShellControl;          // open string; narrow with isKnownShellControl
+  phase: BridgeShellControlPhase;       // "before" | "after"
+}
+
+type BridgeShellControlPhase = "before" | "after";
 ```
 
 ```ts
-interface CapabilityRegistry {
-  enable(preset: BridgeCapabilityPreset, run: CapabilityRunner, options?: CapabilityEnableOptions): () => void;
-  disable(preset: BridgeCapabilityPreset): void;
-  list(): readonly BridgeCapabilityDescriptor[];
-}
-
-type CapabilityRunner = (args: unknown) => Promise<unknown> | unknown;
-
-interface CapabilityEnableOptions {
-  disabled?: boolean;
-  badge?: string | number;
-}
+const off = bridge.shellControl.on(({ control, phase }) => {
+  if (control === "reset" && phase === "before") clearLocalState();
+  if (control === "returnToLobby" && phase === "after") closeAnyOverlays();
+});
+// later: off()
 ```
 
-Capabilities are picked from a fixed set of presets — the shell renders each in a known slot with a known label and icon. See [`BridgeCapabilityPreset`](#bridgecapabilitypreset--bridge_capability_presets) below.
+Each host-side click fires `phase: "before"` immediately before the host runs the corresponding adapter method, and `phase: "after"` once it settles. The wire `control` is intentionally an open string — narrow it with [`isKnownShellControl`](#shell-controls-registry) before switching so unknown ids from a newer host are handled explicitly.
 
 ### `BridgeLifecycle` / `BridgeLifecycleEvent`
 
@@ -118,8 +120,7 @@ const host = createBridgeHost({
   expectOrigin,         // iframe origin; "*" for local dev only
 });
 // <iframe src={host.src} />
-// host.capabilities — live list the game has advertised
-// host.invoke(id, args?) — round-trip RPC into the game
+// host.emitShellControl(id, "before" | "after") — notify the game around each adapter call
 // host.pause() / host.resume() / host.close() — lifecycle
 ```
 
@@ -128,15 +129,14 @@ const host = createBridgeHost({
 Shell-side handle with:
 
 - `src: string` — iframe `src` with the fragment baked in.
-- `capabilities: readonly BridgeCapabilityDescriptor[]` — live list the game has advertised.
 - `matchActive: boolean` — current match-active state. Defaults to `init.scope === "game"`; updated via `match-state-changed` events.
-- `invoke(id, args?, timeoutMs?)` — capability RPC.
+- `emitShellControl(control, phase)` — notify the game that a shell control was activated. Call once with `"before"` immediately before invoking the corresponding adapter method, and once with `"after"` afterwards.
 - `pause()` / `resume()` / `close()` — lifecycle control.
 - `on(event, listener)` — subscribe to `BridgeHostEvent`s. Returns an unsubscribe function.
 - `requestBatchStream(timeoutMs?)` — ask the game to start streaming initial snapshot + batches. Resolves to a `BatchStreamStatus` (`"allowed" | "denied-by-game" | "no-source"`).
 - `stopBatchStream()` — ask the game to stop streaming. Safe to call when idle.
 - `onBatch(listener)` — subscribe to streamed batches. Immediately replays the last-seen snapshot/batch. Returns an unsubscribe function.
-- `dispose()` — release the window listener and reject pending invocations.
+- `dispose()` — release the window listener and clear pending stream requests.
 
 ### `BridgeHostEvent` / `BridgeHostEventMap`
 
@@ -145,7 +145,6 @@ The events a `BridgeHost` emits via `host.on(...)`:
 ```ts
 type BridgeHostEventMap = {
   ready: { origin: string };
-  "capability-changed": { capabilities: readonly BridgeCapabilityDescriptor[] };
   "lifecycle-close": Record<string, never>;
   "match-state-changed": { matchActive: boolean };
 };
@@ -194,7 +193,7 @@ The decoded fragment payload. Carries `roomID`, `userID`, `scope`, `token`, `tok
 
 ### `BridgeMessage`
 
-Discriminated union of all postMessage payloads: `ready`, `token-refresh-request` / `token-refresh-response`, `capability-expose` / `capability-retire` / `capability-invoke` / `capability-result`, `lifecycle-pause` / `lifecycle-resume` / `lifecycle-close`, `batch-stream-start` / `batch-stream-stop` / `batch-stream-response`, `initial-snapshot` / `batch-applied`, and `match-state` (all under the `openturn:bridge:*` namespace).
+Discriminated union of all postMessage payloads: `ready`, `token-refresh-request` / `token-refresh-response`, `shell-control`, `lifecycle-pause` / `lifecycle-resume` / `lifecycle-close`, `batch-stream-start` / `batch-stream-stop` / `batch-stream-response`, `initial-snapshot` / `batch-applied`, and `match-state` (all under the `openturn:bridge:*` namespace).
 
 ### `BRIDGE_FRAGMENT_KEY`
 
@@ -204,43 +203,86 @@ The URL hash key under which `BridgeInit` is stored: `openturn-bridge`.
 
 `"lobby" | "game"` — matches `RoomTokenClaims["scope"]`. Determines whether the bridge exposes a connection descriptor.
 
-### `BridgeCapabilityPreset` / `BRIDGE_CAPABILITY_PRESETS`
+### `BridgeShellControl`
 
-The fixed set of shell capabilities a game can enable. Each preset has a known `label`, `icon`, and `slot` declared in `BRIDGE_CAPABILITY_PRESETS`.
+The wire type for a shell-control id. Intentionally an open string (validated as `min(1).max(64)`) so a newer host can introduce new ids without bumping the schema or breaking older games. Use [`isKnownShellControl`](#shell-controls-registry) to narrow it to the canonical [`OpenturnShellControl`](/reference/manifest#shell-control-ids) union before switching.
 
 ```ts
-type BridgeCapabilityPreset = "share-invite" | "current-turn" | "new-game" | "rules";
-type BridgeCapabilitySlot = "header" | "menu";
+type BridgeShellControl = string;
+type BridgeShellControlPhase = "before" | "after";
+```
 
-interface BridgeCapabilityPresetMeta {
-  label: string;
-  icon: string;
-  slot: BridgeCapabilitySlot;
+## Shell-controls registry
+
+Single source of truth binding each `OpenturnShellControl` id (declared in [`@openturn/manifest`](/reference/manifest#shell-control-ids)) to its runtime metadata. The registry is what the shell, the manifest schema, and the runtime gating helper all derive from. Games never register shell controls — the manifest decides which controls render and the host adapter implements them.
+
+### `SHELL_CONTROLS`
+
+```ts
+const SHELL_CONTROLS: Readonly<Record<OpenturnShellControl, ShellControlMeta>> = {
+  save:             { adapterMethod: "saveCurrentRoom",    label: "Save",              placement: "toolbar-trail" },
+  load:             { adapterMethod: "createRoomFromSave", label: "Load",              placement: "toolbar-trail" },
+  reset:            { adapterMethod: "resetRoom",          label: "Reset",             placement: "toolbar-trail", requiresMatchActive: true },
+  returnToLobby:    { adapterMethod: "returnToLobby",      label: "Back to lobby",     placement: "toolbar-trail", requiresMatchActive: true },
+  copyInvite:       { adapterMethod: null,                 label: "Copy Invite",       placement: "toolbar-lead" },
+  publicRooms:      { adapterMethod: "listPublicRooms",    label: "Open public rooms", placement: "lobby-section" },
+  visibilityToggle: { adapterMethod: "setVisibility",      label: "Visibility",        placement: "toolbar-lead" },
+};
+```
+
+### `ShellControlMeta`
+
+```ts
+interface ShellControlMeta {
+  /** Adapter method that backs this control. `null` means shell-only (e.g. copyInvite). */
+  readonly adapterMethod:
+    | "saveCurrentRoom"
+    | "createRoomFromSave"
+    | "resetRoom"
+    | "returnToLobby"
+    | "listPublicRooms"
+    | "setVisibility"
+    | null;
+  /** User-facing label rendered by the toolbar / lobby section. */
+  readonly label: string;
+  /**
+   *  - `toolbar-trail`: right-side action button (Save / Load / Reset / lobby)
+   *  - `toolbar-lead`:  left-side affordance (Copy Invite, visibility toggle)
+   *  - `lobby-section`: full lobby card / list (start-from-save, public rooms)
+   */
+  readonly placement: "toolbar-trail" | "toolbar-lead" | "lobby-section";
+  /** When true, the rendered button is disabled while no match is active. */
+  readonly requiresMatchActive?: boolean;
 }
 ```
 
-Default mapping (from `BRIDGE_CAPABILITY_PRESETS`):
+### `isShellControlEnabled(adapter, id)`
 
-| Preset | Label | Icon | Slot |
-| --- | --- | --- | --- |
-| `share-invite` | "Copy Invite" | `share` | `menu` |
-| `current-turn` | "Current turn" | `info` | `header` |
-| `new-game` | "New game" | `refresh` | `header` |
-| `rules` | "Rules" | `book` | `menu` |
-
-### `BridgeCapabilityDescriptor(Schema)`
-
-Descriptor the game registers through `bridge.capabilities.enable(...)`. The schema is intentionally tiny — the descriptor only carries dynamic state; the static label/icon/slot live in `BRIDGE_CAPABILITY_PRESETS`.
+Resolve a single control. Returns `true` when the adapter implements the backing method (or the control is shell-only) AND the manifest hasn't explicitly opted out via `false`. `undefined` in the manifest means "default-on if supported".
 
 ```ts
-interface BridgeCapabilityDescriptor {
-  preset: BridgeCapabilityPreset;
-  disabled?: boolean;
-  badge?: string | number;
-}
+function isShellControlEnabled(adapter: PlayShellAdapter, id: OpenturnShellControl): boolean;
 ```
 
-`BridgeCapabilityDescriptorSchema` validates the shape over the wire.
+### `isKnownShellControl(id)`
+
+Runtime narrowing helper. Returns `true` when the wire id matches one of the canonical `SHELL_CONTROL_IDS`.
+
+```ts
+function isKnownShellControl(id: string): id is OpenturnShellControl;
+```
+
+### `TrailShellControl`
+
+Type-level helper for compile-time exhaustiveness. Only includes the control ids whose `placement` is `"toolbar-trail"` — used by toolbar implementations to require a handler for every trail control.
+
+```ts
+type TrailShellControl = "save" | "load" | "reset" | "returnToLobby";
+```
+
+### `OpenturnShellControl`
+
+Re-exported from [`@openturn/manifest`](/reference/manifest#shell-control-ids) for convenience. The canonical union of known shell-control ids.
 
 ### `encodeBridgeFragment(init)` / `decodeBridgeFragment(hash)`
 
@@ -268,10 +310,48 @@ const init = dev.toBridgeInit(snapshot);
 
 ### Dev-transport types
 
-- `DevTransport` — the returned handle (`createRoom`, `joinRoom`, `toBridgeInit`, …).
-- `DevTransportOptions` — constructor options (`baseURL`, `fetch`, `getUserID`, …).
+- `DevTransport` — the returned handle (`createRoom`, `joinRoom`, `createInviteURL`, `readRoomIDFromLocation`, `writeRoomIDToLocation`, `toBridgeInit`).
+- `DevTransportOptions` — constructor options (`baseURL`, `sessionStorageKey`, `storage`).
 - `AnonymousSession` — the session descriptor the dev server mints for unauthenticated users.
 - `DevLobbySnapshot` — lobby state returned by `createRoom` / `joinRoom` and consumed by `toBridgeInit`.
+
+## Play-shell adapter
+
+The play shell (cloud `/play` and the local CLI dev shell) is a bridge-host shell that renders shell controls (save, load, reset, return-to-lobby, public rooms, …) around any embedded game. The adapter is the host-side contract that the shell calls into when those controls are activated; the bridge package owns its types so both shells can be implemented against the same surface and the shell-controls registry can gate rendering on `adapter[meta.adapterMethod]`.
+
+### `PlayShellAdapter`
+
+```ts
+interface PlayShellAdapter {
+  readonly meta: PlayShellAdapterMeta;     // includes shellControls config from the manifest
+  createRoom(opts?): Promise<PlayRoomResult>;
+  joinRoom(roomID: string): Promise<PlayRoomResult>;
+  // Optional methods correspond to shell controls; see SHELL_CONTROLS for the mapping:
+  saveCurrentRoom?(): Promise<SaveRoomResult>;
+  createRoomFromSave?(saveID: string): Promise<PlayRoomResult>;
+  resetRoom?(): Promise<RoomActionResult>;
+  returnToLobby?(): Promise<RoomActionResult>;
+  listPublicRooms?(): Promise<readonly PublicRoomSummary[]>;
+  setVisibility?(visibility: PlayRoomVisibility): Promise<SetVisibilityResult>;
+}
+```
+
+A control renders only when the adapter implements its backing method (or it is shell-only) and the manifest hasn't disabled it — see [`isShellControlEnabled`](#isshellcontrolenabledadapter-id).
+
+### Adapter and room types
+
+- `PlayShellAdapterMeta` — what the adapter advertises about itself: `shellControls?: OpenturnShellControlsConfig` (from the manifest), invite affordances, etc.
+- `PlayMultiplayerConfig` — config the play shell hands the adapter at construction.
+- `PlayRoomSnapshot`, `PlayRoomStatus`, `PlayRoomVisibility`, `PlayRoomResult` — room state shapes.
+- `PresenceSeat`, `PresenceSnapshot` — per-seat presence rows.
+- `PublicRoomSummary` — entries returned by `listPublicRooms`.
+- `RoomActionResult`, `SaveRoomResult`, `SetVisibilityResult` — result shapes for the shell-control adapter methods.
+
+### Helpers
+
+- `describeRoomStatus(status)` — render a `PlayRoomStatus` as a human-readable string for shell UI.
+- `extractRoomID(value)` — pull the room id out of a free-form invite string or URL; returns `null` when no id is present.
+- `snapshotToBridgeInit(snapshot)` — convert a `PlayRoomSnapshot` into the `BridgeInit` baked into the iframe fragment. Shared between both play shells.
 
 ## Re-exports
 

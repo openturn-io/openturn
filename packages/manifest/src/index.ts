@@ -10,6 +10,32 @@ export interface OpenturnInspectorPolicy {
   allowedRoles?: readonly OpenturnInspectorRole[] | undefined;
 }
 
+// Canonical list of shell controls a host may render. Listed once here so the
+// manifest schema, the bridge registry (`@openturn/bridge` SHELL_CONTROLS), and
+// the runtime gating helper all derive from the same source. To add a new
+// control: add the id here, then map it to its adapter method / label /
+// placement in `@openturn/bridge`'s `SHELL_CONTROLS`. The `satisfies` constraint
+// in bridge fails to compile until the registry is updated.
+export const SHELL_CONTROL_IDS = [
+  "save",
+  "load",
+  "reset",
+  "returnToLobby",
+  "copyInvite",
+  "publicRooms",
+  "visibilityToggle",
+] as const;
+
+export type OpenturnShellControl = (typeof SHELL_CONTROL_IDS)[number];
+
+// Per-control opt-in/out for shell chrome. `undefined` means "default-on when
+// the host adapter supports it" — the shell only renders a control when both
+// the adapter implements it and the manifest hasn't explicitly disabled it.
+// Set `false` to hide a control even if the adapter could provide it.
+export type OpenturnShellControlsConfig = {
+  readonly [K in OpenturnShellControl]?: boolean | undefined;
+};
+
 export interface OpenturnMultiplayerManifest {
   gameKey: string;
   deploymentVersion: string;
@@ -57,6 +83,7 @@ export interface OpenturnDeploymentManifest {
   };
   multiplayer?: OpenturnMultiplayerManifest | undefined;
   inspector?: OpenturnInspectorPolicy | undefined;
+  shellControls?: OpenturnShellControlsConfig | undefined;
 }
 
 export const OpenturnInspectorPolicySchema = z.object({
@@ -67,6 +94,17 @@ export const OpenturnInspectorPolicySchema = z.object({
     .max(3)
     .optional(),
 });
+
+// Schema shape derived from SHELL_CONTROL_IDS so the zod object stays in lock-
+// step with the canonical id list. Adding an id above automatically extends
+// the schema; removing one drops it.
+export const OpenturnShellControlsConfigSchema = z
+  .object(
+    Object.fromEntries(
+      SHELL_CONTROL_IDS.map((id) => [id, z.boolean().optional()]),
+    ) as { [K in OpenturnShellControl]: z.ZodOptional<z.ZodBoolean> },
+  )
+  .strict();
 
 export const OpenturnAvailableBotSchema = z.object({
   botID: z.string().min(1).max(64),
@@ -113,6 +151,7 @@ export const OpenturnDeploymentManifestSchema = z
     }),
     multiplayer: OpenturnMultiplayerManifestSchema.optional(),
     inspector: OpenturnInspectorPolicySchema.optional(),
+    shellControls: OpenturnShellControlsConfigSchema.optional(),
   })
   .refine(
     (manifest) =>
@@ -122,12 +161,16 @@ export const OpenturnDeploymentManifestSchema = z
 
 export function parseDeploymentManifest(value: unknown): OpenturnDeploymentManifest {
   const parsed = OpenturnDeploymentManifestSchema.parse(value);
-  const { multiplayer, deploymentID, projectID, inspector, ...rest } = parsed;
+  const { multiplayer, deploymentID, projectID, inspector, shellControls, ...rest } =
+    parsed;
   const base: OpenturnDeploymentManifest = {
     ...rest,
     ...(deploymentID === undefined ? {} : { deploymentID }),
     ...(projectID === undefined ? {} : { projectID }),
     ...(inspector === undefined ? {} : { inspector: normalizeInspector(inspector) }),
+    ...(shellControls === undefined
+      ? {}
+      : { shellControls: normalizeShellControls(shellControls) }),
   };
   if (multiplayer === undefined) return base;
   const { availableBots, ...multiplayerRest } = multiplayer;
@@ -147,6 +190,17 @@ function normalizeAvailableBot(input: z.infer<typeof OpenturnAvailableBotSchema>
     ...(input.description === undefined ? {} : { description: input.description }),
     ...(input.difficulty === undefined ? {} : { difficulty: input.difficulty }),
   };
+}
+
+function normalizeShellControls(
+  input: z.infer<typeof OpenturnShellControlsConfigSchema>,
+): OpenturnShellControlsConfig {
+  const out: { -readonly [K in OpenturnShellControl]?: boolean } = {};
+  for (const id of SHELL_CONTROL_IDS) {
+    const value = input[id];
+    if (value !== undefined) out[id] = value;
+  }
+  return out;
 }
 
 function normalizeInspector(

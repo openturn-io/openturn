@@ -38,12 +38,15 @@ The full bot shape:
 interface Bot<TGame> {
   name: string;
   thinkingBudgetMs?: number;     // default 5_000
+  actionDelayMs?: number;        // min wall-clock delay between decide() and dispatch (UI pacing)
   enumerate?: (ctx: { view; snapshot; playerID }) => readonly LegalAction[];
   decide(context: DecideContext<TGame>): LegalAction | Promise<LegalAction>;
   init?(context: { playerID }): void | Promise<void>;
   dispose?(): void;
 }
 ```
+
+`actionDelayMs` is presentation pacing only — the runner waits at least this long between picking an action and dispatching it so human clients can see bot turns unfold. It is independent of `thinkingBudgetMs` (which bounds `decide`).
 
 `decide` may be sync (random, heuristic) or async (MCTS with yields, LLM). The runner awaits whatever you return.
 

@@ -4,7 +4,9 @@ import {
   OpenturnAvailableBotSchema,
   OpenturnDeploymentManifestSchema,
   OpenturnMultiplayerManifestSchema,
+  OpenturnShellControlsConfigSchema,
   parseDeploymentManifest,
+  SHELL_CONTROL_IDS,
 } from "./index";
 
 const baseMultiplayerManifest = {
@@ -113,5 +115,66 @@ describe("parseDeploymentManifest round-trips availableBots", () => {
 
   test("schema-level full manifest accepts availableBots", () => {
     expect(() => OpenturnDeploymentManifestSchema.parse(baseManifest)).not.toThrow();
+  });
+});
+
+describe("OpenturnShellControlsConfigSchema", () => {
+  test("accepts an empty config", () => {
+    expect(() => OpenturnShellControlsConfigSchema.parse({})).not.toThrow();
+  });
+
+  test("accepts every known control id with boolean values", () => {
+    const config = Object.fromEntries(
+      SHELL_CONTROL_IDS.map((id, i) => [id, i % 2 === 0]),
+    );
+    const parsed = OpenturnShellControlsConfigSchema.parse(config);
+    for (const id of SHELL_CONTROL_IDS) {
+      expect(parsed[id]).toBe(config[id]);
+    }
+  });
+
+  test("rejects unknown control ids (strict mode)", () => {
+    expect(() =>
+      OpenturnShellControlsConfigSchema.parse({ notAControl: true }),
+    ).toThrow();
+  });
+
+  test("rejects non-boolean values", () => {
+    expect(() =>
+      OpenturnShellControlsConfigSchema.parse({ save: "yes" }),
+    ).toThrow();
+  });
+});
+
+describe("parseDeploymentManifest normalizes shellControls", () => {
+  const baseManifest = {
+    runtime: "local" as const,
+    gameName: "Test Game",
+    entry: "main.js",
+    styles: [],
+    assets: ["main.js"],
+    build: { at: "2025-01-01T00:00:00Z", openturn: { core: "0.0.1" } },
+  };
+
+  test("manifest without shellControls stays absent", () => {
+    const parsed = parseDeploymentManifest(baseManifest);
+    expect(parsed.shellControls).toBeUndefined();
+  });
+
+  test("manifest with shellControls round-trips set keys only", () => {
+    const parsed = parseDeploymentManifest({
+      ...baseManifest,
+      shellControls: { save: false, copyInvite: true },
+    });
+    expect(parsed.shellControls).toEqual({ save: false, copyInvite: true });
+  });
+
+  test("undefined values are dropped from the parsed config", () => {
+    const parsed = parseDeploymentManifest({
+      ...baseManifest,
+      shellControls: { save: false, load: undefined },
+    });
+    expect(parsed.shellControls).toEqual({ save: false });
+    expect("load" in (parsed.shellControls ?? {})).toBe(false);
   });
 });

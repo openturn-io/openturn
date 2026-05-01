@@ -603,7 +603,7 @@ interface RoundTableProps {
 function RoundTable({ lobby, renderSeat }: RoundTableProps): ReactNode {
   return (
     <div
-      className="openturn-lobby__table relative mx-auto w-full max-w-[min(620px,max(280px,calc(100vh-28rem)))] pt-12 pb-16"
+      className="openturn-lobby__table relative z-20 mx-auto w-full max-w-[min(620px,max(280px,calc(100vh-28rem)))] pt-12 pb-16"
       role="radiogroup"
       aria-label="Pick a seat at the round table"
     >
@@ -649,7 +649,7 @@ function RoundTable({ lobby, renderSeat }: RoundTableProps): ReactNode {
           return (
             <div
               key={seat.seatIndex}
-              className="openturn-lobby__seat-slot absolute w-[124px] -translate-x-1/2 -translate-y-1/2"
+              className="openturn-lobby__seat-slot absolute z-10 w-[124px] -translate-x-1/2 -translate-y-1/2 hover:z-20 focus-within:z-30"
               data-seat-index={seat.seatIndex}
               style={{
                 left: `${leftPercent}%`,

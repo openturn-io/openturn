@@ -3,34 +3,30 @@ import type { HostedConnectionDescriptor } from "@openturn/client";
 import {
   BridgeMessageSchema,
   BridgeUnavailableError,
-  JsonValueSchema,
   readBridgeFragmentFromLocation,
-  type BridgeCapabilityDescriptor,
-  type BridgeCapabilityPreset,
   type BridgeInit,
   type BridgeMessage,
+  type BridgeShellControl,
+  type BridgeShellControlPhase,
 } from "./schema";
-
-export type CapabilityRunner = (args: unknown) => Promise<unknown> | unknown;
-
-export interface CapabilityEnableOptions {
-  disabled?: boolean;
-  badge?: string | number;
-}
-
-export interface CapabilityRegistry {
-  enable(
-    preset: BridgeCapabilityPreset,
-    run: CapabilityRunner,
-    options?: CapabilityEnableOptions,
-  ): () => void;
-  disable(preset: BridgeCapabilityPreset): void;
-  list(): readonly BridgeCapabilityDescriptor[];
-}
 
 export type BridgeLifecycleEvent = "pause" | "resume" | "close";
 export interface BridgeLifecycle {
   on(event: BridgeLifecycleEvent, listener: () => void): () => void;
+}
+
+export interface BridgeShellControlEvent {
+  control: BridgeShellControl;
+  phase: BridgeShellControlPhase;
+}
+
+export interface BridgeShellControlChannel {
+  /**
+   * Subscribe to shell-control activations from the host. Each click fires
+   * `phase: "before"` followed by `phase: "after"` once the adapter call
+   * settles. Use this to clear local UI on `reset` / `return-to-lobby`, etc.
+   */
+  on(listener: (event: BridgeShellControlEvent) => void): () => void;
 }
 
 export interface BatchSourceHandle<TInitial = unknown, TBatch = unknown> {
@@ -46,8 +42,8 @@ export interface GameBridge {
    * force a new one bypassing the skew window. */
   readonly token: string;
   readonly connection: HostedConnectionDescriptor | null;
-  readonly capabilities: CapabilityRegistry;
   readonly lifecycle: BridgeLifecycle;
+  readonly shellControl: BridgeShellControlChannel;
   /** Force-refresh the room token now, bypassing the skew window. */
   refreshToken(): Promise<string>;
   /** Alias of `refreshToken` used by transport clients that want a fresh token on demand. */
@@ -97,10 +93,7 @@ export function createGameBridge(
   let currentExpiresAt = init.tokenExpiresAt ?? 0;
 
   const listeners = new Map<BridgeLifecycleEvent, Set<() => void>>();
-  const capabilities = new Map<
-    BridgeCapabilityPreset,
-    { descriptor: BridgeCapabilityDescriptor; run: CapabilityRunner }
-  >();
+  const shellControlListeners = new Set<(event: BridgeShellControlEvent) => void>();
 
   const disposables: Array<() => void> = [];
 
@@ -171,7 +164,7 @@ export function createGameBridge(
     }
   }
 
-  // Listen for host → game messages (lifecycle + capability invoke).
+  // Listen for host → game messages (lifecycle + shell-control + batch stream).
   if (typeof window !== "undefined") {
     const onMessage = (event: MessageEvent) => {
       const parsed = BridgeMessageSchema.safeParse(event.data);
@@ -229,37 +222,16 @@ export function createGameBridge(
         case "openturn:bridge:batch-stream-stop":
           stopBatchStream();
           break;
-        case "openturn:bridge:capability-invoke": {
-          const entry = capabilities.get(message.preset);
-          if (entry === undefined) {
-            postTo(parent, parentOrigin, {
-              kind: "openturn:bridge:capability-result",
-              requestID: message.requestID,
-              ok: false,
-              error: `unknown_capability:${message.preset}`,
-            });
-            return;
+        case "openturn:bridge:shell-control": {
+          const event: BridgeShellControlEvent = {
+            control: message.control,
+            phase: message.phase,
+          };
+          for (const listener of shellControlListeners) {
+            try {
+              listener(event);
+            } catch {}
           }
-          Promise.resolve()
-            .then(() => entry.run(message.args))
-            .then(
-              (value) => {
-                postTo(parent, parentOrigin, {
-                  kind: "openturn:bridge:capability-result",
-                  requestID: message.requestID,
-                  ok: true,
-                  ...(value === undefined ? {} : { value: JsonValueSchema.parse(value) }),
-                });
-              },
-              (err) => {
-                postTo(parent, parentOrigin, {
-                  kind: "openturn:bridge:capability-result",
-                  requestID: message.requestID,
-                  ok: false,
-                  error: err instanceof Error ? err.message : String(err),
-                });
-              },
-            );
           break;
         }
         default:
@@ -278,32 +250,6 @@ export function createGameBridge(
     matchActive,
   });
 
-  const registry: CapabilityRegistry = {
-    enable(preset, run, options) {
-      const descriptor: BridgeCapabilityDescriptor = {
-        preset,
-        ...(options?.disabled === undefined ? {} : { disabled: options.disabled }),
-        ...(options?.badge === undefined ? {} : { badge: options.badge }),
-      };
-      capabilities.set(preset, { descriptor, run });
-      postTo(parent, parentOrigin, {
-        kind: "openturn:bridge:capability-expose",
-        descriptor,
-      });
-      return () => registry.disable(preset);
-    },
-    disable(preset) {
-      if (!capabilities.delete(preset)) return;
-      postTo(parent, parentOrigin, {
-        kind: "openturn:bridge:capability-retire",
-        preset,
-      });
-    },
-    list() {
-      return Array.from(capabilities.values()).map((e) => e.descriptor);
-    },
-  };
-
   const lifecycle: BridgeLifecycle = {
     on(event, listener) {
       let set = listeners.get(event);
@@ -316,14 +262,21 @@ export function createGameBridge(
     },
   };
 
+  const shellControl: BridgeShellControlChannel = {
+    on(listener) {
+      shellControlListeners.add(listener);
+      return () => shellControlListeners.delete(listener);
+    },
+  };
+
   return {
     init,
     get token() {
       return currentToken;
     },
     connection,
-    capabilities: registry,
     lifecycle,
+    shellControl,
     refreshToken: () => refreshToken(true),
     getRoomToken: () => refreshToken(false),
     registerBatchSource(source) {
@@ -348,6 +301,7 @@ export function createGameBridge(
     },
     dispose() {
       stopBatchStream();
+      shellControlListeners.clear();
       for (const fn of disposables.splice(0, disposables.length)) {
         try {
           fn();

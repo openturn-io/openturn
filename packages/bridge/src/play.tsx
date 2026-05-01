@@ -16,6 +16,7 @@ import {
   describeRoomStatus,
   extractRoomID,
   snapshotToBridgeInit,
+  type PlayPdpMeta,
   type PlayRoomResult,
   type PlayRoomSnapshot,
   type PlayRoomVisibility,
@@ -23,6 +24,13 @@ import {
   type PresenceSnapshot,
   type PublicRoomSummary,
 } from "./play-types";
+import {
+  isShellControlEnabled,
+  SHELL_CONTROLS,
+  type OpenturnShellControl,
+  type ShellControlMeta,
+  type TrailShellControl,
+} from "./shell-controls";
 
 const PUBLIC_ROOMS_REFRESH_MS = 15_000;
 const PRESENCE_POLL_MS = 3_000;
@@ -219,7 +227,7 @@ function LobbyView({
             </div>
           </div>
 
-          {adapter.createRoomFromSave !== undefined ? (
+          {isShellControlEnabled(adapter, "load") ? (
             <div className={cardClass(classes, saveError !== null)}>
               <h2 className="text-base font-semibold">Start from save</h2>
               <p className="mt-1 text-sm text-slate-500">
@@ -247,15 +255,69 @@ function LobbyView({
         </div>
       </div>
 
-      {adapter.listPublicRooms !== undefined ? (
+      <PdpSection pdp={meta.pdp} classes={classes} />
+
+      {isShellControlEnabled(adapter, "publicRooms") ? (
         <PublicRoomsSection
-          listPublicRooms={adapter.listPublicRooms}
+          listPublicRooms={adapter.listPublicRooms!}
           disabled={isLoading}
           onJoin={(roomID) => void performAction("join", () => adapter.joinRoom(roomID))}
           classes={classes}
         />
       ) : null}
     </main>
+  );
+}
+
+function PdpSection({
+  pdp,
+  classes,
+}: {
+  pdp: PlayPdpMeta | undefined;
+  classes: PlayPageClassNames | undefined;
+}) {
+  if (pdp === undefined) return null;
+
+  const description = pdp.description?.trim() ?? "";
+  const rules = pdp.rules?.trim() ?? "";
+  const images = pdp.images ?? [];
+
+  if (description.length === 0 && rules.length === 0 && images.length === 0) return null;
+
+  return (
+    <section className="mt-8 flex flex-col gap-4">
+      {description.length > 0 ? (
+        <div className={cardClass(classes)}>
+          <h2 className="text-base font-semibold">About</h2>
+          <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{description}</p>
+        </div>
+      ) : null}
+
+      {images.length > 0 ? (
+        <div className={cardClass(classes)}>
+          <h2 className="text-base font-semibold">Screenshots</h2>
+          <ul className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {images.map((image) => (
+              <li key={image.url} className="overflow-hidden rounded-md border border-slate-200">
+                <img
+                  src={image.url}
+                  alt={image.alt ?? ""}
+                  loading="lazy"
+                  className="block h-48 w-full object-cover"
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {rules.length > 0 ? (
+        <details className={cardClass(classes)}>
+          <summary className="cursor-pointer text-base font-semibold">Rules</summary>
+          <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{rules}</p>
+        </details>
+      ) : null}
+    </section>
   );
 }
 
@@ -537,7 +599,12 @@ function RoomView({
     }
   }
 
+  function notifyControl(control: OpenturnShellControl, phase: "before" | "after") {
+    host?.emitShellControl(control, phase);
+  }
+
   async function copyInvite() {
+    notifyControl("copyInvite", "before");
     try {
       if (
         typeof navigator === "undefined" ||
@@ -549,11 +616,14 @@ function RoomView({
       toast.success("Copied Invite URL Successfully");
     } catch {
       toast.error("Could Not Copy Invite URL");
+    } finally {
+      notifyControl("copyInvite", "after");
     }
   }
 
   async function handleSave() {
     if (adapter.saveCurrentRoom === undefined) return;
+    notifyControl("save", "before");
     try {
       const result = await adapter.saveCurrentRoom(snapshot.roomID);
       if (result.status !== "ok") {
@@ -577,6 +647,8 @@ function RoomView({
       }
     } catch (caught) {
       window.alert(`Save failed: ${caught instanceof Error ? caught.message : String(caught)}`);
+    } finally {
+      notifyControl("save", "after");
     }
   }
 
@@ -589,6 +661,7 @@ function RoomView({
     input.addEventListener("change", async () => {
       const file = input.files?.[0];
       if (file === undefined) return;
+      notifyControl("load", "before");
       try {
         const buffer = await file.arrayBuffer();
         const result = await createRoomFromSave(new Uint8Array(buffer));
@@ -600,6 +673,8 @@ function RoomView({
         onSnapshotChange(result.snapshot);
       } catch (caught) {
         window.alert(`Load failed: ${caught instanceof Error ? caught.message : String(caught)}`);
+      } finally {
+        notifyControl("load", "after");
       }
     });
     input.click();
@@ -608,26 +683,36 @@ function RoomView({
   async function handleReset() {
     if (adapter.resetRoom === undefined) return;
     if (!window.confirm("Reset match to start? Players will be reconnected.")) return;
-    const result = await adapter.resetRoom(snapshot.roomID);
-    if (result.status !== "ok") {
-      window.alert(`Reset failed: ${result.reason ?? result.status}`);
-      return;
+    notifyControl("reset", "before");
+    try {
+      const result = await adapter.resetRoom(snapshot.roomID);
+      if (result.status !== "ok") {
+        window.alert(`Reset failed: ${result.reason ?? result.status}`);
+        return;
+      }
+      // Re-join refreshes the snapshot (fresh token, fresh bridge init).
+      const rejoin = await adapter.joinRoom(snapshot.roomID);
+      if (rejoin.status === "ok") onSnapshotChange(rejoin.snapshot);
+    } finally {
+      notifyControl("reset", "after");
     }
-    // Re-join refreshes the snapshot (fresh token, fresh bridge init).
-    const rejoin = await adapter.joinRoom(snapshot.roomID);
-    if (rejoin.status === "ok") onSnapshotChange(rejoin.snapshot);
   }
 
   async function handleReturnToLobby() {
     if (adapter.returnToLobby === undefined) return;
     if (!window.confirm("End the match and return to lobby?")) return;
-    const result = await adapter.returnToLobby(snapshot.roomID);
-    if (result.status !== "ok") {
-      window.alert(`Return-to-lobby failed: ${result.reason ?? result.status}`);
-      return;
+    notifyControl("returnToLobby", "before");
+    try {
+      const result = await adapter.returnToLobby(snapshot.roomID);
+      if (result.status !== "ok") {
+        window.alert(`Return-to-lobby failed: ${result.reason ?? result.status}`);
+        return;
+      }
+      const rejoin = await adapter.joinRoom(snapshot.roomID);
+      if (rejoin.status === "ok") onSnapshotChange(rejoin.snapshot);
+    } finally {
+      notifyControl("returnToLobby", "after");
     }
-    const rejoin = await adapter.joinRoom(snapshot.roomID);
-    if (rejoin.status === "ok") onSnapshotChange(rejoin.snapshot);
   }
 
   const toolbarLead = (
@@ -635,20 +720,31 @@ function RoomView({
       snapshot={snapshot}
       visibility={visibility}
       visibilityPending={visibilityPending}
-      onChangeVisibility={adapter.setVisibility !== undefined ? changeVisibility : undefined}
-      onCopyInvite={copyInvite}
+      onChangeVisibility={
+        isShellControlEnabled(adapter, "visibilityToggle") ? changeVisibility : undefined
+      }
+      onCopyInvite={isShellControlEnabled(adapter, "copyInvite") ? copyInvite : undefined}
       presence={presence}
     />
   );
+
+  // Map of click handlers keyed by control id; the trail renderer iterates
+  // SHELL_CONTROLS in declaration order so toolbar layout follows the registry.
+  // The `Record<TrailShellControl, …>` constraint forces every trail-placement
+  // id in SHELL_CONTROLS to have a handler — adding a new trail control fails
+  // to compile here until it's wired up.
+  const trailHandlers: Record<TrailShellControl, () => void> = {
+    save: handleSave,
+    load: handleLoad,
+    reset: handleReset,
+    returnToLobby: handleReturnToLobby,
+  };
 
   const toolbarTrail = (
     <RoomToolbarActions
       adapter={adapter}
       matchActive={matchActive}
-      onSave={handleSave}
-      onLoad={handleLoad}
-      onReset={handleReset}
-      onReturnToLobby={handleReturnToLobby}
+      handlers={trailHandlers}
     />
   );
 
@@ -681,7 +777,7 @@ function RoomToolbarLead({
   visibility: PlayRoomVisibility | undefined;
   visibilityPending: boolean;
   onChangeVisibility: ((next: PlayRoomVisibility) => void) | undefined;
-  onCopyInvite: () => void;
+  onCopyInvite: (() => void) | undefined;
   presence: PresenceSnapshot | null;
 }) {
   return (
@@ -700,13 +796,15 @@ function RoomToolbarLead({
           {visibility === "public" ? "Public" : "Private"}
         </span>
       ) : null}
-      <button
-        type="button"
-        className="ml-1 rounded-md border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50"
-        onClick={onCopyInvite}
-      >
-        Copy Invite
-      </button>
+      {onCopyInvite !== undefined ? (
+        <button
+          type="button"
+          className="ml-1 rounded-md border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50"
+          onClick={onCopyInvite}
+        >
+          Copy Invite
+        </button>
+      ) : null}
       {presence !== null ? <PlayerSeats presence={presence} /> : null}
     </>
   );
@@ -715,36 +813,34 @@ function RoomToolbarLead({
 function RoomToolbarActions({
   adapter,
   matchActive,
-  onSave,
-  onLoad,
-  onReset,
-  onReturnToLobby,
+  handlers,
 }: {
   adapter: PlayShellAdapter;
   matchActive: boolean;
-  onSave: () => void;
-  onLoad: () => void;
-  onReset: () => void;
-  onReturnToLobby: () => void;
+  handlers: Record<TrailShellControl, () => void>;
 }) {
+  // Iterate SHELL_CONTROLS in declaration order and render every trail control
+  // whose adapter method is present and whose manifest opt-out isn't set. This
+  // keeps the toolbar driven by the registry — adding a new trail control means
+  // adding it to SHELL_CONTROLS and providing a handler in `handlers` (which is
+  // exhaustive over TrailShellControl).
   return (
     <>
-      {adapter.saveCurrentRoom !== undefined ? (
-        <ToolbarButton onClick={onSave}>Save</ToolbarButton>
-      ) : null}
-      {adapter.createRoomFromSave !== undefined ? (
-        <ToolbarButton onClick={onLoad}>Load</ToolbarButton>
-      ) : null}
-      {adapter.resetRoom !== undefined ? (
-        <ToolbarButton onClick={onReset} disabled={!matchActive}>
-          Reset
-        </ToolbarButton>
-      ) : null}
-      {adapter.returnToLobby !== undefined ? (
-        <ToolbarButton onClick={onReturnToLobby} disabled={!matchActive}>
-          Back to lobby
-        </ToolbarButton>
-      ) : null}
+      {(Object.keys(SHELL_CONTROLS) as OpenturnShellControl[])
+        .filter(
+          (id): id is TrailShellControl =>
+            SHELL_CONTROLS[id].placement === "toolbar-trail",
+        )
+        .map((id) => {
+          const meta: ShellControlMeta = SHELL_CONTROLS[id];
+          if (!isShellControlEnabled(adapter, id)) return null;
+          const disabled = meta.requiresMatchActive === true && !matchActive;
+          return (
+            <ToolbarButton key={id} onClick={handlers[id]} disabled={disabled}>
+              {meta.label}
+            </ToolbarButton>
+          );
+        })}
     </>
   );
 }

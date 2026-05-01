@@ -1,3 +1,5 @@
+import type { OpenturnShellControlsConfig } from "@openturn/manifest";
+
 import type { BridgeInit, BridgeScope } from "./schema";
 import type { BridgeHostTokenContext, BridgeHostTokenRefreshResult } from "./host";
 
@@ -84,12 +86,36 @@ export interface PlayMultiplayerConfig {
   players: readonly string[];
 }
 
+export interface PlayPdpImage {
+  url: string;
+  alt?: string;
+}
+
+export interface PlayPdpMeta {
+  description?: string;
+  images?: readonly PlayPdpImage[];
+  rules?: string;
+}
+
 export interface PlayShellAdapterMeta {
   deploymentID: string;
   gameName: string;
   bundleURL: string;
   multiplayer: PlayMultiplayerConfig | null;
   user?: { name: string } | null;
+  /**
+   * Per-control opt-in/out from the deployment manifest. `undefined` keys
+   * default to "render whenever the adapter implements the corresponding
+   * method"; `false` hides the control even if the adapter supports it.
+   */
+  shellControls?: OpenturnShellControlsConfig | undefined;
+  /**
+   * Optional author-curated lobby content (description / images / rules).
+   * Hosts that don't expose this (e.g. CLI dev shell) leave it undefined and
+   * the lobby renders without the PDP section. Cloud populates from the
+   * deployment row; see `openturn-cloud/lib/api/rooms.ts`.
+   */
+  pdp?: PlayPdpMeta;
 }
 
 // Discriminated-status adapter interface. Each shell (CLI dev + cloud)
@@ -117,7 +143,7 @@ export interface PlayShellAdapter {
   /** Pure-derived `BridgeInit` payload for the iframe URL fragment. */
   toBridgeInit(snapshot: PlayRoomSnapshot): BridgeInit;
 
-  // ── optional capabilities (UI gates on presence) ───────────────────────
+  // ── optional adapter methods (UI gates on presence) ────────────────────
 
   /** Upload a save blob and create a new room from it. */
   createRoomFromSave?(bytes: Uint8Array): Promise<PlayRoomResult>;

@@ -15,7 +15,6 @@ import { bearer } from "better-auth/plugins/bearer";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
-import { BRIDGE_CAPABILITY_PRESETS } from "@openturn/bridge";
 import {
   buildOpenturnProject,
   loadOpenturnProjectDeployment,
@@ -23,6 +22,7 @@ import {
   type BuildOpenturnProjectResult,
   type OpenturnDeploymentManifest,
   type OpenturnDeploymentRuntime,
+  type OpenturnShellControlsConfig,
 } from "@openturn/deploy";
 import { parseJsonText, stringifyJson } from "@openturn/json";
 import {
@@ -210,6 +210,7 @@ export interface LocalDevServerOptions {
     bundleURL: string;
     deploymentID: string;
     gameName: string;
+    shellControls?: OpenturnShellControlsConfig;
   };
   port?: number;
   secret?: string;
@@ -222,6 +223,7 @@ export interface LocalDevServerOptions {
      * `/play/{deploymentID}` instead of the inspector play shell. Default true.
      */
     shell?: boolean;
+    shellControls?: OpenturnShellControlsConfig;
   };
 }
 
@@ -477,6 +479,9 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
             deploymentID: options.iframe.deploymentID,
             gameName: options.iframe.gameName,
             multiplayer: extractMultiplayerConfig(currentDeployment),
+            ...(options.iframe.shellControls === undefined
+              ? {}
+              : { shellControls: options.iframe.shellControls }),
           }));
         }
 
@@ -503,6 +508,9 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
               deploymentID: staticOptions.deploymentID,
               gameName: staticOptions.gameName,
               multiplayer: extractMultiplayerConfig(currentDeployment),
+              ...(staticOptions.shellControls === undefined
+                ? {}
+                : { shellControls: staticOptions.shellControls }),
             }));
           }
           return fileResponse(resolve(staticOptions.outDir, "index.html"), "text/html; charset=utf-8");
@@ -1993,6 +2001,9 @@ async function runLocalStart(args: readonly string[]) {
       gameName: manifest.gameName,
       outDir,
       shell,
+      ...(manifest.shellControls === undefined
+        ? {}
+        : { shellControls: manifest.shellControls }),
     },
   };
   if (dbPath !== null) {
@@ -2835,6 +2846,7 @@ function createLocalPlayShell(input: {
   deploymentID: string;
   gameName: string;
   multiplayer?: DevPlayMultiplayerConfig;
+  shellControls?: OpenturnShellControlsConfig;
 }): string {
   const title = escapeHTML(input.gameName);
   const bundleBase = input.bundleURL ?? "/__openturn/bundle/";
@@ -2843,6 +2855,7 @@ function createLocalPlayShell(input: {
     gameName: input.gameName,
     bundleBase,
     multiplayer: input.multiplayer,
+    ...(input.shellControls === undefined ? {} : { shellControls: input.shellControls }),
   };
   return `<!doctype html>
 <html lang="en">

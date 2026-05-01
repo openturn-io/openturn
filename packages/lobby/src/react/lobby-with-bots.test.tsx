@@ -80,6 +80,13 @@ describe("<LobbyWithBots />", () => {
     const trigger = within(slot).getByRole("button", { name: /assign bot/i });
     fireEvent.click(trigger);
 
+    const table = document.querySelector(".openturn-lobby__table") as HTMLElement;
+    expect(table.className).toContain("z-20");
+    expect(slot.parentElement?.className).toContain("focus-within:z-30");
+
+    const menu = within(slot).getByRole("menu");
+    expect(menu.className).toContain("z-50");
+
     const minimaxOption = within(slot).getByRole("menuitem", { name: /Minimax/i });
     fireEvent.click(minimaxOption);
 

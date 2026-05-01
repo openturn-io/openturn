@@ -4,7 +4,7 @@ description: Every openturn package, its runtime, and when to reach for it.
 sidebarTitle: Packages
 ---
 
-Openturn is split across fourteen packages. This page is the decision tree: "I want to do X, which one do I import."
+Openturn is split across eighteen packages. This page is the decision tree: "I want to do X, which one do I import."
 
 ## Authoring
 
@@ -22,19 +22,27 @@ Openturn is split across fourteen packages. This page is the decision tree: "I w
 | [`@openturn/protocol`](/reference/protocol) | worker | Wire protocol: `ClientAction`, `BatchApplied`, lobby messages, Zod schemas. Shared between client and server. |
 | [`@openturn/server`](/reference/server) | worker | Authoritative `RoomRuntime`, `LobbyRuntime`, `createGameWorker` factory for Cloudflare, room tokens, persistence. |
 | [`@openturn/client`](/reference/client) | worker | WebSocket client. `createHostedClient` handles connect, dispatch, and state synchronization. |
-| [`@openturn/bridge`](/reference/bridge) | browser | Iframe↔shell wire. `createGameBridge` on the iframe, `createBridgeHost` on the shell, and the capability registry that advertises game utilities to the shell. |
-| [`@openturn/manifest`](/reference/manifest) | worker | Deployment manifest schema + HTML generator. Shared by `@openturn/deploy` (writer) and the cloud shell (reader). |
+| [`@openturn/bridge`](/reference/bridge) | browser | Iframe↔shell wire. `createGameBridge` on the iframe, `createBridgeHost` on the shell, plus the shell-controls registry the host renders save / load / reset / lobby chrome from. |
+| [`@openturn/manifest`](/reference/manifest) | worker | Deployment manifest schema + HTML generator. Shared by `@openturn/deploy` (writer) and the cloud shell (reader). Owns `SHELL_CONTROL_IDS`. |
 
 ## UI and tooling
 
 | Package | Runtime | Why |
 | --- | --- | --- |
 | [`@openturn/react`](/reference/react) | browser | React hooks: `createOpenturnBindings`, `<OpenturnProvider>`, `useMatch`, `useRoom`, `useInspector`, `Lobby`. |
+| [`@openturn/lobby`](/reference/lobby) | mixed | Unified lobby surface — protocol extensions, runtime helpers, React UI, bot registry, and bot supervisors. Five subpath exports; only `./react` touches the DOM. |
 | [`@openturn/replay`](/reference/replay) | worker | Saved replay envelopes, timeline materialization, cursor-based playback, branching. |
 | [`@openturn/inspector`](/reference/inspector) | worker | Non-UI inspector logic: `buildInspectorTimelineFromSource` (unified replay/hosted entry), diffs, graph highlights. |
 | [`@openturn/inspector-ui`](/reference/inspector-ui) | browser | Ready-made React inspector components: `createInspector` returns `{ Inspector, ReplayInspector, HostedInspector }`. |
 | [`@openturn/deploy`](/reference/deploy) | Bun | Build pipeline: `discoverOpenturnProject`, `buildOpenturnProject`, manifest, Worker bundle generation. |
 | [`@openturn/cli`](/reference/cli) | Bun | The `openturn` binary: `create`, `dev`, `build`, `deploy`, `login`. |
+
+## Plugins
+
+| Package | Runtime | Why |
+| --- | --- | --- |
+| `@openturn/plugins` | worker | Plugin authoring helpers (typed plugin definitions, registration utilities). |
+| `@openturn/plugin-chat` | mixed | First-party in-room chat plugin: server-side moderation hooks plus a React widget under `./react`. |
 
 ## Quick recipes
 
@@ -60,9 +68,10 @@ Packages fan out from `@openturn/core`. A short dependency map (arrows point "de
                  ├── @openturn/client ────┘
                  ├── @openturn/bot ───────┘
                  ├── @openturn/replay
+                 ├── @openturn/lobby (depends on core/protocol/server/client/bot)
+                 ├── @openturn/plugins ── @openturn/plugin-chat
                  └── @openturn/inspector ── @openturn/inspector-ui
-                                           └── @openturn/react ── @openturn/bridge
-                                                                 └── @openturn/manifest
+                                           └── @openturn/react ── @openturn/bridge ── @openturn/manifest
                                                                  └── @openturn/deploy ── @openturn/cli
 ```
 

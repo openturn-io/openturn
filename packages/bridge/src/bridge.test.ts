@@ -85,34 +85,70 @@ describe("bridge host <-> game", () => {
     return { host, game };
   }
 
-  it("host receives capability-expose and can invoke it", async () => {
-    const { host, game } = setup(async () => ({
-      token: "fresh",
-      tokenExpiresAt: 1_700_001_000,
-    }));
+  it("host.emitShellControl delivers before/after events to the game", async () => {
+    const { host, game } = setup(async () => null);
 
-    const changed = new Promise<void>((resolve) => {
-      const off = host.on("capability-changed", (e) => {
-        if (e.capabilities.some((c) => c.preset === "new-game")) {
-          off();
-          resolve();
-        }
-      });
+    const events: Array<{ control: string; phase: string }> = [];
+    game.shellControl.on((e) => {
+      events.push({ control: e.control, phase: e.phase });
     });
 
-    const runner = vi.fn(async () => ({ ok: true }));
-    game.capabilities.enable("new-game", runner);
-
-    await changed;
-    expect(host.capabilities.map((c) => c.preset)).toContain("new-game");
-
-    const result = await host.invoke("new-game", { silent: true }, 1_000);
-    expect(runner).toHaveBeenCalledWith({ silent: true });
-    expect(result).toEqual({ ok: true });
-
-    game.capabilities.disable("new-game");
+    // Wait for ready so activeSource is set on the host before broadcasting.
     await new Promise((r) => setTimeout(r, 10));
-    expect(host.capabilities.map((c) => c.preset)).not.toContain("new-game");
+
+    host.emitShellControl("reset", "before");
+    host.emitShellControl("reset", "after");
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(events).toEqual([
+      { control: "reset", phase: "before" },
+      { control: "reset", phase: "after" },
+    ]);
+
+    host.dispose();
+    game.dispose();
+  });
+
+  it("host.emitShellControl buffers events fired before the iframe is ready", async () => {
+    // Build a host with no game yet, then emit a shell-control event. Once the
+    // game appears and its `ready` reaches the host, the buffered event must
+    // replay so the game's listener observes it. This protects against the
+    // user clicking a toolbar button while the iframe is still loading.
+    window.location.hash = `#${encodeBridgeFragment(sample)}`;
+    const fakeIframe = {
+      postMessage: (m: unknown) => hostToGameBus?.(m as BridgeMessage),
+    } as unknown as Window;
+    const host = createBridgeHost({
+      bundleURL: "https://game.example/bundle/index.html",
+      init: sample,
+      refreshToken: async () => null,
+      expectOrigin: "https://game.example",
+    });
+    gameToHostBus = (m) => dispatchToWindow(m, fakeIframe);
+    hostToGameBus = (m) =>
+      window.dispatchEvent(
+        new MessageEvent("message", { data: m, origin: "https://shell.example" }),
+      );
+
+    // Fire an event before any game exists. activeSource is still null.
+    host.emitShellControl("reset", "before");
+
+    // Now create the game; its `ready` post sets activeSource on the host and
+    // schedules a microtask to drain the buffer.
+    const gameParent = {
+      postMessage: (m: unknown) => gameToHostBus?.(m as BridgeMessage),
+    };
+    const game = createGameBridge({ parent: gameParent });
+
+    const events: Array<{ control: string; phase: string }> = [];
+    game.shellControl.on((e) =>
+      events.push({ control: e.control, phase: e.phase }),
+    );
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    // The buffered "before" event was replayed after activeSource was set.
+    expect(events).toEqual([{ control: "reset", phase: "before" }]);
 
     host.dispose();
     game.dispose();

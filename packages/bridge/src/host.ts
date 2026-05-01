@@ -1,12 +1,11 @@
 import {
   BridgeMessageSchema,
-  JsonValueSchema,
   encodeBridgeFragment,
-  type BridgeCapabilityDescriptor,
-  type BridgeCapabilityPreset,
   type BridgeInit,
   type BridgeMessage,
   type BridgeScope,
+  type BridgeShellControl,
+  type BridgeShellControlPhase,
 } from "./schema";
 
 export interface BridgeHostTokenContext {
@@ -42,9 +41,6 @@ export interface BridgeHostOptions {
 
 export type BridgeHostEventMap = {
   ready: { origin: string };
-  "capability-changed": {
-    capabilities: readonly BridgeCapabilityDescriptor[];
-  };
   "lifecycle-close": Record<string, never>;
   "match-state-changed": { matchActive: boolean };
 };
@@ -64,20 +60,19 @@ export type BatchStreamListener<TInitial = unknown, TBatch = unknown> = (
 export interface BridgeHost {
   /** iframe src with the fragment baked in. Assign to `<iframe src>`. */
   readonly src: string;
-  /** Live snapshot of capabilities the game has exposed. */
-  readonly capabilities: readonly BridgeCapabilityDescriptor[];
   /**
    * Whether a match is currently active (past lobby, not ended). Defaults to
    * `init.scope === "game"` until the game sends its first match-state update.
    * Subscribe via `on("match-state-changed", ...)` to react to changes.
    */
   readonly matchActive: boolean;
-  /** Invoke a capability on the game. Rejects on timeout / unknown preset. */
-  invoke(
-    preset: BridgeCapabilityPreset,
-    args?: unknown,
-    timeoutMs?: number,
-  ): Promise<unknown>;
+  /**
+   * Notify the game that a shell control was activated. Fired once with
+   * `phase: "before"` immediately before the host runs the corresponding
+   * adapter method, and once with `phase: "after"` afterwards. Games can
+   * subscribe via the bridge event channel to react (e.g. clear local UI).
+   */
+  emitShellControl(control: BridgeShellControl, phase: BridgeShellControlPhase): void;
   /** Tell the game to pause / resume / close. */
   pause(): void;
   resume(): void;
@@ -103,8 +98,8 @@ export interface BridgeHost {
 
 /**
  * Create a shell-side bridge host. Call this once per iframe. Returns a handle
- * with a stable `src` for the iframe and an API for capability invocation and
- * lifecycle control. Internally listens on `window.message` for the bridge
+ * with a stable `src` for the iframe and an API for shell-control notification
+ * and lifecycle control. Internally listens on `window.message` for the bridge
  * protocol defined in `./schema`.
  */
 export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
@@ -115,20 +110,10 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
   const src = buildIframeSrc(options.bundleURL, options.init);
   const expectOrigin = options.expectOrigin ?? originOf(options.bundleURL);
 
-  const capabilities = new Map<BridgeCapabilityPreset, BridgeCapabilityDescriptor>();
-  const pendingInvocations = new Map<
-    string,
-    {
-      resolve: (value: unknown) => void;
-      reject: (reason: Error) => void;
-      timeout: ReturnType<typeof setTimeout>;
-    }
-  >();
   const listeners: {
     [K in BridgeHostEvent]: Set<(e: BridgeHostEventMap[K]) => void>;
   } = {
     ready: new Set(),
-    "capability-changed": new Set(),
     "lifecycle-close": new Set(),
     "match-state-changed": new Set(),
   };
@@ -150,10 +135,6 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
     }
   }
 
-  function capabilitiesSnapshot(): readonly BridgeCapabilityDescriptor[] {
-    return Array.from(capabilities.values());
-  }
-
   function postToSource(
     source: MessageEventSource | null,
     origin: string,
@@ -169,8 +150,35 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
   let activeSource: MessageEventSource | null = null;
   let activeOrigin: string | null = null;
 
+  // Buffer host→game messages sent before the game's first inbound message
+  // arrives. Without this, an early `emitShellControl("foo", "before")` (a click
+  // on a toolbar button before the iframe has finished loading) would be
+  // silently dropped because `activeSource` is still null. We replay buffered
+  // messages once the source is known.
+  const pendingMessages: BridgeMessage[] = [];
+
   function broadcastToGame(message: BridgeMessage) {
+    if (activeSource === null) {
+      pendingMessages.push(message);
+      return;
+    }
     postToSource(activeSource, activeOrigin ?? "*", message);
+  }
+
+  function flushPendingMessages() {
+    if (activeSource === null) return;
+    if (pendingMessages.length === 0) return;
+    // Defer via microtask so the flush mirrors real postMessage semantics
+    // (asynchronous delivery). This also lets the iframe's user code register
+    // its `shellControl.on(...)` listener after `createGameBridge()` returns
+    // before the buffered messages are delivered.
+    const buffered = pendingMessages.splice(0, pendingMessages.length);
+    queueMicrotask(() => {
+      if (activeSource === null) return;
+      for (const message of buffered) {
+        postToSource(activeSource, activeOrigin ?? "*", message);
+      }
+    });
   }
 
   async function onMessage(event: MessageEvent) {
@@ -183,8 +191,10 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
 
     // Track the most recent iframe window so we can push lifecycle messages.
     if (event.source !== null) {
+      const wasNull = activeSource === null;
       activeSource = event.source;
       activeOrigin = event.origin;
+      if (wasNull) flushPendingMessages();
     }
 
     switch (message.kind) {
@@ -208,27 +218,6 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
             ? {}
             : { tokenExpiresAt: result.tokenExpiresAt }),
         });
-        return;
-      }
-      case "openturn:bridge:capability-expose":
-        capabilities.set(message.descriptor.preset, message.descriptor);
-        emit("capability-changed", { capabilities: capabilitiesSnapshot() });
-        return;
-      case "openturn:bridge:capability-retire":
-        if (capabilities.delete(message.preset)) {
-          emit("capability-changed", { capabilities: capabilitiesSnapshot() });
-        }
-        return;
-      case "openturn:bridge:capability-result": {
-        const pending = pendingInvocations.get(message.requestID);
-        if (pending === undefined) return;
-        pendingInvocations.delete(message.requestID);
-        clearTimeout(pending.timeout);
-        if (message.ok) {
-          pending.resolve(message.value);
-        } else {
-          pending.reject(new Error(message.error ?? "capability_failed"));
-        }
         return;
       }
       case "openturn:bridge:lifecycle-close":
@@ -271,42 +260,18 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
 
   window.addEventListener("message", onMessage);
 
-  function invoke(
-    preset: BridgeCapabilityPreset,
-    args?: unknown,
-    timeoutMs = 10_000,
-  ): Promise<unknown> {
-    if (activeSource === null) {
-      return Promise.reject(new Error("bridge_not_ready"));
-    }
-    if (!capabilities.has(preset)) {
-      return Promise.reject(new Error(`unknown_capability:${preset}`));
-    }
-    const requestID = generateRequestID();
-    return new Promise<unknown>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        pendingInvocations.delete(requestID);
-        reject(new Error("capability_timeout"));
-      }, timeoutMs);
-      pendingInvocations.set(requestID, { resolve, reject, timeout });
-      broadcastToGame({
-        kind: "openturn:bridge:capability-invoke",
-        requestID,
-        preset,
-        ...(args === undefined ? {} : { args: JsonValueSchema.parse(args) }),
-      });
-    });
-  }
-
   return {
     src,
-    get capabilities() {
-      return capabilitiesSnapshot();
-    },
     get matchActive() {
       return matchActive;
     },
-    invoke,
+    emitShellControl(control, phase) {
+      broadcastToGame({
+        kind: "openturn:bridge:shell-control",
+        control,
+        phase,
+      });
+    },
     pause() {
       broadcastToGame({ kind: "openturn:bridge:lifecycle-pause" });
     },
@@ -358,17 +323,12 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
     },
     dispose() {
       window.removeEventListener("message", onMessage);
-      for (const pending of pendingInvocations.values()) {
-        clearTimeout(pending.timeout);
-        pending.reject(new Error("bridge_disposed"));
-      }
-      pendingInvocations.clear();
       for (const pending of pendingStreamRequests.values()) {
         clearTimeout(pending.timeout);
       }
       pendingStreamRequests.clear();
       batchListeners.clear();
-      capabilities.clear();
+      pendingMessages.length = 0;
     },
   };
 }
