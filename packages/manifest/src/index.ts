@@ -10,14 +10,23 @@ export interface OpenturnInspectorPolicy {
   allowedRoles?: readonly OpenturnInspectorRole[] | undefined;
 }
 
-export type OpenturnShellControl =
-  | "save"
-  | "load"
-  | "reset"
-  | "returnToLobby"
-  | "copyInvite"
-  | "publicRooms"
-  | "visibilityToggle";
+// Canonical list of shell controls a host may render. Listed once here so the
+// manifest schema, the bridge registry (`@openturn/bridge` SHELL_CONTROLS), and
+// the runtime gating helper all derive from the same source. To add a new
+// control: add the id here, then map it to its adapter method / label /
+// placement in `@openturn/bridge`'s `SHELL_CONTROLS`. The `satisfies` constraint
+// in bridge fails to compile until the registry is updated.
+export const SHELL_CONTROL_IDS = [
+  "save",
+  "load",
+  "reset",
+  "returnToLobby",
+  "copyInvite",
+  "publicRooms",
+  "visibilityToggle",
+] as const;
+
+export type OpenturnShellControl = (typeof SHELL_CONTROL_IDS)[number];
 
 // Per-control opt-in/out for shell chrome. `undefined` means "default-on when
 // the host adapter supports it" — the shell only renders a control when both
@@ -86,16 +95,15 @@ export const OpenturnInspectorPolicySchema = z.object({
     .optional(),
 });
 
+// Schema shape derived from SHELL_CONTROL_IDS so the zod object stays in lock-
+// step with the canonical id list. Adding an id above automatically extends
+// the schema; removing one drops it.
 export const OpenturnShellControlsConfigSchema = z
-  .object({
-    save: z.boolean().optional(),
-    load: z.boolean().optional(),
-    reset: z.boolean().optional(),
-    returnToLobby: z.boolean().optional(),
-    copyInvite: z.boolean().optional(),
-    publicRooms: z.boolean().optional(),
-    visibilityToggle: z.boolean().optional(),
-  })
+  .object(
+    Object.fromEntries(
+      SHELL_CONTROL_IDS.map((id) => [id, z.boolean().optional()]),
+    ) as { [K in OpenturnShellControl]: z.ZodOptional<z.ZodBoolean> },
+  )
   .strict();
 
 export const OpenturnAvailableBotSchema = z.object({
@@ -188,13 +196,10 @@ function normalizeShellControls(
   input: z.infer<typeof OpenturnShellControlsConfigSchema>,
 ): OpenturnShellControlsConfig {
   const out: { -readonly [K in OpenturnShellControl]?: boolean } = {};
-  if (input.save !== undefined) out.save = input.save;
-  if (input.load !== undefined) out.load = input.load;
-  if (input.reset !== undefined) out.reset = input.reset;
-  if (input.returnToLobby !== undefined) out.returnToLobby = input.returnToLobby;
-  if (input.copyInvite !== undefined) out.copyInvite = input.copyInvite;
-  if (input.publicRooms !== undefined) out.publicRooms = input.publicRooms;
-  if (input.visibilityToggle !== undefined) out.visibilityToggle = input.visibilityToggle;
+  for (const id of SHELL_CONTROL_IDS) {
+    const value = input[id];
+    if (value !== undefined) out[id] = value;
+  }
   return out;
 }
 

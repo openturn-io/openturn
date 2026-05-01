@@ -60,4 +60,11 @@ export {
   type SaveRoomResult,
   type SetVisibilityResult,
 } from "./play-types";
+export {
+  isShellControlEnabled,
+  SHELL_CONTROLS,
+  SHELL_CONTROL_IDS,
+  type OpenturnShellControl,
+  type ShellControlMeta,
+} from "./shell-controls";
 export type { HostedConnectionDescriptor } from "@openturn/client";

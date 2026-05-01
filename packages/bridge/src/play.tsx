@@ -23,19 +23,12 @@ import {
   type PresenceSnapshot,
   type PublicRoomSummary,
 } from "./play-types";
-import type { BridgeShellControl } from "./schema";
-
-// Resolve a single shell control: render only when the adapter actually
-// supports it AND the manifest hasn't explicitly disabled it. `undefined` in
-// the manifest means "default-on if the adapter supports it".
-function shellControlEnabled(
-  adapter: PlayShellAdapter,
-  key: keyof NonNullable<PlayShellAdapter["meta"]["shellControls"]>,
-  hasAdapterMethod: boolean,
-): boolean {
-  if (!hasAdapterMethod) return false;
-  return adapter.meta.shellControls?.[key] !== false;
-}
+import {
+  isShellControlEnabled,
+  SHELL_CONTROLS,
+  type OpenturnShellControl,
+  type ShellControlMeta,
+} from "./shell-controls";
 
 const PUBLIC_ROOMS_REFRESH_MS = 15_000;
 const PRESENCE_POLL_MS = 3_000;
@@ -232,7 +225,7 @@ function LobbyView({
             </div>
           </div>
 
-          {shellControlEnabled(adapter, "load", adapter.createRoomFromSave !== undefined) ? (
+          {isShellControlEnabled(adapter, "load") ? (
             <div className={cardClass(classes, saveError !== null)}>
               <h2 className="text-base font-semibold">Start from save</h2>
               <p className="mt-1 text-sm text-slate-500">
@@ -260,7 +253,7 @@ function LobbyView({
         </div>
       </div>
 
-      {shellControlEnabled(adapter, "publicRooms", adapter.listPublicRooms !== undefined) ? (
+      {isShellControlEnabled(adapter, "publicRooms") ? (
         <PublicRoomsSection
           listPublicRooms={adapter.listPublicRooms!}
           disabled={isLoading}
@@ -550,12 +543,12 @@ function RoomView({
     }
   }
 
-  function notifyControl(control: BridgeShellControl, phase: "before" | "after") {
+  function notifyControl(control: OpenturnShellControl, phase: "before" | "after") {
     host?.emitShellControl(control, phase);
   }
 
   async function copyInvite() {
-    notifyControl("copy-invite", "before");
+    notifyControl("copyInvite", "before");
     try {
       if (
         typeof navigator === "undefined" ||
@@ -568,7 +561,7 @@ function RoomView({
     } catch {
       toast.error("Could Not Copy Invite URL");
     } finally {
-      notifyControl("copy-invite", "after");
+      notifyControl("copyInvite", "after");
     }
   }
 
@@ -652,7 +645,7 @@ function RoomView({
   async function handleReturnToLobby() {
     if (adapter.returnToLobby === undefined) return;
     if (!window.confirm("End the match and return to lobby?")) return;
-    notifyControl("return-to-lobby", "before");
+    notifyControl("returnToLobby", "before");
     try {
       const result = await adapter.returnToLobby(snapshot.roomID);
       if (result.status !== "ok") {
@@ -662,36 +655,37 @@ function RoomView({
       const rejoin = await adapter.joinRoom(snapshot.roomID);
       if (rejoin.status === "ok") onSnapshotChange(rejoin.snapshot);
     } finally {
-      notifyControl("return-to-lobby", "after");
+      notifyControl("returnToLobby", "after");
     }
   }
-
-  const visibilityToggleEnabled = shellControlEnabled(
-    adapter,
-    "visibilityToggle",
-    adapter.setVisibility !== undefined,
-  );
-  const copyInviteEnabled = shellControlEnabled(adapter, "copyInvite", true);
 
   const toolbarLead = (
     <RoomToolbarLead
       snapshot={snapshot}
       visibility={visibility}
       visibilityPending={visibilityPending}
-      onChangeVisibility={visibilityToggleEnabled ? changeVisibility : undefined}
-      onCopyInvite={copyInviteEnabled ? copyInvite : undefined}
+      onChangeVisibility={
+        isShellControlEnabled(adapter, "visibilityToggle") ? changeVisibility : undefined
+      }
+      onCopyInvite={isShellControlEnabled(adapter, "copyInvite") ? copyInvite : undefined}
       presence={presence}
     />
   );
+
+  // Map of click handlers keyed by control id; the trail renderer iterates
+  // SHELL_CONTROLS in declaration order so toolbar layout follows the registry.
+  const trailHandlers: Partial<Record<OpenturnShellControl, () => void>> = {
+    save: handleSave,
+    load: handleLoad,
+    reset: handleReset,
+    returnToLobby: handleReturnToLobby,
+  };
 
   const toolbarTrail = (
     <RoomToolbarActions
       adapter={adapter}
       matchActive={matchActive}
-      onSave={handleSave}
-      onLoad={handleLoad}
-      onReset={handleReset}
-      onReturnToLobby={handleReturnToLobby}
+      handlers={trailHandlers}
     />
   );
 
@@ -760,36 +754,32 @@ function RoomToolbarLead({
 function RoomToolbarActions({
   adapter,
   matchActive,
-  onSave,
-  onLoad,
-  onReset,
-  onReturnToLobby,
+  handlers,
 }: {
   adapter: PlayShellAdapter;
   matchActive: boolean;
-  onSave: () => void;
-  onLoad: () => void;
-  onReset: () => void;
-  onReturnToLobby: () => void;
+  handlers: Partial<Record<OpenturnShellControl, () => void>>;
 }) {
+  // Iterate SHELL_CONTROLS in declaration order and render every trail control
+  // whose adapter method is present and whose manifest opt-out isn't set. This
+  // keeps the toolbar driven by the registry — adding a new trail control means
+  // adding it to SHELL_CONTROLS and providing a handler in `handlers`.
   return (
     <>
-      {shellControlEnabled(adapter, "save", adapter.saveCurrentRoom !== undefined) ? (
-        <ToolbarButton onClick={onSave}>Save</ToolbarButton>
-      ) : null}
-      {shellControlEnabled(adapter, "load", adapter.createRoomFromSave !== undefined) ? (
-        <ToolbarButton onClick={onLoad}>Load</ToolbarButton>
-      ) : null}
-      {shellControlEnabled(adapter, "reset", adapter.resetRoom !== undefined) ? (
-        <ToolbarButton onClick={onReset} disabled={!matchActive}>
-          Reset
-        </ToolbarButton>
-      ) : null}
-      {shellControlEnabled(adapter, "returnToLobby", adapter.returnToLobby !== undefined) ? (
-        <ToolbarButton onClick={onReturnToLobby} disabled={!matchActive}>
-          Back to lobby
-        </ToolbarButton>
-      ) : null}
+      {(Object.keys(SHELL_CONTROLS) as OpenturnShellControl[])
+        .filter((id) => SHELL_CONTROLS[id].placement === "toolbar-trail")
+        .map((id) => {
+          const meta: ShellControlMeta = SHELL_CONTROLS[id];
+          const handler = handlers[id];
+          if (handler === undefined) return null;
+          if (!isShellControlEnabled(adapter, id)) return null;
+          const disabled = meta.requiresMatchActive === true && !matchActive;
+          return (
+            <ToolbarButton key={id} onClick={handler} disabled={disabled}>
+              {meta.label}
+            </ToolbarButton>
+          );
+        })}
     </>
   );
 }

@@ -36,14 +36,14 @@ export type BridgeInit = z.infer<typeof BridgeInitSchema>;
 // adapter calls so games can react (e.g. clear local UI on reset). Games never
 // register these — the manifest decides which controls render and the adapter
 // implements them on the host side.
-export const BridgeShellControl = z.enum([
-  "save",
-  "load",
-  "reset",
-  "return-to-lobby",
-  "copy-invite",
-]);
-export type BridgeShellControl = z.infer<typeof BridgeShellControl>;
+//
+// The control id is intentionally an open string on the wire: the registry of
+// known ids lives in `@openturn/manifest`'s SHELL_CONTROL_IDS and is mirrored
+// to runtime metadata by `@openturn/bridge`'s SHELL_CONTROLS. Keeping the wire
+// type loose means hosts can add new control ids without bumping the bridge
+// schema or breaking older games (which simply ignore unknown ids).
+export const BridgeShellControl = z.string();
+export type BridgeShellControl = string;
 
 export const BridgeShellControlPhase = z.enum(["before", "after"]);
 export type BridgeShellControlPhase = z.infer<typeof BridgeShellControlPhase>;
