@@ -1,5 +1,33 @@
 # @openturn/react
 
+## 0.4.0
+
+### Minor Changes
+
+- f9930a5: Remove the runtime capability registration system. Games no longer advertise utilities to the shell via `bridge.capabilities.enable(...)` or the `useCapability(...)` hook — both APIs and all four built-in presets (`share-invite`, `current-turn`, `new-game`, `rules`) are gone. The shell's capability header buttons, overflow menu, and ⌘K command palette are removed; games that want in-frame UI render it inside their own iframe.
+
+  **Breaking**:
+
+  - Removed exports: `BRIDGE_CAPABILITY_PRESETS`, `BridgeCapabilityPreset`, `BridgeCapabilityDescriptor`, `BridgeCapabilityDescriptorSchema`, `BridgeCapabilityPresetMeta`, `BridgeCapabilitySlot`, `CapabilityRegistry`, `CapabilityRunner`, `CapabilityEnableOptions` (`@openturn/bridge`); `useCapability` (`@openturn/react`).
+  - Removed APIs: `bridge.capabilities`, `BridgeHost.invoke`, `BridgeHost.capabilities`, the `"capability-changed"` host event, and the four `openturn:bridge:capability-*` postMessage kinds.
+  - Removed UI: `CapabilityHeaderButtons`, `CapabilityOverflowMenu`, `CapabilityCommandPalette`, `useBridgeCapabilities`, and `disableCommandPalette` on `<PlayShell>`.
+
+  Games that previously used `useCapability("current-turn", ...)` should render the indicator inside their own UI; `share-invite` is now a host-implemented control (see the new shell-controls registry).
+
+### Patch Changes
+
+- Updated dependencies [cd571a5]
+- Updated dependencies [f9930a5]
+- Updated dependencies [f9930a5]
+  - @openturn/lobby@0.4.0
+  - @openturn/bridge@0.4.0
+  - @openturn/bot@0.4.0
+  - @openturn/client@0.4.0
+  - @openturn/core@0.4.0
+  - @openturn/inspector@0.4.0
+  - @openturn/protocol@0.4.0
+  - @openturn/replay@0.4.0
+
 ## 0.3.0
 
 ### Patch Changes

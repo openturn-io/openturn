@@ -1,6 +1,6 @@
 {
   "name": "@openturn/bridge",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "openturn": {
     "runtime": "browser"
@@ -24,9 +24,9 @@
     "postpack": "node ../../scripts/postpack.mjs"
   },
   "dependencies": {
-    "@openturn/client": "^0.3.0",
-    "@openturn/json": "^0.3.0",
-    "@openturn/manifest": "^0.3.0",
+    "@openturn/client": "^0.4.0",
+    "@openturn/json": "^0.4.0",
+    "@openturn/manifest": "^0.4.0",
     "sonner": "^2.0.7",
     "zod": "^4.1.12"
   },
