@@ -102,7 +102,7 @@ function Page() {
 }
 ```
 
-Use `room.bridge.capabilities.enable(preset, handler, options?)` — or the `useCapability(...)` hook below — to advertise preset shell utilities (`new-game`, `share-invite`, `current-turn`, `rules`).
+Subscribe to host-driven shell controls via `room.bridge.shellControl.on(({ control, phase }) => …)` — see [`BridgeShellControlChannel`](/reference/bridge#bridgeshellcontrolchannel--bridgeshellcontrolevent). Shell controls (save, load, reset, return-to-lobby, …) are declared in the deployment manifest and implemented by the host adapter; games subscribe to react (e.g. clear local UI on `reset`) but do not register them.
 
 ### `useInspector(options?)`
 
@@ -290,30 +290,6 @@ Advanced: inject a synthetic `HostedMatchState` for testing or inspector preview
 
 Build a frozen state object from a snapshot and history. Used by the hosted replay inspector.
 
-## Shell capabilities
-
-### `useCapability(bridge, preset, handler, options?)`
-
-Enable a single shell capability preset for the lifetime of the component. Handles the effect, disposer, and null-bridge case.
-
-```tsx
-useCapability(room.bridge, "new-game", () => match.reset());
-
-// Pass `false` / null for `preset` to conditionally skip registration —
-// useful when the capability depends on data that may be unavailable.
-useCapability(
-  room.bridge,
-  inviteURL !== null && "share-invite",
-  async () => { await navigator.clipboard?.writeText(inviteURL ?? ""); },
-);
-
-// `options` accepts `{ disabled?, badge? }` — the same `CapabilityEnableOptions`
-// from `@openturn/bridge`.
-useCapability(room.bridge, "current-turn", () => {}, { badge: turnNumber });
-```
-
-`preset` is one of the `BridgeCapabilityPreset` values — `"share-invite"`, `"current-turn"`, `"new-game"`, `"rules"`. The handler closure is always up-to-date via an internal ref, so no `useCallback` is needed. The effect re-registers only when the bridge, preset, or option fields (`badge`, `disabled`) change.
-
 ## Dispatch errors
 
 ### `formatDispatchError(outcome, options?)`
@@ -399,7 +375,7 @@ interface HostedRoomState<TGame> {
 
 ### `Lobby`
 
-Opinionated lobby UI component. Pass it `room.lobby`. Hosted shells should expose invite sharing through the bridge capability menu instead of the embedded lobby UI.
+Opinionated lobby UI component. Pass it `room.lobby`. Hosted shells render their own invite-share affordance via the [`copyInvite` shell control](/reference/manifest#shell-control-ids) rather than embedding it inside the lobby UI.
 
 ### `useLobbyChannel(options)`
 

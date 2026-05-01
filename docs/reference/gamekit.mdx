@@ -86,14 +86,24 @@ Use the typed `match` (with `match.players`) so helpers like `roster.record(matc
 
 | Helper | Compiles to |
 | --- | --- |
-| `move.stay(patch?)` | same phase, `turn: "preserve"` |
-| `move.endTurn(patch?)` | same phase, `turn: "increment"` |
-| `move.goto(phase, patch?, { endTurn? })` | target phase |
-| `move.win(winnerID, patch?)` | terminal `__gamekit_won` with `result.winner` |
-| `move.draw(patch?)` | terminal `__gamekit_drawn` with `result.draw` |
+| `move.stay(patch?, options?)` | same phase, `turn: "preserve"` |
+| `move.endTurn(patch?, options?)` | same phase, `turn: "increment"` |
+| `move.goto(phase, patch?, options?)` | target phase (`options.endTurn?: boolean`) |
+| `move.finish(result, patch?, options?)` | terminal `__gamekit_finished` with the given `result` |
 | `move.invalid(reason?, details?)` | `rejectTransition(reason, details)` |
 
-Every non-invalid outcome accepts `{ enqueue: [...] }` for internal follow-up events.
+`move.finish` accepts any JSON-compatible record as the result; the conventional shapes — `{ winner: playerID }` and `{ draw: true }` — are typed for ergonomics, but multi-winner, ranked, scored, and co-op results are all valid:
+
+```ts
+move.finish({ winner: player.id })
+move.finish({ draw: true })
+move.finish({ scores: { "0": 12, "1": 7 } })
+```
+
+Every non-invalid outcome accepts a final options bag with `{ enqueue?, profile? }`:
+
+- `enqueue?: readonly QueuedEvent[]` — internal follow-up events to chain.
+- `profile?: ProfileCommitDeltaMap` — per-player profile deltas applied atomically with the move. Build them with `profile.bind(...).inc/push/set/remove` or `profile.update(...)`. Apply failures reject the move. See [persistent profiles](/concepts/persistent-profiles).
 
 ## Permissions
 
@@ -204,12 +214,12 @@ export const game = defineGame({
   profile,
   setup: () => ({ over: false }),
   moves: ({ move }) => ({
-    tap: move({ run: ({ player, move: m }) => m.win(player.id) }),
+    tap: move({ run: ({ player, move: m }) => m.finish({ winner: player.id }) }),
   }),
 });
 ```
 
-Gamekit's result is `{ draw?: true; winner?: PlayerID }`, so `commit` reads `result.winner`. Also re-exported: `applyProfileDelta`, `computeProfileCommit`, `validateProfileDelta`, and the delta grammar types. See [concepts: persistent profiles](/concepts/persistent-profiles) and [how-to: persist player state](/how-to/persist-player-state).
+Gamekit's result is `Record<string, JsonValue | undefined> & { draw?: true; winner?: PlayerID }`, so `commit` can read `result.winner` (or any custom field your game records). Also re-exported: `applyProfileDelta`, `computeProfileCommit`, `validateProfileDelta`, and the delta grammar types. See [concepts: persistent profiles](/concepts/persistent-profiles) and [how-to: persist player state](/how-to/persist-player-state).
 
 ## Core escape hatch
 
@@ -236,8 +246,8 @@ defineGame({
 - **`GamekitMoveDefinition<...>`** — a single move.
 - **`GamekitPhaseConfig<...>`** — a phase's configuration (activePlayers, label).
 - **`GamekitState<TState>`** — the internal wrapper type (`TState & { __gamekit: GamekitInternalState }`). You rarely touch it; it is exposed for typing views in edge cases.
-- **`GamekitInternalState`** — the private compartment gamekit owns inside a game's `G`. Exposed at runtime as `G.__gamekit`. Carries the optional `result: GamekitResultState | null` plus arbitrary JSON-shaped slots gamekit reserves for future internal state. You should not write to it directly; use `move.win` / `move.draw` / `move.invalid` instead.
-- **`GamekitResultState`** — `{ draw?: true; winner?: PlayerID }`.
+- **`GamekitInternalState`** — the private compartment gamekit owns inside a game's `G`. Exposed at runtime as `G.__gamekit`. Carries the optional `result: GamekitResultState | null` plus arbitrary JSON-shaped slots gamekit reserves for future internal state. You should not write to it directly; use `move.finish` / `move.invalid` instead.
+- **`GamekitResultState`** — `Record<string, JsonValue | undefined> & { draw?: true; winner?: PlayerID }`.
 - **`GamekitViews<...>`** — the shape of the optional `views` field on a `GamekitDefinition`.
 - **`MovePlayerContext`, `MovePermissionContext`, `MoveRunContext`** — the contexts passed to `canPlayer` and `run`.
 - **`MoveOutcome`, `MoveHelpers`** — outcome and helper types.

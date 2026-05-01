@@ -30,6 +30,7 @@ interface OpenturnDeploymentManifest {
   build: { at: string; openturn: Record<string, string> };
   multiplayer?: OpenturnMultiplayerManifest;
   inspector?: OpenturnInspectorPolicy;
+  shellControls?: OpenturnShellControlsConfig;
 }
 ```
 
@@ -53,11 +54,58 @@ interface OpenturnMultiplayerManifest {
   gameKey: string;
   deploymentVersion: string;
   schemaVersion: string;
+  /** Maximal player roster. `players.length === maxPlayers` is invariant. */
   players: readonly string[];
-  minPlayers?: number;
+  minPlayers: number;
+  maxPlayers: number;
   serverBundleDigest: string;
+  /** Catalog of bots the deployed game offers in its lobby (read by the cloud DO to populate the per-seat bot picker). */
+  availableBots?: readonly OpenturnAvailableBot[];
 }
 ```
+
+The lobby seats up to `targetCapacity` players in `[minPlayers, maxPlayers]`; the running game sees `match.players` filtered to the seated subset.
+
+### `OpenturnAvailableBot`
+
+```ts
+interface OpenturnAvailableBot {
+  botID: string;
+  label: string;
+  description?: string;
+  difficulty?: "easy" | "medium" | "hard" | "expert";
+}
+```
+
+Populated at build time from `game.bots` (see [`@openturn/lobby`](/reference/lobby)). The cloud Durable Object reads this list to build `LobbyEnv.knownBots`, which the lobby UI uses to render the per-seat bot picker.
+
+### `OpenturnShellControlsConfig`
+
+```ts
+type OpenturnShellControlsConfig = {
+  readonly [K in OpenturnShellControl]?: boolean;
+};
+```
+
+Per-control opt-in/out for shell chrome. `undefined` means "default-on when the host adapter supports it"; set `false` to hide a control even if the adapter implements it. Used by the bridge's [`isShellControlEnabled`](/reference/bridge#isshellcontrolenabledadapter-id).
+
+### Shell control IDs
+
+```ts
+const SHELL_CONTROL_IDS = [
+  "save",
+  "load",
+  "reset",
+  "returnToLobby",
+  "copyInvite",
+  "publicRooms",
+  "visibilityToggle",
+] as const;
+
+type OpenturnShellControl = (typeof SHELL_CONTROL_IDS)[number];
+```
+
+Canonical list of shell controls a host may render. Listed once here so the manifest schema, the bridge registry ([`SHELL_CONTROLS` in `@openturn/bridge`](/reference/bridge#shell-controls)), and the runtime gating helper all derive from the same source. To add a new control: add the id here, then map it to its adapter method / label / placement in `@openturn/bridge`'s `SHELL_CONTROLS`. The `satisfies` constraint in bridge fails to compile until the registry is updated.
 
 ### Scalar type aliases
 
@@ -90,7 +138,7 @@ try {
 }
 ```
 
-### `OpenturnDeploymentManifestSchema` / `OpenturnMultiplayerManifestSchema`
+### `OpenturnDeploymentManifestSchema` / `OpenturnMultiplayerManifestSchema` / `OpenturnShellControlsConfigSchema` / `OpenturnAvailableBotSchema` / `OpenturnInspectorPolicySchema`
 
 The underlying Zod schemas if you need `.safeParse` or composition — for example, wrapping the manifest inside your own control-plane response envelope:
 
