@@ -1,6 +1,7 @@
 ---
 "@openturn/bridge": minor
 "@openturn/cli": minor
+"@openturn/deploy": minor
 "@openturn/manifest": minor
 ---
 
@@ -21,3 +22,6 @@ Introduce an adapter-driven shell controls system. The play shell renders Save /
 
 **`@openturn/cli`**
 - The dev play shell threads `manifest.shellControls` from `manifest.json` through to the dev adapter, so `openturn play` honours per-control opt-outs. The opt-out config flows through `LocalDevServerOptions` using `OpenturnShellControlsConfig` from `@openturn/manifest` (re-exported via `@openturn/deploy`).
+
+**`@openturn/deploy`**
+- Re-export `OpenturnShellControlsConfig` so local tooling can type shell-control opt-out config through the deployment package.
