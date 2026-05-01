@@ -1,3 +1,5 @@
+import type { OpenturnShellControlsConfig } from "@openturn/manifest";
+
 import type { BridgeInit, BridgeScope } from "./schema";
 import type { BridgeHostTokenContext, BridgeHostTokenRefreshResult } from "./host";
 
@@ -90,6 +92,12 @@ export interface PlayShellAdapterMeta {
   bundleURL: string;
   multiplayer: PlayMultiplayerConfig | null;
   user?: { name: string } | null;
+  /**
+   * Per-control opt-in/out from the deployment manifest. `undefined` keys
+   * default to "render whenever the adapter implements the corresponding
+   * method"; `false` hides the control even if the adapter supports it.
+   */
+  shellControls?: OpenturnShellControlsConfig | undefined;
 }
 
 // Discriminated-status adapter interface. Each shell (CLI dev + cloud)

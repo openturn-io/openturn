@@ -14,8 +14,6 @@ import {
   createGameBridge,
   BridgeUnavailableError,
   readBridgeFragmentFromLocation,
-  type BridgeCapabilityPreset,
-  type CapabilityEnableOptions,
   type GameBridge,
   type CreateGameBridgeOptions,
 } from "@openturn/bridge";
@@ -358,8 +356,8 @@ export interface OpenturnBindings<TGame extends AnyGame> {
    * In `runtime: "multiplayer"` bindings rendered under a host shell (`openturn
    * dev` locally, openturn-cloud in production), returns the full
    * `HostedRoomState` — phase, lobby, game, bridge handle, invite URL. Throws
-   * outside a hosted provider. Use this when the app needs lobby UI or
-   * capability registration through `room.bridge.capabilities.enable(...)`.
+   * outside a hosted provider. Use this when the app needs lobby UI or to
+   * subscribe to shell-control activations via `room.bridge.shellControl.on(...)`.
    */
   useRoom: () => HostedRoomState<TGame>;
 }
@@ -1417,9 +1415,9 @@ export interface HostedRoomState<
   lobby: LobbyView | null;
   game: HostedMatchState<TGame, TPublicState, TResult> | null;
   // The underlying GameBridge handle, when the iframe has been wired via a
-  // `#openturn-bridge=...` fragment. Use `bridge.capabilities.enable(preset, ...)`
-  // to advertise game utilities (new-game, share-invite, ...) to the shell.
-  // `null` in local-dev or when the bridge init is missing.
+  // `#openturn-bridge=...` fragment. Use `bridge.shellControl.on(...)` to react
+  // to shell-control activations (save / load / reset / return-to-lobby /
+  // copy-invite). `null` in local-dev or when the bridge init is missing.
   bridge: GameBridge | null;
 }
 
@@ -1616,68 +1614,6 @@ function positiveIntegerOr(value: number, fallback: number): number {
 function clampInteger(value: number, min: number, max: number): number {
   if (max < min) return min;
   return Math.max(min, Math.min(max, Math.floor(value)));
-}
-
-// ---------------------------------------------------------------------------
-// Shell-capability helpers
-//
-// Games advertise utilities to the hosting shell through the bridge's
-// capability registry. The plumbing (effect + disposer + null-bridge guard) is
-// identical in every game, so bundle it here.
-// ---------------------------------------------------------------------------
-
-/**
- * Enable a preset shell capability for the lifetime of the component. Handles
- * the effect, the disposer, and the null-bridge case. Pass `false` or `null`
- * for `preset` to conditionally skip registration.
- *
- * ```tsx
- * useCapability(room.bridge, "new-game", () => match.reset());
- * useCapability(room.bridge, "current-turn", async () => ({ turn }), { badge: turn });
- * ```
- *
- * Capabilities run inside the iframe, invoked by the shell over postMessage.
- * That round-trip drops the user-gesture, so APIs that require one
- * (`navigator.share`, `navigator.clipboard.writeText`, etc.) won't work from a
- * capability handler — keep those on the host shell side.
- *
- * The handler is always up-to-date via an internal ref, so you do not need to
- * memoize it. The effect re-registers when the preset, badge, or disabled flag
- * changes (or when the bridge changes).
- */
-export function useCapability(
-  bridge: GameBridge | null,
-  preset: BridgeCapabilityPreset | false | null | undefined,
-  handler: (args: unknown) => unknown | Promise<unknown>,
-  options?: CapabilityEnableOptions,
-): void {
-  const handlerRef = useRef(handler);
-  useEffect(() => {
-    handlerRef.current = handler;
-  }, [handler]);
-
-  const optionsKey =
-    preset === false || preset == null
-      ? null
-      : JSON.stringify({
-          badge: options?.badge ?? null,
-          disabled: options?.disabled ?? null,
-        });
-
-  useEffect(() => {
-    if (bridge === null || preset === false || preset == null) return;
-    const off = bridge.capabilities.enable(
-      preset,
-      (args) => handlerRef.current(args),
-      options,
-    );
-    return () => {
-      try { off(); } catch {}
-    };
-    // optionsKey is the stable serialization; options itself would trigger a
-    // re-register on every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bridge, preset, optionsKey]);
 }
 
 // ---------------------------------------------------------------------------

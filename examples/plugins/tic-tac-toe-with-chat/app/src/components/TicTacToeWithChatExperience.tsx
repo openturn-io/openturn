@@ -7,7 +7,6 @@ import {
   createOpenturnBindings,
   formatDispatchError,
   Lobby,
-  useCapability,
 } from "@openturn/react";
 import {
   BoardGrid,
@@ -38,7 +37,6 @@ export function TicTacToeWithChatExperience() {
 
 function TicTacToeWithChatRoom() {
   const room = useRoom();
-  useShellCapabilities(room);
 
   return (
     <main className="h-full min-h-0 w-full overflow-hidden">
@@ -81,18 +79,6 @@ function CenteredMessage({ children }: { children: ReactNode }) {
 }
 
 type RoomState = ReturnType<typeof useRoom>;
-
-function useShellCapabilities(room: RoomState) {
-  const { bridge, game } = room;
-  const turn = game?.snapshot?.position.turn ?? null;
-
-  useCapability(
-    bridge,
-    "current-turn",
-    async () => ({ turn }),
-    turn === null ? undefined : { badge: turn },
-  );
-}
 
 function TicTacToeHostedGame({
   match: hostedMatch,

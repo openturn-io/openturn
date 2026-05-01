@@ -23,6 +23,19 @@ import {
   type PresenceSnapshot,
   type PublicRoomSummary,
 } from "./play-types";
+import type { BridgeShellControl } from "./schema";
+
+// Resolve a single shell control: render only when the adapter actually
+// supports it AND the manifest hasn't explicitly disabled it. `undefined` in
+// the manifest means "default-on if the adapter supports it".
+function shellControlEnabled(
+  adapter: PlayShellAdapter,
+  key: keyof NonNullable<PlayShellAdapter["meta"]["shellControls"]>,
+  hasAdapterMethod: boolean,
+): boolean {
+  if (!hasAdapterMethod) return false;
+  return adapter.meta.shellControls?.[key] !== false;
+}
 
 const PUBLIC_ROOMS_REFRESH_MS = 15_000;
 const PRESENCE_POLL_MS = 3_000;
@@ -219,7 +232,7 @@ function LobbyView({
             </div>
           </div>
 
-          {adapter.createRoomFromSave !== undefined ? (
+          {shellControlEnabled(adapter, "load", adapter.createRoomFromSave !== undefined) ? (
             <div className={cardClass(classes, saveError !== null)}>
               <h2 className="text-base font-semibold">Start from save</h2>
               <p className="mt-1 text-sm text-slate-500">
@@ -247,9 +260,9 @@ function LobbyView({
         </div>
       </div>
 
-      {adapter.listPublicRooms !== undefined ? (
+      {shellControlEnabled(adapter, "publicRooms", adapter.listPublicRooms !== undefined) ? (
         <PublicRoomsSection
-          listPublicRooms={adapter.listPublicRooms}
+          listPublicRooms={adapter.listPublicRooms!}
           disabled={isLoading}
           onJoin={(roomID) => void performAction("join", () => adapter.joinRoom(roomID))}
           classes={classes}
@@ -537,7 +550,12 @@ function RoomView({
     }
   }
 
+  function notifyControl(control: BridgeShellControl, phase: "before" | "after") {
+    host?.emitShellControl(control, phase);
+  }
+
   async function copyInvite() {
+    notifyControl("copy-invite", "before");
     try {
       if (
         typeof navigator === "undefined" ||
@@ -549,11 +567,14 @@ function RoomView({
       toast.success("Copied Invite URL Successfully");
     } catch {
       toast.error("Could Not Copy Invite URL");
+    } finally {
+      notifyControl("copy-invite", "after");
     }
   }
 
   async function handleSave() {
     if (adapter.saveCurrentRoom === undefined) return;
+    notifyControl("save", "before");
     try {
       const result = await adapter.saveCurrentRoom(snapshot.roomID);
       if (result.status !== "ok") {
@@ -577,6 +598,8 @@ function RoomView({
       }
     } catch (caught) {
       window.alert(`Save failed: ${caught instanceof Error ? caught.message : String(caught)}`);
+    } finally {
+      notifyControl("save", "after");
     }
   }
 
@@ -589,6 +612,7 @@ function RoomView({
     input.addEventListener("change", async () => {
       const file = input.files?.[0];
       if (file === undefined) return;
+      notifyControl("load", "before");
       try {
         const buffer = await file.arrayBuffer();
         const result = await createRoomFromSave(new Uint8Array(buffer));
@@ -600,6 +624,8 @@ function RoomView({
         onSnapshotChange(result.snapshot);
       } catch (caught) {
         window.alert(`Load failed: ${caught instanceof Error ? caught.message : String(caught)}`);
+      } finally {
+        notifyControl("load", "after");
       }
     });
     input.click();
@@ -608,35 +634,52 @@ function RoomView({
   async function handleReset() {
     if (adapter.resetRoom === undefined) return;
     if (!window.confirm("Reset match to start? Players will be reconnected.")) return;
-    const result = await adapter.resetRoom(snapshot.roomID);
-    if (result.status !== "ok") {
-      window.alert(`Reset failed: ${result.reason ?? result.status}`);
-      return;
+    notifyControl("reset", "before");
+    try {
+      const result = await adapter.resetRoom(snapshot.roomID);
+      if (result.status !== "ok") {
+        window.alert(`Reset failed: ${result.reason ?? result.status}`);
+        return;
+      }
+      // Re-join refreshes the snapshot (fresh token, fresh bridge init).
+      const rejoin = await adapter.joinRoom(snapshot.roomID);
+      if (rejoin.status === "ok") onSnapshotChange(rejoin.snapshot);
+    } finally {
+      notifyControl("reset", "after");
     }
-    // Re-join refreshes the snapshot (fresh token, fresh bridge init).
-    const rejoin = await adapter.joinRoom(snapshot.roomID);
-    if (rejoin.status === "ok") onSnapshotChange(rejoin.snapshot);
   }
 
   async function handleReturnToLobby() {
     if (adapter.returnToLobby === undefined) return;
     if (!window.confirm("End the match and return to lobby?")) return;
-    const result = await adapter.returnToLobby(snapshot.roomID);
-    if (result.status !== "ok") {
-      window.alert(`Return-to-lobby failed: ${result.reason ?? result.status}`);
-      return;
+    notifyControl("return-to-lobby", "before");
+    try {
+      const result = await adapter.returnToLobby(snapshot.roomID);
+      if (result.status !== "ok") {
+        window.alert(`Return-to-lobby failed: ${result.reason ?? result.status}`);
+        return;
+      }
+      const rejoin = await adapter.joinRoom(snapshot.roomID);
+      if (rejoin.status === "ok") onSnapshotChange(rejoin.snapshot);
+    } finally {
+      notifyControl("return-to-lobby", "after");
     }
-    const rejoin = await adapter.joinRoom(snapshot.roomID);
-    if (rejoin.status === "ok") onSnapshotChange(rejoin.snapshot);
   }
+
+  const visibilityToggleEnabled = shellControlEnabled(
+    adapter,
+    "visibilityToggle",
+    adapter.setVisibility !== undefined,
+  );
+  const copyInviteEnabled = shellControlEnabled(adapter, "copyInvite", true);
 
   const toolbarLead = (
     <RoomToolbarLead
       snapshot={snapshot}
       visibility={visibility}
       visibilityPending={visibilityPending}
-      onChangeVisibility={adapter.setVisibility !== undefined ? changeVisibility : undefined}
-      onCopyInvite={copyInvite}
+      onChangeVisibility={visibilityToggleEnabled ? changeVisibility : undefined}
+      onCopyInvite={copyInviteEnabled ? copyInvite : undefined}
       presence={presence}
     />
   );
@@ -681,7 +724,7 @@ function RoomToolbarLead({
   visibility: PlayRoomVisibility | undefined;
   visibilityPending: boolean;
   onChangeVisibility: ((next: PlayRoomVisibility) => void) | undefined;
-  onCopyInvite: () => void;
+  onCopyInvite: (() => void) | undefined;
   presence: PresenceSnapshot | null;
 }) {
   return (
@@ -700,13 +743,15 @@ function RoomToolbarLead({
           {visibility === "public" ? "Public" : "Private"}
         </span>
       ) : null}
-      <button
-        type="button"
-        className="ml-1 rounded-md border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50"
-        onClick={onCopyInvite}
-      >
-        Copy Invite
-      </button>
+      {onCopyInvite !== undefined ? (
+        <button
+          type="button"
+          className="ml-1 rounded-md border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50"
+          onClick={onCopyInvite}
+        >
+          Copy Invite
+        </button>
+      ) : null}
       {presence !== null ? <PlayerSeats presence={presence} /> : null}
     </>
   );
@@ -729,18 +774,18 @@ function RoomToolbarActions({
 }) {
   return (
     <>
-      {adapter.saveCurrentRoom !== undefined ? (
+      {shellControlEnabled(adapter, "save", adapter.saveCurrentRoom !== undefined) ? (
         <ToolbarButton onClick={onSave}>Save</ToolbarButton>
       ) : null}
-      {adapter.createRoomFromSave !== undefined ? (
+      {shellControlEnabled(adapter, "load", adapter.createRoomFromSave !== undefined) ? (
         <ToolbarButton onClick={onLoad}>Load</ToolbarButton>
       ) : null}
-      {adapter.resetRoom !== undefined ? (
+      {shellControlEnabled(adapter, "reset", adapter.resetRoom !== undefined) ? (
         <ToolbarButton onClick={onReset} disabled={!matchActive}>
           Reset
         </ToolbarButton>
       ) : null}
-      {adapter.returnToLobby !== undefined ? (
+      {shellControlEnabled(adapter, "returnToLobby", adapter.returnToLobby !== undefined) ? (
         <ToolbarButton onClick={onReturnToLobby} disabled={!matchActive}>
           Back to lobby
         </ToolbarButton>

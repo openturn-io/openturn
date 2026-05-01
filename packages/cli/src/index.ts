@@ -15,7 +15,6 @@ import { bearer } from "better-auth/plugins/bearer";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
-import { BRIDGE_CAPABILITY_PRESETS } from "@openturn/bridge";
 import {
   buildOpenturnProject,
   loadOpenturnProjectDeployment,
@@ -195,6 +194,19 @@ const authVerificationsTable = sqliteTable("verification", {
   value: text("value").notNull(),
 });
 
+// Mirrors the manifest's shellControls (a small set of optional booleans). We
+// duplicate the shape locally rather than depend on @openturn/manifest's exact
+// type so the CLI remains a leaf consumer.
+export interface DevShellControlsConfig {
+  readonly save?: boolean | undefined;
+  readonly load?: boolean | undefined;
+  readonly reset?: boolean | undefined;
+  readonly returnToLobby?: boolean | undefined;
+  readonly copyInvite?: boolean | undefined;
+  readonly publicRooms?: boolean | undefined;
+  readonly visibilityToggle?: boolean | undefined;
+}
+
 export interface LocalDevServerOptions {
   /**
    * "dev" (default) sets up better-auth with anonymous sign-in for local
@@ -210,6 +222,7 @@ export interface LocalDevServerOptions {
     bundleURL: string;
     deploymentID: string;
     gameName: string;
+    shellControls?: DevShellControlsConfig;
   };
   port?: number;
   secret?: string;
@@ -222,6 +235,7 @@ export interface LocalDevServerOptions {
      * `/play/{deploymentID}` instead of the inspector play shell. Default true.
      */
     shell?: boolean;
+    shellControls?: DevShellControlsConfig;
   };
 }
 
@@ -477,6 +491,9 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
             deploymentID: options.iframe.deploymentID,
             gameName: options.iframe.gameName,
             multiplayer: extractMultiplayerConfig(currentDeployment),
+            ...(options.iframe.shellControls === undefined
+              ? {}
+              : { shellControls: options.iframe.shellControls }),
           }));
         }
 
@@ -503,6 +520,9 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
               deploymentID: staticOptions.deploymentID,
               gameName: staticOptions.gameName,
               multiplayer: extractMultiplayerConfig(currentDeployment),
+              ...(staticOptions.shellControls === undefined
+                ? {}
+                : { shellControls: staticOptions.shellControls }),
             }));
           }
           return fileResponse(resolve(staticOptions.outDir, "index.html"), "text/html; charset=utf-8");
@@ -1993,6 +2013,9 @@ async function runLocalStart(args: readonly string[]) {
       gameName: manifest.gameName,
       outDir,
       shell,
+      ...(manifest.shellControls === undefined
+        ? {}
+        : { shellControls: manifest.shellControls }),
     },
   };
   if (dbPath !== null) {
@@ -2835,6 +2858,7 @@ function createLocalPlayShell(input: {
   deploymentID: string;
   gameName: string;
   multiplayer?: DevPlayMultiplayerConfig;
+  shellControls?: DevShellControlsConfig;
 }): string {
   const title = escapeHTML(input.gameName);
   const bundleBase = input.bundleURL ?? "/__openturn/bundle/";
@@ -2843,6 +2867,7 @@ function createLocalPlayShell(input: {
     gameName: input.gameName,
     bundleBase,
     multiplayer: input.multiplayer,
+    ...(input.shellControls === undefined ? {} : { shellControls: input.shellControls }),
   };
   return `<!doctype html>
 <html lang="en">

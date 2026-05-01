@@ -10,6 +10,23 @@ export interface OpenturnInspectorPolicy {
   allowedRoles?: readonly OpenturnInspectorRole[] | undefined;
 }
 
+export type OpenturnShellControl =
+  | "save"
+  | "load"
+  | "reset"
+  | "returnToLobby"
+  | "copyInvite"
+  | "publicRooms"
+  | "visibilityToggle";
+
+// Per-control opt-in/out for shell chrome. `undefined` means "default-on when
+// the host adapter supports it" — the shell only renders a control when both
+// the adapter implements it and the manifest hasn't explicitly disabled it.
+// Set `false` to hide a control even if the adapter could provide it.
+export type OpenturnShellControlsConfig = {
+  readonly [K in OpenturnShellControl]?: boolean | undefined;
+};
+
 export interface OpenturnMultiplayerManifest {
   gameKey: string;
   deploymentVersion: string;
@@ -57,6 +74,7 @@ export interface OpenturnDeploymentManifest {
   };
   multiplayer?: OpenturnMultiplayerManifest | undefined;
   inspector?: OpenturnInspectorPolicy | undefined;
+  shellControls?: OpenturnShellControlsConfig | undefined;
 }
 
 export const OpenturnInspectorPolicySchema = z.object({
@@ -67,6 +85,18 @@ export const OpenturnInspectorPolicySchema = z.object({
     .max(3)
     .optional(),
 });
+
+export const OpenturnShellControlsConfigSchema = z
+  .object({
+    save: z.boolean().optional(),
+    load: z.boolean().optional(),
+    reset: z.boolean().optional(),
+    returnToLobby: z.boolean().optional(),
+    copyInvite: z.boolean().optional(),
+    publicRooms: z.boolean().optional(),
+    visibilityToggle: z.boolean().optional(),
+  })
+  .strict();
 
 export const OpenturnAvailableBotSchema = z.object({
   botID: z.string().min(1).max(64),
@@ -113,6 +143,7 @@ export const OpenturnDeploymentManifestSchema = z
     }),
     multiplayer: OpenturnMultiplayerManifestSchema.optional(),
     inspector: OpenturnInspectorPolicySchema.optional(),
+    shellControls: OpenturnShellControlsConfigSchema.optional(),
   })
   .refine(
     (manifest) =>
@@ -122,12 +153,16 @@ export const OpenturnDeploymentManifestSchema = z
 
 export function parseDeploymentManifest(value: unknown): OpenturnDeploymentManifest {
   const parsed = OpenturnDeploymentManifestSchema.parse(value);
-  const { multiplayer, deploymentID, projectID, inspector, ...rest } = parsed;
+  const { multiplayer, deploymentID, projectID, inspector, shellControls, ...rest } =
+    parsed;
   const base: OpenturnDeploymentManifest = {
     ...rest,
     ...(deploymentID === undefined ? {} : { deploymentID }),
     ...(projectID === undefined ? {} : { projectID }),
     ...(inspector === undefined ? {} : { inspector: normalizeInspector(inspector) }),
+    ...(shellControls === undefined
+      ? {}
+      : { shellControls: normalizeShellControls(shellControls) }),
   };
   if (multiplayer === undefined) return base;
   const { availableBots, ...multiplayerRest } = multiplayer;
@@ -147,6 +182,20 @@ function normalizeAvailableBot(input: z.infer<typeof OpenturnAvailableBotSchema>
     ...(input.description === undefined ? {} : { description: input.description }),
     ...(input.difficulty === undefined ? {} : { difficulty: input.difficulty }),
   };
+}
+
+function normalizeShellControls(
+  input: z.infer<typeof OpenturnShellControlsConfigSchema>,
+): OpenturnShellControlsConfig {
+  const out: { -readonly [K in OpenturnShellControl]?: boolean } = {};
+  if (input.save !== undefined) out.save = input.save;
+  if (input.load !== undefined) out.load = input.load;
+  if (input.reset !== undefined) out.reset = input.reset;
+  if (input.returnToLobby !== undefined) out.returnToLobby = input.returnToLobby;
+  if (input.copyInvite !== undefined) out.copyInvite = input.copyInvite;
+  if (input.publicRooms !== undefined) out.publicRooms = input.publicRooms;
+  if (input.visibilityToggle !== undefined) out.visibilityToggle = input.visibilityToggle;
+  return out;
 }
 
 function normalizeInspector(

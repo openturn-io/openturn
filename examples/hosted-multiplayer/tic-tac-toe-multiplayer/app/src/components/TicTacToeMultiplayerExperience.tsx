@@ -8,7 +8,6 @@ import {
   createOpenturnBindings,
   formatDispatchError,
   Lobby,
-  useCapability,
   type HostedRoomState,
 } from "@openturn/react";
 import {
@@ -40,7 +39,6 @@ export function TicTacToeMultiplayerExperience() {
 
 function TicTacToeMultiplayerRoom() {
   const room = useRoom();
-  useShellCapabilities(room);
 
   return (
     <main className="h-full min-h-0 w-full overflow-hidden">
@@ -75,29 +73,6 @@ function CenteredMessage({ children }: { children: ReactNode }) {
       </p>
     </section>
   );
-}
-
-// Advertises game utilities to the hosting shell (openturn-cloud) over the
-// bridge's capability channel. The `useCapability` hook handles the effect +
-// disposer + null-bridge plumbing, so the component only describes what to
-// expose and the handler closure. The shell renders these as buttons / menu
-// items / command-palette entries based on `scope`; the handler runs inside
-// this iframe when the user invokes one.
-function useShellCapabilities(room: HostedRoomState<typeof ticTacToe>) {
-  const { bridge, game } = room;
-  const turn = game?.snapshot?.position.turn ?? null;
-
-  useCapability(
-    bridge,
-    "current-turn",
-    async () => ({ turn }),
-    turn === null ? undefined : { badge: turn },
-  );
-
-  // Note: invite-sharing is the shell's job, not the iframe's — the shell holds
-  // the inviteURL and runs in the user's gesture context. Routing share/copy
-  // through a capability would postMessage into the iframe and lose the user
-  // gesture, breaking navigator.share() and clipboard.writeText().
 }
 
 function TicTacToeHostedGame({

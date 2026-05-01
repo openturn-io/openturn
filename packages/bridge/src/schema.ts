@@ -32,47 +32,27 @@ export const BridgeInitSchema = z.object({
 });
 export type BridgeInit = z.infer<typeof BridgeInitSchema>;
 
-export const BridgeCapabilityPreset = z.enum([
-  "share-invite",
-  "current-turn",
-  "new-game",
-  "rules",
+// Adapter-driven shell controls. The host fires `shell-control` around its
+// adapter calls so games can react (e.g. clear local UI on reset). Games never
+// register these — the manifest decides which controls render and the adapter
+// implements them on the host side.
+export const BridgeShellControl = z.enum([
+  "save",
+  "load",
+  "reset",
+  "return-to-lobby",
+  "copy-invite",
 ]);
-export type BridgeCapabilityPreset = z.infer<typeof BridgeCapabilityPreset>;
+export type BridgeShellControl = z.infer<typeof BridgeShellControl>;
 
-export type BridgeCapabilitySlot = "header" | "menu";
-
-export interface BridgeCapabilityPresetMeta {
-  label: string;
-  icon: string;
-  slot: BridgeCapabilitySlot;
-}
-
-export const BRIDGE_CAPABILITY_PRESETS: Record<
-  BridgeCapabilityPreset,
-  BridgeCapabilityPresetMeta
-> = {
-  "share-invite": { label: "Copy Invite", icon: "share", slot: "menu" },
-  "current-turn": { label: "Current turn", icon: "info", slot: "header" },
-  "new-game": { label: "New game", icon: "refresh", slot: "header" },
-  "rules": { label: "Rules", icon: "book", slot: "menu" },
-};
-
-export const BridgeCapabilityDescriptorSchema = z.object({
-  preset: BridgeCapabilityPreset,
-  disabled: z.boolean().optional(),
-  badge: z.union([z.string(), z.number()]).optional(),
-});
-export type BridgeCapabilityDescriptor = z.infer<
-  typeof BridgeCapabilityDescriptorSchema
->;
+export const BridgeShellControlPhase = z.enum(["before", "after"]);
+export type BridgeShellControlPhase = z.infer<typeof BridgeShellControlPhase>;
 
 // Re-export the canonical `JsonValue` from `@openturn/json` so the bridge wire
 // shape uses the same type the rest of the workspace targets. The canonical
 // type uses `readonly` arrays — bridge messages are immutable in transit, and
 // having a single source of truth removes the ad-hoc variance bridge that
 // previously forced `as unknown as` casts at workspace boundaries.
-import { JsonValueSchema } from "@openturn/json";
 export { JsonValueSchema, type JsonValue } from "@openturn/json";
 
 export const BridgeMessageSchema = z.discriminatedUnion("kind", [
@@ -91,25 +71,9 @@ export const BridgeMessageSchema = z.discriminatedUnion("kind", [
     tokenExpiresAt: z.number().optional(),
   }),
   z.object({
-    kind: z.literal("openturn:bridge:capability-expose"),
-    descriptor: BridgeCapabilityDescriptorSchema,
-  }),
-  z.object({
-    kind: z.literal("openturn:bridge:capability-retire"),
-    preset: BridgeCapabilityPreset,
-  }),
-  z.object({
-    kind: z.literal("openturn:bridge:capability-invoke"),
-    requestID: z.string(),
-    preset: BridgeCapabilityPreset,
-    args: JsonValueSchema.optional(),
-  }),
-  z.object({
-    kind: z.literal("openturn:bridge:capability-result"),
-    requestID: z.string(),
-    ok: z.boolean(),
-    value: JsonValueSchema.optional(),
-    error: z.string().optional(),
+    kind: z.literal("openturn:bridge:shell-control"),
+    control: BridgeShellControl,
+    phase: BridgeShellControlPhase,
   }),
   z.object({ kind: z.literal("openturn:bridge:lifecycle-pause") }),
   z.object({ kind: z.literal("openturn:bridge:lifecycle-resume") }),
