@@ -15,6 +15,11 @@ interface DevAdapterInput {
   deploymentID: string;
   gameName: string;
   bundleBase: string;
+  multiplayer?: {
+    minPlayers: number;
+    maxPlayers: number;
+    players: readonly string[];
+  };
 }
 
 interface DevLobbySnapshotJSON {
@@ -34,7 +39,7 @@ interface DevLobbySnapshotJSON {
 }
 
 export function createDevPlayShellAdapter(input: DevAdapterInput): PlayShellAdapter {
-  const { deploymentID, gameName, bundleBase } = input;
+  const { deploymentID, gameName, bundleBase, multiplayer } = input;
 
   async function sessionToken(): Promise<string | null> {
     const stored = sessionStorage.getItem(SESSION_KEY);
@@ -79,7 +84,7 @@ export function createDevPlayShellAdapter(input: DevAdapterInput): PlayShellAdap
   }
 
   function snapshotFromDev(snap: DevLobbySnapshotJSON): PlayRoomSnapshot {
-    return {
+    const out: PlayRoomSnapshot = {
       roomID: snap.roomID,
       userID: snap.userID,
       userName: snap.userName,
@@ -97,6 +102,10 @@ export function createDevPlayShellAdapter(input: DevAdapterInput): PlayShellAdap
       isHost: snap.isHost,
       hostUserID: snap.hostUserID,
     };
+    if (snap.playerID !== undefined) {
+      out.playerID = snap.playerID;
+    }
+    return out;
   }
 
   return {
@@ -104,15 +113,12 @@ export function createDevPlayShellAdapter(input: DevAdapterInput): PlayShellAdap
       deploymentID,
       gameName,
       bundleURL: bundleBase,
-      // Filled in lazily — the dev shell currently runs without static
-      // multiplayer config metadata; the snapshot returned by the server
-      // carries min/max/players already, so the lobby UI works without it.
       multiplayer: {
         gameKey: deploymentID,
         deploymentVersion: "dev",
-        minPlayers: 0,
-        maxPlayers: 0,
-        players: [],
+        minPlayers: multiplayer?.minPlayers ?? 0,
+        maxPlayers: multiplayer?.maxPlayers ?? 0,
+        players: multiplayer?.players ?? [],
       },
     },
     inviteURL(roomID) {

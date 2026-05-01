@@ -5,10 +5,17 @@ import { PlayPage } from "@openturn/bridge/play";
 
 import { createDevPlayShellAdapter } from "./dev-adapter";
 
+interface PlayBootMultiplayer {
+  minPlayers: number;
+  maxPlayers: number;
+  players: readonly string[];
+}
+
 interface PlayBootConfig {
   deploymentID: string;
   gameName: string;
   bundleBase: string;
+  multiplayer?: PlayBootMultiplayer;
 }
 
 function readBootConfig(): PlayBootConfig {
@@ -24,11 +31,15 @@ function readBootConfig(): PlayBootConfig {
   ) {
     throw new Error("__OPENTURN_PLAY__ boot config malformed");
   }
-  return {
+  const out: PlayBootConfig = {
     deploymentID: config.deploymentID,
     gameName: config.gameName,
     bundleBase: config.bundleBase,
   };
+  if (config.multiplayer !== undefined) {
+    out.multiplayer = config.multiplayer;
+  }
+  return out;
 }
 
 function renderError(message: string) {

@@ -470,6 +470,7 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
             bundleURL: options.iframe.bundleURL,
             deploymentID: options.iframe.deploymentID,
             gameName: options.iframe.gameName,
+            multiplayer: extractMultiplayerConfig(currentDeployment),
           }));
         }
 
@@ -489,6 +490,7 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
             return htmlResponse(createLocalPlayShell({
               deploymentID: staticOptions.deploymentID,
               gameName: staticOptions.gameName,
+              multiplayer: extractMultiplayerConfig(currentDeployment),
             }));
           }
           return fileResponse(resolve(staticOptions.outDir, "index.html"), "text/html; charset=utf-8");
@@ -2753,10 +2755,24 @@ function htmlResponse(html: string): Response {
 // packages/cli/src/play-app/main.tsx and is bundled on demand by
 // `getDevPlayAppBundle()`. Tailwind utility classes are JIT-compiled in the
 // browser via the `@tailwindcss/browser` script — fine for a dev tool.
+interface DevPlayMultiplayerConfig {
+  minPlayers: number;
+  maxPlayers: number;
+  players: readonly string[];
+}
+
+function extractMultiplayerConfig(deployment: GameDeployment): DevPlayMultiplayerConfig {
+  const players = [...((deployment.game as { playerIDs?: readonly string[] }).playerIDs ?? [])];
+  const maxPlayers = players.length;
+  const minPlayers = (deployment.game as { minPlayers?: number }).minPlayers ?? maxPlayers;
+  return { players, minPlayers, maxPlayers };
+}
+
 function createLocalPlayShell(input: {
   bundleURL?: string;
   deploymentID: string;
   gameName: string;
+  multiplayer?: DevPlayMultiplayerConfig;
 }): string {
   const title = escapeHTML(input.gameName);
   const bundleBase = input.bundleURL ?? "/__openturn/bundle";
@@ -2764,6 +2780,7 @@ function createLocalPlayShell(input: {
     deploymentID: input.deploymentID,
     gameName: input.gameName,
     bundleBase,
+    multiplayer: input.multiplayer,
   };
   return `<!doctype html>
 <html lang="en">

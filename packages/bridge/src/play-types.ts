@@ -23,6 +23,8 @@ export interface PlayRoomSnapshot {
   isHost: boolean;
   hostUserID: string;
   visibility?: PlayRoomVisibility;
+  /** Set when scope === "game"; identifies which seat this client owns. */
+  playerID?: string;
 }
 
 export type PlayRoomVisibility = "private" | "public";
@@ -174,7 +176,7 @@ export function extractRoomID(value: string): string | null {
 }
 
 export function snapshotToBridgeInit(snapshot: PlayRoomSnapshot): BridgeInit {
-  return {
+  const init: BridgeInit = {
     roomID: snapshot.roomID,
     userID: snapshot.userID,
     userName: snapshot.userName,
@@ -189,4 +191,8 @@ export function snapshotToBridgeInit(snapshot: PlayRoomSnapshot): BridgeInit {
     isHost: snapshot.isHost,
     hostUserID: snapshot.hostUserID,
   };
+  if (snapshot.playerID !== undefined) {
+    init.playerID = snapshot.playerID;
+  }
+  return init;
 }
