@@ -9,6 +9,7 @@
     "build": "bun run ../../../../packages/cli/src/index.ts build .",
     "deploy": "bun run ../../../../packages/cli/src/index.ts deploy . --project tic-tac-toe-multiplayer --name \"Tic Tac Toe Multiplayer\"",
     "dev": "bun run ../../../../packages/cli/src/index.ts dev . --port 3005",
+    "start": "bun run ../../../../packages/cli/src/index.ts start . --port 3005",
     "typecheck": "bun x tsc -p tsconfig.json --pretty false"
   },
   "dependencies": {

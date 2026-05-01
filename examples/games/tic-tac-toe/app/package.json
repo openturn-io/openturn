@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "bun run ../../../../packages/cli/src/index.ts dev . --port 3000",
     "build": "bun run ../../../../packages/cli/src/index.ts build .",
+    "start": "bun run ../../../../packages/cli/src/index.ts start . --port 3000",
     "deploy": "bun run ../../../../packages/cli/src/index.ts deploy . --project tic-tac-toe --name \"Tic Tac Toe\"",
     "test": "vitest run --config vitest.config.ts",
     "typecheck": "bun x tsc -p tsconfig.json --pretty false"

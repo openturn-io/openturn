@@ -919,6 +919,77 @@ describe("@openturn/cli", () => {
     expect(deployment.gameKey).toBe("tic-tac-toe-multiplayer");
     expect(deployment.deploymentVersion).toBe("dev");
   });
+
+  test("static.shell: false serves the raw built index.html instead of the play shell", async () => {
+    const databasePath = createDatabasePath("static-shell-false");
+    const staticDir = createStaticDir("static-shell-false");
+    writeFileSync(join(staticDir, "index.html"), "<!doctype html><title>Raw Built</title>");
+    const server = await startLocalDevServer({
+      dbPath: databasePath,
+      deployment,
+      port: createTestPort(),
+      static: {
+        deploymentID: "dep_42",
+        gameName: "Local Game",
+        outDir: staticDir,
+        shell: false,
+      },
+    });
+
+    try {
+      const rootResponse = await fetch(`${server.url}/`);
+      expect(rootResponse.status).toBe(200);
+      const rootBody = await rootResponse.text();
+      expect(rootBody).toContain("Raw Built");
+      expect(rootBody).not.toContain("id=\"actions\"");
+
+      const playResponse = await fetch(`${server.url}/play/dep_42`);
+      expect(playResponse.status).toBe(200);
+      expect(await playResponse.text()).toContain("Raw Built");
+    } finally {
+      await server.stop();
+      removeDatabaseFile(databasePath);
+      rmSync(staticDir, { force: true, recursive: true });
+    }
+  });
+
+  test("auth: \"none\" disables better-auth and accepts ?userID= for room creation", async () => {
+    const databasePath = createDatabasePath("auth-none");
+    const server = await startLocalDevServer({
+      auth: "none",
+      dbPath: databasePath,
+      deployment,
+      port: createTestPort(),
+    });
+
+    try {
+      const authResponse = await fetch(`${server.url}/api/auth/session`);
+      expect(authResponse.status).toBe(404);
+
+      const anonResponse = await fetch(`${server.url}/api/dev/session/anonymous`, {
+        method: "POST",
+      });
+      expect(anonResponse.status).toBe(404);
+
+      const healthResponse = await fetch(`${server.url}/api/dev/health`);
+      expect(healthResponse.status).toBe(200);
+
+      const meResponse = await fetch(`${server.url}/api/dev/me?userID=alice`);
+      expect(meResponse.status).toBe(200);
+      const meBody = (await meResponse.json()) as { user: { id: string; name: string } };
+      expect(meBody.user.id).toBe("alice");
+
+      const roomResponse = await fetch(`${server.url}/api/dev/rooms?userID=alice`, {
+        method: "POST",
+      });
+      expect(roomResponse.status).toBe(201);
+      const roomBody = (await roomResponse.json()) as { roomID: string };
+      expect(roomBody.roomID.startsWith("room_")).toBe(true);
+    } finally {
+      await server.stop();
+      removeDatabaseFile(databasePath);
+    }
+  });
 });
 
 describe("startDevBundleServer", () => {
