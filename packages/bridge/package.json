@@ -10,6 +10,8 @@
     "./game": "./src/game.ts",
     "./host": "./src/host.ts",
     "./shell": "./src/shell.tsx",
+    "./play": "./src/play.tsx",
+    "./play-types": "./src/play-types.ts",
     "./dev-transport": "./src/dev-transport.ts"
   },
   "types": "./src/index.ts",
@@ -72,6 +74,14 @@
       "./shell": {
         "types": "./dist/shell.d.ts",
         "import": "./dist/shell.js"
+      },
+      "./play": {
+        "types": "./dist/play.d.ts",
+        "import": "./dist/play.js"
+      },
+      "./play-types": {
+        "types": "./dist/play-types.d.ts",
+        "import": "./dist/play-types.js"
       },
       "./dev-transport": {
         "types": "./dist/dev-transport.d.ts",

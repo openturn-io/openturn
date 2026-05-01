@@ -60,6 +60,7 @@ import type { ProtocolClientMessage } from "@openturn/protocol";
 
 import { DEFAULT_CLOUD_URL, cloudDeploy, loadCloudAuth, saveCloudAuth } from "./cloud";
 import { startDevBundleServer, type DevBundleServer } from "./dev-bundle";
+import { getDevPlayAppBundle } from "./play-app-bundle";
 import { loadTelemetryConfig } from "./telemetry/config";
 import { createTelemetryClient, ensureTelemetryConfig } from "./telemetry/client";
 import { printFirstRunNotice } from "./telemetry/notice";
@@ -471,6 +472,13 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
             gameName: options.iframe.gameName,
           }));
         }
+
+        if (request.method === "GET" && requestURL.pathname === "/__openturn/play-app/main.js") {
+          const bundle = await getDevPlayAppBundle();
+          return new Response(bundle.js, {
+            headers: { "Content-Type": bundle.jsContentType, "Cache-Control": "no-store" },
+          });
+        }
       }
 
       if (options.static !== undefined) {
@@ -492,6 +500,13 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
             return jsonResponse({ error: "invalid_asset_path" }, 400);
           }
           return fileResponse(resolve(staticOptions.outDir, relativePath), contentTypeForPath(relativePath));
+        }
+
+        if (request.method === "GET" && requestURL.pathname === "/__openturn/play-app/main.js") {
+          const bundle = await getDevPlayAppBundle();
+          return new Response(bundle.js, {
+            headers: { "Content-Type": bundle.jsContentType, "Cache-Control": "no-store" },
+          });
         }
 
         if (!wantsShell && request.method === "GET" && requestURL.pathname.startsWith("/assets/")) {
@@ -1991,7 +2006,7 @@ async function startStaticServer(options: {
   const url = `http://${LOCAL_DEV_HOST}:${options.port}`;
 
   const server = Bun.serve({
-    fetch(request) {
+    async fetch(request) {
       const requestURL = new URL(request.url);
 
       if (request.method !== "GET" && request.method !== "HEAD") {
@@ -2012,6 +2027,13 @@ async function startStaticServer(options: {
             return jsonResponse({ error: "invalid_asset_path" }, 400);
           }
           return fileResponse(resolve(options.outDir, relativePath), contentTypeForPath(relativePath));
+        }
+
+        if (requestURL.pathname === "/__openturn/play-app/main.js") {
+          const bundle = await getDevPlayAppBundle();
+          return new Response(bundle.js, {
+            headers: { "Content-Type": bundle.jsContentType, "Cache-Control": "no-store" },
+          });
         }
 
         return jsonResponse({ error: "not_found" }, 404);
@@ -2726,6 +2748,11 @@ function htmlResponse(html: string): Response {
   });
 }
 
+
+// HTML wrapper for the React-based dev play shell. The actual UI lives in
+// packages/cli/src/play-app/main.tsx and is bundled on demand by
+// `getDevPlayAppBundle()`. Tailwind utility classes are JIT-compiled in the
+// browser via the `@tailwindcss/browser` script — fine for a dev tool.
 function createLocalPlayShell(input: {
   bundleURL?: string;
   deploymentID: string;
@@ -2733,461 +2760,27 @@ function createLocalPlayShell(input: {
 }): string {
   const title = escapeHTML(input.gameName);
   const bundleBase = input.bundleURL ?? "/__openturn/bundle";
-
+  const config = {
+    deploymentID: input.deploymentID,
+    gameName: input.gameName,
+    bundleBase,
+  };
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>${title}</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <style>
       html, body, #root { height: 100%; margin: 0; }
       body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-      #bar { align-items: center; border-bottom: 1px solid #d9dee7; display: flex; flex-wrap: wrap; gap: 12px; min-height: 44px; padding: 6px 16px; }
-      #bar strong { color: #111827; }
-      #bar span, #bar button { color: #4b5563; font-size: 13px; }
-      #bar button { background: #fff; border: 1px solid #d1d5db; border-radius: 6px; cursor: pointer; padding: 5px 9px; }
-      #bar button[disabled] { cursor: not-allowed; opacity: 0.5; }
-      #actions, #caps { align-items: center; display: flex; flex-wrap: wrap; gap: 6px; }
-      #caps[hidden] { display: none; }
-      #caps button .badge { color: #6b7280; margin-left: 4px; }
-      #seats { align-items: center; display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; margin-right: 8px; }
-      .seat { align-items: center; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 9999px; color: #4b5563; display: inline-flex; font-size: 12px; gap: 6px; padding: 3px 10px; }
-      .seat[data-state="open"] { background: #fff; color: #94a3b8; font-style: italic; }
-      .seat[data-state="disconnected"] { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
-      .seat[data-state="connected"] { background: #ecfdf5; border-color: #a7f3d0; color: #047857; }
-      .seat .dot { background: currentColor; border-radius: 50%; height: 7px; width: 7px; }
-      .seat[data-state="open"] .dot { background: transparent; border: 1px dashed currentColor; }
-      .seat .ready { color: #059669; }
-      iframe { border: 0; display: block; flex: 1; width: 100%; }
-      body { display: flex; flex-direction: column; }
-      #error { color: #b91c1c; padding: 16px; }
     </style>
   </head>
   <body>
-    <div id="bar">
-      <strong>${title}</strong>
-      <span id="status">Opening local room...</span>
-      <div id="seats" hidden></div>
-      <div id="actions" hidden>
-        <button id="reset" type="button" disabled>Reset</button>
-        <button id="returnToLobby" type="button" disabled>Back to lobby</button>
-        <button id="save" type="button">Save</button>
-        <button id="load" type="button">Load</button>
-      </div>
-      <div id="caps" hidden></div>
-      <button id="copy" hidden type="button">Copy invite</button>
-    </div>
-    <iframe id="game" title="${title}" allow="clipboard-write" sandbox="allow-scripts allow-same-origin allow-modals allow-clipboard-write allow-forms"></iframe>
-    <div id="error" hidden></div>
-    <script type="module">
-      const deploymentID = ${JSON.stringify(input.deploymentID)};
-      const bundleBase = ${JSON.stringify(bundleBase)};
-      const PRESETS = ${JSON.stringify(BRIDGE_CAPABILITY_PRESETS)};
-      const status = document.getElementById("status");
-      const copy = document.getElementById("copy");
-      const frame = document.getElementById("game");
-      const error = document.getElementById("error");
-      const seatsEl = document.getElementById("seats");
-      const actions = document.getElementById("actions");
-      const reset = document.getElementById("reset");
-      const returnToLobby = document.getElementById("returnToLobby");
-      const save = document.getElementById("save");
-      const load = document.getElementById("load");
-      const capsEl = document.getElementById("caps");
-      const sessionKey = "openturn.dev.play-token";
-
-      const capButtons = new Map();
-      function renderCap(descriptor) {
-        const meta = PRESETS[descriptor.preset];
-        if (!meta) return;
-        let btn = capButtons.get(descriptor.preset);
-        if (!btn) {
-          btn = document.createElement("button");
-          btn.type = "button";
-          btn.dataset.preset = descriptor.preset;
-          btn.addEventListener("click", () => {
-            if (btn.disabled) return;
-            const requestID = (typeof crypto !== "undefined" && crypto.randomUUID)
-              ? crypto.randomUUID()
-              : "req_" + Math.random().toString(36).slice(2);
-            frame.contentWindow?.postMessage({
-              kind: "openturn:bridge:capability-invoke",
-              requestID,
-              preset: descriptor.preset,
-            }, "*");
-          });
-          capsEl.appendChild(btn);
-          capButtons.set(descriptor.preset, btn);
-        }
-        btn.disabled = descriptor.disabled === true;
-        const label = meta.label;
-        btn.textContent = "";
-        btn.appendChild(document.createTextNode(label));
-        if (descriptor.badge !== undefined && descriptor.badge !== null) {
-          const span = document.createElement("span");
-          span.className = "badge";
-          span.textContent = "(" + String(descriptor.badge) + ")";
-          btn.appendChild(span);
-        }
-        capsEl.hidden = capButtons.size === 0;
-      }
-      function removeCap(preset) {
-        const btn = capButtons.get(preset);
-        if (!btn) return;
-        btn.remove();
-        capButtons.delete(preset);
-        capsEl.hidden = capButtons.size === 0;
-      }
-
-      async function requestJSON(path, init = {}) {
-        const response = await fetch(path, init);
-        const payload = await response.json().catch(() => null);
-        if (!response.ok) {
-          const error = new Error(payload?.error ?? payload?.code ?? \`request_failed_\${response.status}\`);
-          error.status = response.status;
-          error.payload = payload;
-          throw error;
-        }
-        return payload;
-      }
-
-      async function sessionToken() {
-        const stored = sessionStorage.getItem(sessionKey);
-        if (stored) {
-          const existing = await fetch("/api/dev/me", {
-            headers: { authorization: \`Bearer \${stored}\` },
-          }).catch(() => null);
-          if (existing?.ok) return stored;
-          sessionStorage.removeItem(sessionKey);
-        }
-        const existing = await fetch("/api/dev/me").catch(() => null);
-        if (existing?.ok) {
-          return null;
-        }
-        try {
-          const session = await requestJSON("/api/dev/session/anonymous", { method: "POST" });
-          sessionStorage.setItem(sessionKey, session.token);
-          return session.token;
-        } catch (caught) {
-          if (
-            caught?.status === 400 &&
-            caught?.payload?.code === "ANONYMOUS_USERS_CANNOT_SIGN_IN_AGAIN_ANONYMOUSLY"
-          ) {
-            return null;
-          }
-          throw caught;
-        }
-      }
-
-      async function authorized(path, init = {}) {
-        const token = await sessionToken();
-        try {
-          return await requestJSON(path, {
-            ...init,
-            headers: {
-              ...(init.headers ?? {}),
-              ...(token === null ? {} : { authorization: \`Bearer \${token}\` }),
-            },
-          });
-        } catch (caught) {
-          if (caught?.status !== 401 || token === null) {
-            throw caught;
-          }
-          sessionStorage.removeItem(sessionKey);
-        }
-        const freshToken = await sessionToken();
-        return await requestJSON(path, {
-          ...init,
-          headers: {
-            ...(init.headers ?? {}),
-            ...(freshToken === null ? {} : { authorization: \`Bearer \${freshToken}\` }),
-          },
-        });
-      }
-
-      function roomIDFromURL() {
-        return new URL(window.location.href).searchParams.get("room");
-      }
-
-      function inviteURL(roomID) {
-        const url = new URL(window.location.href);
-        url.pathname = \`/play/\${deploymentID}\`;
-        url.searchParams.set("room", roomID);
-        return url.toString();
-      }
-
-      async function fetchLobbySnapshot(roomID) {
-        if (!roomID) {
-          return await authorized("/api/dev/rooms", { method: "POST" });
-        }
-        return await authorized(
-          \`/api/dev/rooms/\${encodeURIComponent(roomID)}/lobby-token\`,
-          { method: "POST" },
-        );
-      }
-
-      try {
-        const existingRoomID = roomIDFromURL();
-        const snapshot = await fetchLobbySnapshot(existingRoomID);
-        const roomID = snapshot.roomID;
-        if (!existingRoomID) {
-          const nextURL = new URL(window.location.href);
-          nextURL.pathname = \`/play/\${deploymentID}\`;
-          nextURL.searchParams.set("room", roomID);
-          history.replaceState({}, "", nextURL);
-        }
-
-        const backend = {
-          roomID,
-          userID: snapshot.userID,
-          userName: snapshot.userName,
-          scope: snapshot.scope,
-          token: snapshot.token,
-          tokenExpiresAt: snapshot.tokenExpiresAt,
-          websocketURL: snapshot.websocketURL,
-          parentOrigin: window.location.origin,
-          targetCapacity: snapshot.targetCapacity,
-          minPlayers: snapshot.minPlayers,
-          maxPlayers: snapshot.maxPlayers,
-          isHost: snapshot.isHost,
-          hostUserID: snapshot.hostUserID,
-          playerID: snapshot.playerID,
-        };
-        const params = new URLSearchParams();
-        params.set("openturn-bridge", btoa(JSON.stringify(backend)));
-        frame.src = \`\${bundleBase}/#\${params.toString()}\`;
-        status.textContent = snapshot.isHost
-          ? \`room \${roomID} · host\`
-          : \`room \${roomID} · guest\`;
-        copy.hidden = false;
-        copy.addEventListener("click", () => navigator.clipboard?.writeText(inviteURL(roomID)));
-        actions.hidden = false;
-
-        function applyMatchActive(active) {
-          reset.disabled = !active;
-          returnToLobby.disabled = !active;
-        }
-        applyMatchActive(snapshot.scope === "game");
-        window.addEventListener("message", (event) => {
-          if (event.source !== frame.contentWindow) return;
-          const data = event.data;
-          if (data === null || typeof data !== "object") return;
-          if (data.kind === "openturn:bridge:match-state" && typeof data.matchActive === "boolean") {
-            applyMatchActive(data.matchActive);
-          }
-          if (data.kind === "openturn:bridge:capability-expose" && data.descriptor && PRESETS[data.descriptor.preset]) {
-            renderCap(data.descriptor);
-          }
-          if (data.kind === "openturn:bridge:capability-retire" && typeof data.preset === "string") {
-            removeCap(data.preset);
-          }
-        });
-
-        async function runDevAction(action, actionRoomID = roomID, extra = {}) {
-          if (action === "reset") {
-            await authorized(
-              \`/api/dev/rooms/\${encodeURIComponent(actionRoomID)}/reset\`,
-              { method: "POST" },
-            );
-            window.location.reload();
-            return;
-          }
-          if (action === "return-to-lobby") {
-            await authorized(
-              \`/api/dev/rooms/\${encodeURIComponent(actionRoomID)}/return-to-lobby\`,
-              { method: "POST" },
-            );
-            window.location.reload();
-            return;
-          }
-          if (action === "save") {
-            const result = await authorized(
-              \`/api/dev/rooms/\${encodeURIComponent(actionRoomID)}/save\`,
-              { method: "POST" },
-            );
-            const href = result?.downloadURL ?? \`/api/dev/saves/\${encodeURIComponent(result.saveID)}\`;
-            const a = document.createElement("a");
-            a.href = href;
-            a.download = \`\${result.saveID}.otsave\`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            return;
-          }
-          if (action === "load" && Array.isArray(extra.bytes)) {
-            const bytes = new Uint8Array(extra.bytes);
-            const token = await sessionToken();
-            const uploadResponse = await fetch("/api/dev/saves", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/octet-stream",
-                ...(token === null ? {} : { authorization: \`Bearer \${token}\` }),
-              },
-              body: bytes,
-            });
-            const uploadBody = await uploadResponse.json().catch(() => null);
-            if (!uploadResponse.ok) {
-              window.alert(\`Load failed: \${uploadBody?.error ?? uploadResponse.status}\`);
-              return;
-            }
-            const newRoom = await authorized(
-              \`/api/dev/saves/\${encodeURIComponent(uploadBody.saveID)}/new-room\`,
-              { method: "POST" },
-            );
-            const nextURL = new URL(window.location.href);
-            nextURL.pathname = \`/play/\${deploymentID}\`;
-            nextURL.searchParams.set("room", newRoom.roomID);
-            window.location.assign(nextURL.toString());
-          }
-        }
-
-        function reportDevActionFailure(action, caught) {
-          window.alert(\`Dev action "\${action}" failed: \${caught instanceof Error ? caught.message : String(caught)}\`);
-        }
-
-        reset.addEventListener("click", async () => {
-          if (reset.disabled) return;
-          if (!window.confirm("Reset match to start? Players will be reconnected.")) return;
-          try {
-            await runDevAction("reset");
-          } catch (caught) {
-            reportDevActionFailure("reset", caught);
-          }
-        });
-        returnToLobby.addEventListener("click", async () => {
-          if (returnToLobby.disabled) return;
-          if (!window.confirm("End the match and return to lobby?")) return;
-          try {
-            await runDevAction("return-to-lobby");
-          } catch (caught) {
-            reportDevActionFailure("return-to-lobby", caught);
-          }
-        });
-        save.addEventListener("click", async () => {
-          try {
-            await runDevAction("save");
-          } catch (caught) {
-            reportDevActionFailure("save", caught);
-          }
-        });
-        load.addEventListener("click", () => {
-          const input = document.createElement("input");
-          input.type = "file";
-          input.accept = ".otsave,application/octet-stream";
-          input.addEventListener("change", async () => {
-            const file = input.files?.[0];
-            if (file === undefined) return;
-            try {
-              const buffer = await file.arrayBuffer();
-              await runDevAction("load", roomID, { bytes: Array.from(new Uint8Array(buffer)) });
-            } catch (caught) {
-              reportDevActionFailure("load", caught);
-            }
-          });
-          input.click();
-        });
-
-        async function refreshPresence() {
-          try {
-            const presence = await authorized(
-              \`/api/dev/rooms/\${encodeURIComponent(roomID)}/presence\`,
-            );
-            renderSeats(presence);
-          } catch {}
-        }
-        function renderSeats(presence) {
-          if (!presence || !Array.isArray(presence.seats)) {
-            seatsEl.hidden = true;
-            return;
-          }
-          seatsEl.hidden = false;
-          seatsEl.innerHTML = "";
-          for (const seat of presence.seats) {
-            const chip = document.createElement("span");
-            chip.className = "seat";
-            const state = seat.userID === null
-              ? "open"
-              : seat.connected ? "connected" : "disconnected";
-            chip.dataset.state = state;
-            const dot = document.createElement("span");
-            dot.className = "dot";
-            const label = document.createElement("span");
-            const name = seat.userID === null
-              ? \`Seat \${seat.seatIndex + 1} · open\`
-              : (seat.userName ?? \`Player \${seat.userID.slice(0, 6)}\`);
-            label.textContent = name;
-            chip.appendChild(dot);
-            chip.appendChild(label);
-            if (seat.userID !== null && seat.ready && presence.phase === "lobby") {
-              const ready = document.createElement("span");
-              ready.className = "ready";
-              ready.textContent = "✓";
-              chip.appendChild(ready);
-            }
-            if (seat.userID !== null && !seat.connected && presence.phase === "active") {
-              const tag = document.createElement("span");
-              tag.textContent = "(disconnected)";
-              chip.appendChild(tag);
-            }
-            seatsEl.appendChild(chip);
-          }
-        }
-        void refreshPresence();
-        setInterval(refreshPresence, 3000);
-        window.addEventListener("message", async (event) => {
-          const data = event.data;
-          if (
-            data === null ||
-            typeof data !== "object" ||
-            data.kind !== "openturn:bridge:token-refresh-request" ||
-            data.roomID !== roomID ||
-            typeof data.requestID !== "string"
-          ) {
-            return;
-          }
-
-          try {
-            const refreshed = await authorized(
-              \`/api/dev/rooms/\${encodeURIComponent(roomID)}/lobby-token\`,
-              { method: "POST" },
-            );
-            event.source?.postMessage(
-              {
-                kind: "openturn:bridge:token-refresh-response",
-                requestID: data.requestID,
-                token: refreshed.token,
-                tokenExpiresAt: refreshed.tokenExpiresAt,
-              },
-              { targetOrigin: event.origin === "null" ? "*" : event.origin },
-            );
-          } catch {}
-        });
-
-        window.addEventListener("message", async (event) => {
-          const data = event.data;
-          if (
-            data === null ||
-            typeof data !== "object" ||
-            data.kind !== "openturn:dev-action" ||
-            typeof data.action !== "string"
-          ) {
-            return;
-          }
-
-          const actionRoomID = typeof data.roomID === "string" ? data.roomID : roomID;
-          try {
-            await runDevAction(data.action, actionRoomID, data);
-          } catch (caught) {
-            reportDevActionFailure(data.action, caught);
-          }
-        });
-      } catch (caught) {
-        status.textContent = "Local room failed";
-        error.hidden = false;
-        error.textContent = caught instanceof Error ? caught.message : String(caught);
-      }
-    </script>
+    <div id="root"></div>
+    <script>window.__OPENTURN_PLAY__ = ${JSON.stringify(config)};</script>
+    <script type="module" src="/__openturn/play-app/main.js"></script>
   </body>
 </html>
 `;
