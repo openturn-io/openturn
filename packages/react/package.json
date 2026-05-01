@@ -1,6 +1,6 @@
 {
   "name": "@openturn/react",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "type": "module",
   "openturn": {
     "runtime": "browser"
@@ -18,20 +18,20 @@
     "postpack": "node ../../scripts/postpack.mjs"
   },
   "dependencies": {
-    "@openturn/bot": "^0.2.3",
-    "@openturn/bridge": "^0.2.3",
-    "@openturn/client": "^0.2.3",
-    "@openturn/core": "^0.2.3",
-    "@openturn/inspector": "^0.2.3",
-    "@openturn/lobby": "^0.2.3",
-    "@openturn/protocol": "^0.2.3",
-    "@openturn/replay": "^0.2.3"
+    "@openturn/bot": "^0.3.0",
+    "@openturn/bridge": "^0.3.0",
+    "@openturn/client": "^0.3.0",
+    "@openturn/core": "^0.3.0",
+    "@openturn/inspector": "^0.3.0",
+    "@openturn/lobby": "^0.3.0",
+    "@openturn/protocol": "^0.3.0",
+    "@openturn/replay": "^0.3.0"
   },
   "peerDependencies": {
     "react": "^19.2.0"
   },
   "devDependencies": {
-    "@openturn/gamekit": "^0.2.3",
+    "@openturn/gamekit": "^0.3.0",
     "@testing-library/react": "^16.3.0",
     "@types/react": "^19.2.0",
     "jsdom": "^28.1.0",

@@ -1,6 +1,6 @@
 {
   "name": "@openturn/deploy",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "type": "module",
   "openturn": {
     "runtime": "bun"
@@ -18,11 +18,11 @@
     "postpack": "node ../../scripts/postpack.mjs"
   },
   "dependencies": {
-    "@openturn/core": "^0.2.3",
-    "@openturn/json": "^0.2.3",
-    "@openturn/manifest": "^0.2.3",
-    "@openturn/protocol": "^0.2.3",
-    "@openturn/server": "^0.2.3",
+    "@openturn/core": "^0.3.0",
+    "@openturn/json": "^0.3.0",
+    "@openturn/manifest": "^0.3.0",
+    "@openturn/protocol": "^0.3.0",
+    "@openturn/server": "^0.3.0",
     "@tailwindcss/vite": "^4.2.2",
     "@vitejs/plugin-react": "^6.0.1",
     "tailwindcss": "^4.2.2",

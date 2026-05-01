@@ -1,5 +1,17 @@
 # @openturn/lobby
 
+## 0.3.0
+
+### Patch Changes
+
+- 28b10a3: Widen the default lobby panel while keeping the round-table stage height-aware so seat controls do not crowd or overflow the viewport.
+- Updated dependencies [910daa2]
+  - @openturn/server@0.3.0
+  - @openturn/bot@0.3.0
+  - @openturn/client@0.3.0
+  - @openturn/core@0.3.0
+  - @openturn/protocol@0.3.0
+
 ## 0.2.3
 
 ### Patch Changes

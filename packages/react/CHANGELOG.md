@@ -1,5 +1,21 @@
 # @openturn/react
 
+## 0.3.0
+
+### Patch Changes
+
+- Updated dependencies [a65c92d]
+- Updated dependencies [28b10a3]
+- Updated dependencies [c3e9159]
+  - @openturn/bridge@0.3.0
+  - @openturn/lobby@0.3.0
+  - @openturn/bot@0.3.0
+  - @openturn/client@0.3.0
+  - @openturn/core@0.3.0
+  - @openturn/inspector@0.3.0
+  - @openturn/protocol@0.3.0
+  - @openturn/replay@0.3.0
+
 ## 0.2.3
 
 ### Patch Changes
