@@ -26,13 +26,18 @@
   "dependencies": {
     "@openturn/client": "^0.1.1",
     "@openturn/json": "^0.1.1",
+    "sonner": "^2.0.7",
     "zod": "^4.1.12"
   },
   "peerDependencies": {
-    "react": "^19.2.0"
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
   },
   "peerDependenciesMeta": {
     "react": {
+      "optional": true
+    },
+    "react-dom": {
       "optional": true
     }
   },

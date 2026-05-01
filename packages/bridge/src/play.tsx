@@ -8,6 +8,7 @@ import {
   type DragEvent,
   type ReactNode,
 } from "react";
+import { Toaster, toast } from "sonner";
 
 import { createBridgeHost, type BridgeHost } from "./host";
 import { PlayShell } from "./shell";
@@ -522,16 +523,19 @@ function RoomView({
     }
   }
 
-  async function shareInvite() {
-    if (typeof navigator !== "undefined" && "share" in navigator) {
-      try {
-        await navigator.share({ url: inviteURL, title: `Join ${adapter.meta.gameName}` });
-        return;
-      } catch {}
-    }
+  async function copyInvite() {
     try {
-      await navigator.clipboard?.writeText(inviteURL);
-    } catch {}
+      if (
+        typeof navigator === "undefined" ||
+        navigator.clipboard?.writeText === undefined
+      ) {
+        throw new Error("Clipboard unavailable");
+      }
+      await navigator.clipboard.writeText(inviteURL);
+      toast.success("Copied Invite URL Successfully");
+    } catch {
+      toast.error("Could Not Copy Invite URL");
+    }
   }
 
   async function handleSave() {
@@ -611,7 +615,7 @@ function RoomView({
       visibility={visibility}
       visibilityPending={visibilityPending}
       onChangeVisibility={adapter.setVisibility !== undefined ? changeVisibility : undefined}
-      onShareInvite={shareInvite}
+      onCopyInvite={copyInvite}
       presence={presence}
     />
   );
@@ -630,14 +634,17 @@ function RoomView({
   if (host === null) return null;
 
   return (
-    <PlayShell
-      host={host}
-      gameName={adapter.meta.gameName}
-      toolbarLead={toolbarLead}
-      toolbarTrail={toolbarTrail}
-      {...(classes?.shell !== undefined ? { className: classes.shell } : {})}
-      {...(classes?.shellToolbar !== undefined ? { toolbarClassName: classes.shellToolbar } : {})}
-    />
+    <>
+      <PlayShell
+        host={host}
+        gameName={adapter.meta.gameName}
+        toolbarLead={toolbarLead}
+        toolbarTrail={toolbarTrail}
+        {...(classes?.shell !== undefined ? { className: classes.shell } : {})}
+        {...(classes?.shellToolbar !== undefined ? { toolbarClassName: classes.shellToolbar } : {})}
+      />
+      <Toaster position="top-right" />
+    </>
   );
 }
 
@@ -646,14 +653,14 @@ function RoomToolbarLead({
   visibility,
   visibilityPending,
   onChangeVisibility,
-  onShareInvite,
+  onCopyInvite,
   presence,
 }: {
   snapshot: PlayRoomSnapshot;
   visibility: PlayRoomVisibility | undefined;
   visibilityPending: boolean;
   onChangeVisibility: ((next: PlayRoomVisibility) => void) | undefined;
-  onShareInvite: () => void;
+  onCopyInvite: () => void;
   presence: PresenceSnapshot | null;
 }) {
   return (
@@ -675,9 +682,9 @@ function RoomToolbarLead({
       <button
         type="button"
         className="ml-1 rounded-md border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50"
-        onClick={onShareInvite}
+        onClick={onCopyInvite}
       >
-        Share invite
+        Copy Invite
       </button>
       {presence !== null ? <PlayerSeats presence={presence} /> : null}
     </>
@@ -783,7 +790,7 @@ export function VisibilityToggle({
 export function PlayerSeats({ presence }: { presence: PresenceSnapshot }) {
   if (presence.seats.length === 0) return null;
   return (
-    <div className="ml-2 flex flex-wrap items-center gap-1.5">
+    <div className="ml-0 flex min-w-0 basis-full flex-wrap items-center gap-1.5 sm:ml-2 sm:basis-80 sm:grow">
       {presence.seats.map((seat) => {
         const state =
           seat.userID === null ? "open" : seat.connected ? "connected" : "disconnected";
@@ -804,7 +811,7 @@ export function PlayerSeats({ presence }: { presence: PresenceSnapshot }) {
         return (
           <span
             key={seat.seatIndex}
-            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] ${tone}`}
+            className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-[11px] ${tone}`}
             data-state={state}
           >
             <span className={`h-1.5 w-1.5 rounded-full ${dotTone}`} />
