@@ -1,4 +1,4 @@
-import { useCallback, useEffect, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Resizable } from "re-resizable";
 
 import {
@@ -24,10 +24,35 @@ export interface InspectorShellProps {
   children: ReactNode;
 }
 
-const RAIL_ROOT_CLASS =
-  "ot-inspector dark bg-background text-foreground h-full min-h-0 min-w-0 flex flex-col";
-const DOCK_ROOT_CLASS =
-  "ot-inspector ot-inspector--dock-host dark bg-background text-foreground w-full min-w-0 flex flex-col";
+const RAIL_ROOT_CLASS_BASE =
+  "ot-inspector bg-background text-foreground h-full min-h-0 min-w-0 flex flex-col";
+const DOCK_ROOT_CLASS_BASE =
+  "ot-inspector ot-inspector--dock-host bg-background text-foreground w-full min-w-0 flex flex-col";
+
+/**
+ * Tracks `<html class="dark">` and re-renders when the host shell flips
+ * the theme. Plain `useSyncExternalStore` would also work, but a
+ * MutationObserver keeps the wiring local to this hook and avoids a
+ * shared store for what's effectively a one-bit signal.
+ */
+function useHostThemeIsDark(): boolean {
+  const [isDark, setIsDark] = useState(() =>
+    typeof document === "undefined"
+      ? false
+      : document.documentElement.classList.contains("dark"),
+  );
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    setIsDark(root.classList.contains("dark"));
+    const observer = new MutationObserver(() => {
+      setIsDark(root.classList.contains("dark"));
+    });
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
+  return isDark;
+}
 
 const RESIZE_DISABLE = {
   top: false,
@@ -45,6 +70,9 @@ export function InspectorShell({
   children,
 }: InspectorShellProps) {
   const { state, dispatch } = useInspector();
+  const isDark = useHostThemeIsDark();
+  const railRootClass = isDark ? `${RAIL_ROOT_CLASS_BASE} dark` : RAIL_ROOT_CLASS_BASE;
+  const dockRootClass = isDark ? `${DOCK_ROOT_CLASS_BASE} dark` : DOCK_ROOT_CLASS_BASE;
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -144,7 +172,7 @@ export function InspectorShell({
             }}
           >
             <ShadowChromeMount
-              rootClassName={RAIL_ROOT_CLASS}
+              rootClassName={railRootClass}
               shadowCss={DEVTOOLS_SHADOW_CHROME_CSS}
             >
               <LeftPanel />
@@ -177,7 +205,7 @@ export function InspectorShell({
             }}
           >
             <ShadowChromeMount
-              rootClassName={RAIL_ROOT_CLASS}
+              rootClassName={railRootClass}
               shadowCss={rightShadowCss}
             >
               {state.rightPanel === "graph" ? <GraphPanel /> : <RightPanel />}
@@ -189,7 +217,7 @@ export function InspectorShell({
       {active && (
         <div className="ot-inspector-dock-slot">
           <ShadowChromeMount
-            rootClassName={DOCK_ROOT_CLASS}
+            rootClassName={dockRootClass}
             shadowCss={DEVTOOLS_SHADOW_CHROME_CSS}
           >
             <InspectorDock />

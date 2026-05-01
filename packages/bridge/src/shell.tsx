@@ -49,16 +49,16 @@ export function PlayShell({
     <div
       className={
         className ??
-        "flex h-dvh min-h-0 flex-col bg-white text-slate-900"
+        "flex h-dvh min-h-0 flex-col bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100"
       }
     >
       <div
         className={
           toolbarClassName ??
-          "flex flex-none flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-200 bg-white/80 px-4 py-2 text-sm text-slate-600"
+          "flex flex-none flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-200 bg-white/80 px-4 py-2 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950/80 dark:text-slate-400"
         }
       >
-        <strong className="text-slate-900">{gameName}</strong>
+        <strong className="text-slate-900 dark:text-slate-100">{gameName}</strong>
         {toolbarLead}
         <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1">
           {toolbarTrail}

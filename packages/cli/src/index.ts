@@ -60,6 +60,8 @@ import type { ProtocolClientMessage } from "@openturn/protocol";
 
 import { DEFAULT_CLOUD_URL, cloudDeploy, loadCloudAuth, saveCloudAuth } from "./cloud";
 import { startDevBundleServer, type DevBundleServer } from "./dev-bundle";
+import { getInitialThemeScript } from "@openturn/bridge";
+
 import { getDevPlayAppBundle, getDevPlayAppTailwind } from "./play-app-bundle";
 import { loadTelemetryConfig } from "./telemetry/config";
 import { createTelemetryClient, ensureTelemetryConfig } from "./telemetry/client";
@@ -2863,7 +2865,11 @@ function createLocalPlayShell(input: {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>${title}</title>
+    <script>${getInitialThemeScript()}</script>
     <script src="/__openturn/play-app/tailwind.js"></script>
+    <style type="text/tailwindcss">
+      @custom-variant dark (&:is(.dark *, .dark));
+    </style>
     <style>
       html, body, #root { height: 100%; margin: 0; }
       body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }

@@ -12,6 +12,7 @@
     "./shell": "./src/shell.tsx",
     "./play": "./src/play.tsx",
     "./play-types": "./src/play-types.ts",
+    "./theme": "./src/theme.tsx",
     "./dev-transport": "./src/dev-transport.ts"
   },
   "types": "./src/index.ts",
@@ -88,6 +89,10 @@
       "./play-types": {
         "types": "./dist/play-types.d.ts",
         "import": "./dist/play-types.js"
+      },
+      "./theme": {
+        "types": "./dist/theme.d.ts",
+        "import": "./dist/theme.js"
       },
       "./dev-transport": {
         "types": "./dist/dev-transport.d.ts",

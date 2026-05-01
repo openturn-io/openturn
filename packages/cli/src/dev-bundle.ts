@@ -245,7 +245,7 @@ function LocalDevShell({ deployment }) {
     });
   }, []);
   useInspectorHotkey(toggleInspector);
-  useEffect(() => { logInspectorHintOnce(); }, []);
+  useEffect(() => { logInspectorHintOnce(); installShellThemeListener(); }, []);
 
   const onReset = useCallback(() => {
     localMatch.reset?.();
@@ -358,7 +358,7 @@ function MultiplayerDevShell({ deployment }) {
     });
   }, []);
   useInspectorHotkey(toggleInspector);
-  useEffect(() => { logInspectorHintOnce(); }, []);
+  useEffect(() => { logInspectorHintOnce(); installShellThemeListener(); }, []);
 
   const page = React.createElement(
     HostedMatchShellObserver,
@@ -445,6 +445,89 @@ function createIdleHostedState(game) {
     : "";
   const sharedDevSetup = `
 const INSPECTOR_STORAGE_KEY = "openturn.dev.inspector.enabled";
+
+const DEV_THEME_STYLE_ID = "openturn-dev-theme";
+const DEV_THEME_CSS = [
+  ":root {",
+  "  --otd-bg: #ffffff;",
+  "  --otd-bg-muted: #f3f4f6;",
+  "  --otd-border: #d9dee7;",
+  "  --otd-border-strong: #d1d5db;",
+  "  --otd-text: #111827;",
+  "  --otd-text-muted: #4b5563;",
+  "  --otd-text-pill: #374151;",
+  "  --otd-pill-bg: #f3f4f6;",
+  "  --otd-pill-border: #e5e7eb;",
+  "  --otd-button-bg-active: #111827;",
+  "  --otd-button-text-active: #ffffff;",
+  "}",
+  ".dark {",
+  "  --otd-bg: #0f1117;",
+  "  --otd-bg-muted: #1c1f2b;",
+  "  --otd-border: #2a2d3a;",
+  "  --otd-border-strong: #3a3e4d;",
+  "  --otd-text: #e5e7eb;",
+  "  --otd-text-muted: #9ca3af;",
+  "  --otd-text-pill: #d1d5e0;",
+  "  --otd-pill-bg: #161922;",
+  "  --otd-pill-border: #2a2d3a;",
+  "  --otd-button-bg-active: #6c8cff;",
+  "  --otd-button-text-active: #ffffff;",
+  "}",
+  "html, body { background: var(--otd-bg); color: var(--otd-text); }",
+].join("\\n");
+
+function ensureDevThemeStyle() {
+  if (typeof document === "undefined") return;
+  if (document.getElementById(DEV_THEME_STYLE_ID) !== null) return;
+  const style = document.createElement("style");
+  style.id = DEV_THEME_STYLE_ID;
+  style.textContent = DEV_THEME_CSS;
+  document.head.appendChild(style);
+}
+
+function applyDevTheme(theme) {
+  if (typeof document === "undefined") return;
+  const c = document.documentElement.classList;
+  if (theme === "dark") c.add("dark");
+  else c.remove("dark");
+}
+
+let shellThemeListenerInstalled = false;
+function installShellThemeListener() {
+  if (typeof window === "undefined") return;
+  if (shellThemeListenerInstalled) return;
+  shellThemeListenerInstalled = true;
+  ensureDevThemeStyle();
+  function onMessage(event) {
+    const data = event.data;
+    if (
+      data === null ||
+      typeof data !== "object" ||
+      data.source !== "openturn-shell-theme" ||
+      data.kind !== "apply"
+    ) return;
+    if (data.theme === "dark" || data.theme === "light") {
+      applyDevTheme(data.theme);
+    }
+  }
+  window.addEventListener("message", onMessage);
+  // Ask the parent shell what the current theme is. Until a reply arrives,
+  // fall back to the OS preference so the dev bar isn't stuck in light when
+  // launched outside the play shell.
+  try {
+    window.parent?.postMessage(
+      { source: "openturn-shell-theme", kind: "request" },
+      "*",
+    );
+  } catch (_e) {}
+  if (
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-color-scheme: dark)").matches
+  ) {
+    applyDevTheme("dark");
+  }
+}
 
 function renderDevShell({
   deployment,
@@ -615,8 +698,8 @@ const DEV_SHELL_STYLE = {
 };
 const DEV_TOOLBAR_STYLE = {
   alignItems: "center",
-  background: "#ffffff",
-  borderBottom: "1px solid #d9dee7",
+  background: "var(--otd-bg)",
+  borderBottom: "1px solid var(--otd-border)",
   boxSizing: "border-box",
   display: "flex",
   flex: "0 0 auto",
@@ -625,15 +708,15 @@ const DEV_TOOLBAR_STYLE = {
   padding: "0 16px",
 };
 const DEV_TOOLBAR_TITLE_STYLE = {
-  color: "#111827",
+  color: "var(--otd-text)",
   fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \\"Segoe UI\\", sans-serif",
   fontSize: "13px",
 };
 const DEV_TOOLBAR_PLAYER_STYLE = {
-  background: "#f3f4f6",
-  border: "1px solid #e5e7eb",
+  background: "var(--otd-pill-bg)",
+  border: "1px solid var(--otd-pill-border)",
   borderRadius: "999px",
-  color: "#374151",
+  color: "var(--otd-text-pill)",
   fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \\"Segoe UI\\", sans-serif",
   fontSize: "12px",
   marginLeft: "auto",
@@ -644,10 +727,10 @@ const DEV_TOOLBAR_PLAYER_STYLE = {
   whiteSpace: "nowrap",
 };
 const DEV_TOOLBAR_BUTTON_STYLE = {
-  background: "#ffffff",
-  border: "1px solid #d1d5db",
+  background: "var(--otd-bg)",
+  border: "1px solid var(--otd-border-strong)",
   borderRadius: "6px",
-  color: "#4b5563",
+  color: "var(--otd-text-muted)",
   cursor: "pointer",
   fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \\"Segoe UI\\", sans-serif",
   fontSize: "13px",
@@ -655,9 +738,9 @@ const DEV_TOOLBAR_BUTTON_STYLE = {
 };
 const DEV_TOOLBAR_BUTTON_ACTIVE_STYLE = {
   ...DEV_TOOLBAR_BUTTON_STYLE,
-  background: "#111827",
-  borderColor: "#111827",
-  color: "#ffffff",
+  background: "var(--otd-button-bg-active)",
+  borderColor: "var(--otd-button-bg-active)",
+  color: "var(--otd-button-text-active)",
 };
 const DEV_SURFACE_STYLE = {
   display: "flex",
@@ -687,6 +770,7 @@ const deployment = {
 };
 
 ${sharedDevSetup}${localShellSetup}${multiplayerShellSetup}
+installShellThemeListener();
 const host = document.getElementById("openturn-root") ?? document.body.appendChild(document.createElement("div"));
 host.setAttribute("data-openturn-host", "");
 const mount = document.createElement("div");

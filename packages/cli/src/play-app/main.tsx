@@ -61,7 +61,11 @@ try {
   if (container === null) throw new Error("missing #root mount");
   createRoot(container).render(
     <StrictMode>
-      <PlayPage adapter={adapter} initialRoomID={initialRoomID} />
+      <PlayPage
+        adapter={adapter}
+        initialRoomID={initialRoomID}
+        showThemeToggle
+      />
     </StrictMode>,
   );
 } catch (caught) {
