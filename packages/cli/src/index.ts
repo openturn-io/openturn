@@ -2775,7 +2775,7 @@ function createLocalPlayShell(input: {
   multiplayer?: DevPlayMultiplayerConfig;
 }): string {
   const title = escapeHTML(input.gameName);
-  const bundleBase = input.bundleURL ?? "/__openturn/bundle";
+  const bundleBase = input.bundleURL ?? "/__openturn/bundle/";
   const config = {
     deploymentID: input.deploymentID,
     gameName: input.gameName,
@@ -2796,7 +2796,7 @@ function createLocalPlayShell(input: {
   </head>
   <body>
     <div id="root"></div>
-    <script>window.__OPENTURN_PLAY__ = ${JSON.stringify(config)};</script>
+    <script>window.__OPENTURN_PLAY__ = ${escapeJSONForScript(config)};</script>
     <script type="module" src="/__openturn/play-app/main.js"></script>
   </body>
 </html>
@@ -2810,6 +2810,20 @@ function escapeHTML(value: string): string {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
 }
+
+function escapeJSONForScript(value: unknown): string {
+  return JSON.stringify(value).replace(/[<>&\u2028\u2029]/g, (ch) => {
+    return JSON_SCRIPT_ESCAPES[ch] ?? ch;
+  });
+}
+
+const JSON_SCRIPT_ESCAPES: Record<string, string> = {
+  "<": "\\u003c",
+  ">": "\\u003e",
+  "&": "\\u0026",
+  "\u2028": "\\u2028",
+  "\u2029": "\\u2029",
+};
 
 function contentTypeForPath(path: string): string {
   if (path.endsWith(".html")) {

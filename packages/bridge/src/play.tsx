@@ -265,6 +265,7 @@ function PublicRoomsSection({
 
   useEffect(() => {
     let active = true;
+    let timeout: ReturnType<typeof setTimeout> | null = null;
     const fetchRooms = async () => {
       try {
         const result = await listPublicRooms();
@@ -275,12 +276,13 @@ function PublicRoomsSection({
         if (!active) return;
         setLoaded(true);
       }
+      if (!active) return;
+      timeout = setTimeout(() => void fetchRooms(), PUBLIC_ROOMS_REFRESH_MS);
     };
     void fetchRooms();
-    const handle = window.setInterval(() => void fetchRooms(), PUBLIC_ROOMS_REFRESH_MS);
     return () => {
       active = false;
-      window.clearInterval(handle);
+      if (timeout !== null) clearTimeout(timeout);
     };
   }, [listPublicRooms]);
 
@@ -485,19 +487,22 @@ function RoomView({
   useEffect(() => {
     if (adapter.pollPresence === undefined) return;
     const poll = adapter.pollPresence;
-    let timer: ReturnType<typeof setInterval> | null = null;
     const controller = new AbortController();
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    let stopped = false;
     const tick = async () => {
       try {
         const next = await poll(snapshot.roomID, controller.signal);
         if (next !== null && !controller.signal.aborted) setPresence(next);
       } catch {}
+      if (stopped) return;
+      timeout = setTimeout(() => void tick(), PRESENCE_POLL_MS);
     };
     void tick();
-    timer = setInterval(() => void tick(), PRESENCE_POLL_MS);
     return () => {
+      stopped = true;
       controller.abort();
-      if (timer !== null) clearInterval(timer);
+      if (timeout !== null) clearTimeout(timeout);
     };
   }, [adapter, snapshot.roomID]);
 
@@ -554,7 +559,8 @@ function RoomView({
   }
 
   function handleLoad() {
-    if (adapter.createRoomFromSave === undefined) return;
+    const createRoomFromSave = adapter.createRoomFromSave;
+    if (createRoomFromSave === undefined) return;
     const input = document.createElement("input");
     input.type = "file";
     input.accept = ".otsave,application/octet-stream";
@@ -563,7 +569,7 @@ function RoomView({
       if (file === undefined) return;
       try {
         const buffer = await file.arrayBuffer();
-        const result = await adapter.createRoomFromSave!(new Uint8Array(buffer));
+        const result = await createRoomFromSave(new Uint8Array(buffer));
         if (result.status !== "ok") {
           window.alert(`Load failed: ${result.reason ?? result.status}`);
           return;
@@ -821,21 +827,24 @@ export function useBridgeHost(
   adapter: PlayShellAdapter,
 ): BridgeHost | null {
   const [host, setHost] = useState<BridgeHost | null>(null);
+  const adapterRef = useRef(adapter);
+  useEffect(() => {
+    adapterRef.current = adapter;
+  }, [adapter]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const next = createBridgeHost({
       bundleURL: snapshot.bundleURL,
-      init: adapter.toBridgeInit(snapshot),
-      refreshToken: (ctx) => adapter.refreshToken(ctx),
+      init: adapterRef.current.toBridgeInit(snapshot),
+      refreshToken: (ctx) => adapterRef.current.refreshToken(ctx),
     });
     setHost(next);
     return () => {
       next.dispose();
       setHost(null);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snapshot.roomID]);
+  }, [snapshot]);
 
   return host;
 }

@@ -61,6 +61,7 @@ export {
   type PresenceSeat,
   type PresenceSnapshot,
   type PublicRoomSummary,
+  type RoomActionResult,
   type SaveRoomResult,
   type SetVisibilityResult,
 } from "./play-types";

@@ -5,6 +5,7 @@
 // for the CLI process lifetime.
 
 import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
 
 interface PlayAppBundle {
   js: string;
@@ -12,6 +13,19 @@ interface PlayAppBundle {
 }
 
 let cached: Promise<PlayAppBundle> | null = null;
+
+const PLAY_APP_RESOLVED_DEPENDENCIES = new Map(
+  [
+    "react",
+    "react/jsx-runtime",
+    "react/jsx-dev-runtime",
+    "react-dom/client",
+    "zod",
+  ].map((specifier) => [
+    specifier,
+    fileURLToPath(import.meta.resolve(specifier)),
+  ]),
+);
 
 export function getDevPlayAppBundle(): Promise<PlayAppBundle> {
   if (cached === null) {
@@ -21,14 +35,32 @@ export function getDevPlayAppBundle(): Promise<PlayAppBundle> {
 }
 
 async function buildBundle(): Promise<PlayAppBundle> {
-  const entry = fileURLToPath(new URL("./play-app/main.tsx", import.meta.url));
+  const packageRoot = fileURLToPath(new URL("..", import.meta.url));
+  const sourceEntry = fileURLToPath(new URL("./play-app/main.tsx", import.meta.url));
+  const builtEntry = fileURLToPath(new URL("./play-app/main.js", import.meta.url));
+  const entry = existsSync(sourceEntry) ? sourceEntry : builtEntry;
   const result = await Bun.build({
     entrypoints: [entry],
+    root: packageRoot,
     target: "browser",
     format: "esm",
     minify: false,
     sourcemap: "inline",
     splitting: false,
+    plugins: [
+      {
+        name: "openturn-play-app-dependencies",
+        setup(build) {
+          build.onResolve(
+            { filter: /^(react|react\/jsx-runtime|react\/jsx-dev-runtime|react-dom\/client|zod)$/ },
+            ({ path }) => {
+              const resolved = PLAY_APP_RESOLVED_DEPENDENCIES.get(path);
+              return resolved === undefined ? undefined : { path: resolved };
+            },
+          );
+        },
+      },
+    ],
     define: {
       "process.env.NODE_ENV": JSON.stringify("development"),
     },

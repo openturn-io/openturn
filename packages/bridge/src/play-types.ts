@@ -51,6 +51,10 @@ export type SetVisibilityResult =
   | { status: "ok"; visibility: PlayRoomVisibility }
   | { status: "unauthorized" | "not_found" | "forbidden"; reason?: string };
 
+export type RoomActionResult =
+  | { status: "ok" }
+  | { status: "not_found" | "unauthorized" | "rejected"; reason?: string };
+
 export interface PresenceSeat {
   seatIndex: number;
   userID: string | null;
@@ -122,10 +126,10 @@ export interface PlayShellAdapter {
   saveCurrentRoom?(roomID: string): Promise<SaveRoomResult>;
 
   /** Reset the active match back to its initial state (dev-only by default). */
-  resetRoom?(roomID: string): Promise<{ status: "ok" | "not_found" | "unauthorized"; reason?: string }>;
+  resetRoom?(roomID: string): Promise<RoomActionResult>;
 
   /** End the active match and return everyone to the lobby (dev-only). */
-  returnToLobby?(roomID: string): Promise<{ status: "ok" | "not_found" | "unauthorized"; reason?: string }>;
+  returnToLobby?(roomID: string): Promise<RoomActionResult>;
 
   /** One-shot presence read; <PlayerSeats> polls this on a 3 s interval. */
   pollPresence?(roomID: string, signal: AbortSignal): Promise<PresenceSnapshot | null>;

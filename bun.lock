@@ -387,6 +387,11 @@
         "react-dom": "^19.2.0",
         "tailwindcss": "^4.2.2",
         "vite": "^8.0.8",
+        "zod": "^4.1.12",
+      },
+      "devDependencies": {
+        "@types/react": "^19.2.0",
+        "@types/react-dom": "^19.2.0",
       },
     },
     "packages/client": {

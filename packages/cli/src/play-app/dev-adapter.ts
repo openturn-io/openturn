@@ -6,6 +6,7 @@ import {
   type PlayRoomSnapshot,
   type PlayShellAdapter,
   type PresenceSnapshot,
+  type RoomActionResult,
   type SaveRoomResult,
 } from "@openturn/bridge";
 
@@ -40,6 +41,7 @@ interface DevLobbySnapshotJSON {
 
 export function createDevPlayShellAdapter(input: DevAdapterInput): PlayShellAdapter {
   const { deploymentID, gameName, bundleBase, multiplayer } = input;
+  const resolvedBundleURL = new URL(bundleBase, window.location.href).toString();
 
   async function sessionToken(): Promise<string | null> {
     const stored = sessionStorage.getItem(SESSION_KEY);
@@ -92,7 +94,7 @@ export function createDevPlayShellAdapter(input: DevAdapterInput): PlayShellAdap
       token: snap.token,
       tokenExpiresAt: snap.tokenExpiresAt,
       websocketURL: snap.websocketURL,
-      bundleURL: bundleBase,
+      bundleURL: resolvedBundleURL,
       deploymentID,
       gameName,
       parentOrigin: window.location.origin,
@@ -112,7 +114,7 @@ export function createDevPlayShellAdapter(input: DevAdapterInput): PlayShellAdap
     meta: {
       deploymentID,
       gameName,
-      bundleURL: bundleBase,
+      bundleURL: resolvedBundleURL,
       multiplayer: {
         gameKey: deploymentID,
         deploymentVersion: "dev",
@@ -232,11 +234,7 @@ export function createDevPlayShellAdapter(input: DevAdapterInput): PlayShellAdap
         await authorized(`/api/dev/rooms/${encodeURIComponent(roomID)}/reset`, { method: "POST" });
         return { status: "ok" };
       } catch (caught) {
-        const err = caught as { status?: number; message?: string };
-        const reason = err.message ?? String(caught);
-        if (err.status === 404) return { status: "not_found", reason };
-        if (err.status === 401) return { status: "unauthorized", reason };
-        return { status: "not_found", reason };
+        return mapRoomActionError(caught);
       }
     },
     async returnToLobby(roomID) {
@@ -246,11 +244,7 @@ export function createDevPlayShellAdapter(input: DevAdapterInput): PlayShellAdap
         });
         return { status: "ok" };
       } catch (caught) {
-        const err = caught as { status?: number; message?: string };
-        const reason = err.message ?? String(caught);
-        if (err.status === 404) return { status: "not_found", reason };
-        if (err.status === 401) return { status: "unauthorized", reason };
-        return { status: "not_found", reason };
+        return mapRoomActionError(caught);
       }
     },
     async pollPresence(roomID, signal): Promise<PresenceSnapshot | null> {
@@ -334,6 +328,14 @@ function normalizeDevPresence(raw: DevPresenceJSON): PresenceSnapshot {
 }
 
 function mapError(caught: unknown): PlayRoomResult {
+  const err = caught as { status?: number; message?: string };
+  const reason = err.message ?? String(caught);
+  if (err.status === 401) return { status: "unauthorized", reason };
+  if (err.status === 404) return { status: "not_found", reason };
+  return { status: "rejected", reason };
+}
+
+function mapRoomActionError(caught: unknown): RoomActionResult {
   const err = caught as { status?: number; message?: string };
   const reason = err.message ?? String(caught);
   if (err.status === 401) return { status: "unauthorized", reason };
