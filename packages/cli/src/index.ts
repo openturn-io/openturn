@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import chokidar from "chokidar";
@@ -60,12 +60,18 @@ import type { ProtocolClientMessage } from "@openturn/protocol";
 
 import { DEFAULT_CLOUD_URL, cloudDeploy, loadCloudAuth, saveCloudAuth } from "./cloud";
 import { startDevBundleServer, type DevBundleServer } from "./dev-bundle";
-import { getDevPlayAppBundle } from "./play-app-bundle";
+import { getDevPlayAppBundle, getDevPlayAppTailwind } from "./play-app-bundle";
 import { loadTelemetryConfig } from "./telemetry/config";
 import { createTelemetryClient, ensureTelemetryConfig } from "./telemetry/client";
 import { printFirstRunNotice } from "./telemetry/notice";
 
-const LOCAL_DEV_HOST = "localhost";
+// Bind explicitly to loopback. The dev server runs in `auth: "none"` mode
+// and reads identity from `?userID=`, so reachability beyond the local
+// machine would be a real impersonation surface. "localhost" can resolve to
+// other interfaces in some configurations; "127.0.0.1" cannot.
+const LOCAL_DEV_HOST = "127.0.0.1";
+// Friendlier hostname for printed URLs / browser-launch.
+const LOCAL_DEV_DISPLAY_HOST = "localhost";
 const CREATE_TEMPLATES = ["local", "multiplayer"] as const;
 const LOCAL_DEV_PORT_GUARD_HOSTS = ["127.0.0.1", "::1"] as const;
 
@@ -229,7 +235,7 @@ export interface LocalDevServer {
 export async function startLocalDevServer(options: LocalDevServerOptions): Promise<LocalDevServer> {
   const port = options.port ?? 4010;
   await assertLocalDevPortAvailable(port);
-  const url = `http://${LOCAL_DEV_HOST}:${port}`;
+  const url = `http://${LOCAL_DEV_DISPLAY_HOST}:${port}`;
   const secret = options.secret ?? "openturn-local-dev-secret-1234567890";
   const dbPath = options.dbPath ?? resolve(process.cwd(), ".openturn/local-dev.sqlite");
   ensureSQLiteDatabaseParentDirectory(dbPath);
@@ -480,6 +486,12 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
             headers: { "Content-Type": bundle.jsContentType, "Cache-Control": "no-store" },
           });
         }
+
+        if (request.method === "GET" && requestURL.pathname === "/__openturn/play-app/tailwind.js") {
+          return new Response(getDevPlayAppTailwind(), {
+            headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store" },
+          });
+        }
       }
 
       if (options.static !== undefined) {
@@ -498,10 +510,11 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
 
         if (request.method === "GET" && requestURL.pathname.startsWith("/__openturn/bundle/")) {
           const relativePath = requestURL.pathname.slice("/__openturn/bundle/".length) || "index.html";
-          if (relativePath.split("/").includes("..")) {
+          const resolved = resolveAssetPath(staticOptions.outDir, relativePath);
+          if (resolved === null) {
             return jsonResponse({ error: "invalid_asset_path" }, 400);
           }
-          return fileResponse(resolve(staticOptions.outDir, relativePath), contentTypeForPath(relativePath));
+          return fileResponse(resolved, contentTypeForPath(relativePath));
         }
 
         if (request.method === "GET" && requestURL.pathname === "/__openturn/play-app/main.js") {
@@ -511,12 +524,19 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
           });
         }
 
+        if (request.method === "GET" && requestURL.pathname === "/__openturn/play-app/tailwind.js") {
+          return new Response(getDevPlayAppTailwind(), {
+            headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store" },
+          });
+        }
+
         if (!wantsShell && request.method === "GET" && requestURL.pathname.startsWith("/assets/")) {
           const relativePath = requestURL.pathname.slice(1);
-          if (relativePath.split("/").includes("..")) {
+          const resolved = resolveAssetPath(staticOptions.outDir, relativePath);
+          if (resolved === null) {
             return jsonResponse({ error: "invalid_asset_path" }, 400);
           }
-          return fileResponse(resolve(staticOptions.outDir, relativePath), contentTypeForPath(relativePath));
+          return fileResponse(resolved, contentTypeForPath(relativePath));
         }
       }
 
@@ -2005,7 +2025,7 @@ async function startStaticServer(options: {
   shell: boolean;
 }): Promise<StaticServerHandle> {
   await assertLocalDevPortAvailable(options.port);
-  const url = `http://${LOCAL_DEV_HOST}:${options.port}`;
+  const url = `http://${LOCAL_DEV_DISPLAY_HOST}:${options.port}`;
 
   const server = Bun.serve({
     async fetch(request) {
@@ -2025,16 +2045,23 @@ async function startStaticServer(options: {
 
         if (requestURL.pathname.startsWith("/__openturn/bundle/")) {
           const relativePath = requestURL.pathname.slice("/__openturn/bundle/".length) || "index.html";
-          if (relativePath.split("/").includes("..")) {
+          const resolved = resolveAssetPath(options.outDir, relativePath);
+          if (resolved === null) {
             return jsonResponse({ error: "invalid_asset_path" }, 400);
           }
-          return fileResponse(resolve(options.outDir, relativePath), contentTypeForPath(relativePath));
+          return fileResponse(resolved, contentTypeForPath(relativePath));
         }
 
         if (requestURL.pathname === "/__openturn/play-app/main.js") {
           const bundle = await getDevPlayAppBundle();
           return new Response(bundle.js, {
             headers: { "Content-Type": bundle.jsContentType, "Cache-Control": "no-store" },
+          });
+        }
+
+        if (requestURL.pathname === "/__openturn/play-app/tailwind.js") {
+          return new Response(getDevPlayAppTailwind(), {
+            headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store" },
           });
         }
 
@@ -2046,10 +2073,11 @@ async function startStaticServer(options: {
       }
 
       const relativePath = requestURL.pathname.replace(/^\/+/, "");
-      if (relativePath.length === 0 || relativePath.split("/").includes("..")) {
+      const resolved = resolveAssetPath(options.outDir, relativePath);
+      if (resolved === null) {
         return jsonResponse({ error: "not_found" }, 404);
       }
-      return fileResponse(resolve(options.outDir, relativePath), contentTypeForPath(relativePath));
+      return fileResponse(resolved, contentTypeForPath(relativePath));
     },
     hostname: LOCAL_DEV_HOST,
     port: options.port,
@@ -2091,6 +2119,12 @@ function readBooleanFlag(args: readonly string[], flag: string): boolean | undef
   for (const arg of args) {
     if (arg === positiveFlag) value = true;
     else if (arg === negativeFlag) value = false;
+    else if (arg.startsWith(`${positiveFlag}=`)) {
+      const raw = arg.slice(positiveFlag.length + 1).toLowerCase();
+      if (raw === "true" || raw === "1" || raw === "yes") value = true;
+      else if (raw === "false" || raw === "0" || raw === "no") value = false;
+      else throw new Error(`Invalid value for ${positiveFlag}: ${arg.slice(positiveFlag.length + 1)} (expected true/false)`);
+    }
   }
   return value;
 }
@@ -2742,6 +2776,23 @@ function fileResponse(path: string, contentType: string): Response {
   });
 }
 
+/**
+ * Resolves `relativePath` underneath `rootDir` and returns the absolute path
+ * iff the result stays inside `rootDir`. Returns null on traversal attempts
+ * (`..` segments, absolute paths, Windows drive prefixes, backslash escapes).
+ *
+ * Substring-based checks like `path.split("/").includes("..")` miss `..\` on
+ * Windows and absolute paths like `/etc/passwd` (which `resolve` would happily
+ * walk to). Doing one final `startsWith(rootDir + sep)` catches both.
+ */
+function resolveAssetPath(rootDir: string, relativePath: string): string | null {
+  if (relativePath.length === 0) return null;
+  const root = resolve(rootDir);
+  const candidate = resolve(root, relativePath);
+  if (candidate !== root && !candidate.startsWith(root + sep)) return null;
+  return candidate;
+}
+
 function htmlResponse(html: string): Response {
   return new Response(html, {
     headers: {
@@ -2754,7 +2805,8 @@ function htmlResponse(html: string): Response {
 // HTML wrapper for the React-based dev play shell. The actual UI lives in
 // packages/cli/src/play-app/main.tsx and is bundled on demand by
 // `getDevPlayAppBundle()`. Tailwind utility classes are JIT-compiled in the
-// browser via the `@tailwindcss/browser` script — fine for a dev tool.
+// browser via `@tailwindcss/browser`, served locally from the CLI's own
+// node_modules so the dev shell works offline and doesn't depend on a CDN.
 interface DevPlayMultiplayerConfig {
   minPlayers: number;
   maxPlayers: number;
@@ -2762,7 +2814,17 @@ interface DevPlayMultiplayerConfig {
 }
 
 function extractMultiplayerConfig(deployment: GameDeployment): DevPlayMultiplayerConfig {
-  const players = [...((deployment.game as { playerIDs?: readonly string[] }).playerIDs ?? [])];
+  const declaredPlayerIDs = (deployment.game as { playerIDs?: readonly string[] }).playerIDs;
+  if (declaredPlayerIDs === undefined || declaredPlayerIDs.length === 0) {
+    // The dev play shell needs `playerIDs` to mint seats. A multiplayer
+    // deployment that ships without them yields a 0-seat lobby that silently
+    // does nothing — surface that loudly so the developer can fix it.
+    throw new Error(
+      `Multiplayer deployment "${deployment.gameKey ?? "unknown"}" is missing \`game.playerIDs\`. ` +
+      `Add a non-empty playerIDs array to the game definition.`,
+    );
+  }
+  const players = [...declaredPlayerIDs];
   const maxPlayers = players.length;
   const minPlayers = (deployment.game as { minPlayers?: number }).minPlayers ?? maxPlayers;
   return { players, minPlayers, maxPlayers };
@@ -2788,7 +2850,7 @@ function createLocalPlayShell(input: {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>${title}</title>
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="/__openturn/play-app/tailwind.js"></script>
     <style>
       html, body, #root { height: 100%; margin: 0; }
       body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }

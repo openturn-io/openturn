@@ -63,8 +63,13 @@ export function resolveBotMapFromSeats<TGame extends AnyGame>(
 ): Map<string, Bot<TGame>> | null {
   const assignments = seats.flatMap((seat) => {
     if (seat.kind !== "bot") return [];
-    const playerID = playerIDs[seat.seatIndex] ?? seat.botID;
-    if (playerID === undefined || seat.botID === undefined) return [];
+    if (seat.botID === undefined) return [];
+    // Bot's seatIndex MUST map to a real entry in `playerIDs` — falling back
+    // to the botID would produce a non-existent player ID, silently breaking
+    // the driver. If the index is out of range, drop the assignment so the
+    // caller surfaces "no bots" rather than running a phantom seat.
+    const playerID = playerIDs[seat.seatIndex];
+    if (playerID === undefined) return [];
     return [{
       kind: "bot" as const,
       playerID,

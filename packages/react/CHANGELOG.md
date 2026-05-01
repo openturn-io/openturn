@@ -1,5 +1,59 @@
 # @openturn/react
 
+## 0.2.3
+
+### Patch Changes
+
+- @openturn/bot@0.2.3
+- @openturn/bridge@0.2.3
+- @openturn/client@0.2.3
+- @openturn/core@0.2.3
+- @openturn/inspector@0.2.3
+- @openturn/lobby@0.2.3
+- @openturn/protocol@0.2.3
+- @openturn/replay@0.2.3
+
+## 0.2.2
+
+### Patch Changes
+
+- e7e9c70: Prefer the hosted play shell URL returned by openturn-cloud during deploys and derive multiplayer lobby capacity fallbacks from the game definition when bridge init data is zeroed.
+  - @openturn/bot@0.2.2
+  - @openturn/bridge@0.2.2
+  - @openturn/client@0.2.2
+  - @openturn/core@0.2.2
+  - @openturn/inspector@0.2.2
+  - @openturn/lobby@0.2.2
+  - @openturn/protocol@0.2.2
+  - @openturn/replay@0.2.2
+
+## 0.2.1
+
+### Patch Changes
+
+- @openturn/bot@0.2.1
+- @openturn/bridge@0.2.1
+- @openturn/client@0.2.1
+- @openturn/core@0.2.1
+- @openturn/inspector@0.2.1
+- @openturn/lobby@0.2.1
+- @openturn/protocol@0.2.1
+- @openturn/replay@0.2.1
+
+## 0.2.0
+
+### Patch Changes
+
+- Updated dependencies [6d74435]
+  - @openturn/bridge@0.2.0
+  - @openturn/bot@0.2.0
+  - @openturn/client@0.2.0
+  - @openturn/core@0.2.0
+  - @openturn/inspector@0.2.0
+  - @openturn/lobby@0.2.0
+  - @openturn/protocol@0.2.0
+  - @openturn/replay@0.2.0
+
 ## 0.1.1
 
 ### Patch Changes

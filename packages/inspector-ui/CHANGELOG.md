@@ -1,5 +1,47 @@
 # @openturn/inspector-ui
 
+## 0.2.3
+
+### Patch Changes
+
+- @openturn/bridge@0.2.3
+- @openturn/core@0.2.3
+- @openturn/inspector@0.2.3
+- @openturn/react@0.2.3
+- @openturn/replay@0.2.3
+
+## 0.2.2
+
+### Patch Changes
+
+- Updated dependencies [e7e9c70]
+  - @openturn/react@0.2.2
+  - @openturn/bridge@0.2.2
+  - @openturn/core@0.2.2
+  - @openturn/inspector@0.2.2
+  - @openturn/replay@0.2.2
+
+## 0.2.1
+
+### Patch Changes
+
+- @openturn/bridge@0.2.1
+- @openturn/core@0.2.1
+- @openturn/inspector@0.2.1
+- @openturn/react@0.2.1
+- @openturn/replay@0.2.1
+
+## 0.2.0
+
+### Patch Changes
+
+- Updated dependencies [6d74435]
+  - @openturn/bridge@0.2.0
+  - @openturn/react@0.2.0
+  - @openturn/core@0.2.0
+  - @openturn/inspector@0.2.0
+  - @openturn/replay@0.2.0
+
 ## 0.1.1
 
 ### Patch Changes

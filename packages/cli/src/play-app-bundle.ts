@@ -5,7 +5,7 @@
 // for the CLI process lifetime.
 
 import { fileURLToPath } from "node:url";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 interface PlayAppBundle {
   js: string;
@@ -13,6 +13,7 @@ interface PlayAppBundle {
 }
 
 let cached: Promise<PlayAppBundle> | null = null;
+let cachedTailwind: string | null = null;
 
 const PLAY_APP_RESOLVED_DEPENDENCIES = new Map(
   [
@@ -29,9 +30,28 @@ const PLAY_APP_RESOLVED_DEPENDENCIES = new Map(
 
 export function getDevPlayAppBundle(): Promise<PlayAppBundle> {
   if (cached === null) {
-    cached = buildBundle();
+    // Clear the cache on rejection so the next request retries instead of
+    // permanently serving a stale failure for the lifetime of the process.
+    cached = buildBundle().catch((error) => {
+      cached = null;
+      throw error;
+    });
   }
   return cached;
+}
+
+/**
+ * Returns the bytes of `@tailwindcss/browser`'s IIFE bundle, served at
+ * `/__openturn/play-app/tailwind.js`. Self-hosted (resolved from local
+ * node_modules) so the dev shell works offline and isn't pinned to a
+ * third-party CDN.
+ */
+export function getDevPlayAppTailwind(): string {
+  if (cachedTailwind === null) {
+    const path = fileURLToPath(import.meta.resolve("@tailwindcss/browser"));
+    cachedTailwind = readFileSync(path, "utf8");
+  }
+  return cachedTailwind;
 }
 
 async function buildBundle(): Promise<PlayAppBundle> {

@@ -581,7 +581,9 @@ export function createGameWorker<TGame extends AnyGame>(
       }
       this.#lobby = runtime;
 
-      await this.ensureBotDriver(meta, persisted);
+      // Use the post-prune snapshot so bot rehydration sees the same seat
+      // set as everything else in this runtime.
+      await this.ensureBotDriver(meta, runtime.toPersisted());
       return runtime;
     }
 

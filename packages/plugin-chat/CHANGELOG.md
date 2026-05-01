@@ -1,5 +1,37 @@
 # @openturn/plugin-chat
 
+## 0.2.3
+
+### Patch Changes
+
+- @openturn/core@0.2.3
+- @openturn/gamekit@0.2.3
+- @openturn/plugins@0.2.3
+
+## 0.2.2
+
+### Patch Changes
+
+- @openturn/core@0.2.2
+- @openturn/gamekit@0.2.2
+- @openturn/plugins@0.2.2
+
+## 0.2.1
+
+### Patch Changes
+
+- @openturn/core@0.2.1
+- @openturn/gamekit@0.2.1
+- @openturn/plugins@0.2.1
+
+## 0.2.0
+
+### Patch Changes
+
+- @openturn/core@0.2.0
+- @openturn/gamekit@0.2.0
+- @openturn/plugins@0.2.0
+
 ## 0.1.1
 
 ### Patch Changes

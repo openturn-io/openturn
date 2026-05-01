@@ -162,6 +162,11 @@ export function describeRoomStatus(status: PlayRoomStatus): string {
   }
 }
 
+// RoomIDs are minted server-side as URL-safe identifiers. Reject anything
+// outside that alphabet to keep arbitrary user input (URLs, HTML, etc.) from
+// flowing into invite links and JSX as a "valid" room ID.
+const ROOM_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+
 // Accepts either a bare room ID or a URL/string that contains `?room=...`.
 export function extractRoomID(value: string): string | null {
   const trimmed = value.trim();
@@ -172,11 +177,12 @@ export function extractRoomID(value: string): string | null {
     try {
       const asURL = new URL(trimmed, "https://example.com");
       const param = asURL.searchParams.get("room");
-      if (param !== null && param.length > 0) return param;
+      if (param !== null && ROOM_ID_PATTERN.test(param)) return param;
     } catch {}
+    return null;
   }
 
-  return trimmed;
+  return ROOM_ID_PATTERN.test(trimmed) ? trimmed : null;
 }
 
 export function snapshotToBridgeInit(snapshot: PlayRoomSnapshot): BridgeInit {

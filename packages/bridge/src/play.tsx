@@ -87,20 +87,29 @@ export function PlayPage({ adapter, initialRoomID, chrome, classes }: PlayPagePr
     [adapter],
   );
 
-  // Auto-join from initialRoomID once.
+  // Auto-join from initialRoomID — exactly once per roomID. Re-runs only if
+  // the URL changes to a different room. A failed join sets `cardState.kind`
+  // to `"error"`; we must NOT retry on that state change or invalid invites
+  // would loop forever.
   const autoJoinRoomID = initialRoomID ?? null;
+  const attemptedRoomIDRef = useRef<string | null>(null);
   useEffect(() => {
     if (autoJoinRoomID === null) return;
-    if (snapshot !== null) return;
-    if (cardState.kind === "loading") return;
+    if (attemptedRoomIDRef.current === autoJoinRoomID) return;
+    attemptedRoomIDRef.current = autoJoinRoomID;
     void performAction("join", () => adapter.joinRoom(autoJoinRoomID));
-  }, [autoJoinRoomID, snapshot, cardState.kind, adapter, performAction]);
+  }, [autoJoinRoomID, adapter, performAction]);
 
   if (snapshot !== null) {
     return (
       <div className={classes?.inRoomRoot ?? "flex h-dvh flex-col bg-white text-slate-900"}>
         {chrome}
-        <RoomView snapshot={snapshot} adapter={adapter} classes={classes} />
+        <RoomView
+          snapshot={snapshot}
+          adapter={adapter}
+          classes={classes}
+          onSnapshotChange={setSnapshot}
+        />
       </div>
     );
   }
@@ -470,10 +479,12 @@ function RoomView({
   snapshot,
   adapter,
   classes,
+  onSnapshotChange,
 }: {
   snapshot: PlayRoomSnapshot;
   adapter: PlayShellAdapter;
   classes: PlayPageClassNames | undefined;
+  onSnapshotChange: (next: PlayRoomSnapshot) => void;
 }) {
   const host = useBridgeHost(snapshot, adapter);
   const matchActive = useBridgeMatchActive(host, snapshot.scope === "game");
@@ -486,6 +497,7 @@ function RoomView({
 
   const [presence, setPresence] = useState<PresenceSnapshot | null>(null);
   useEffect(() => {
+    setPresence(null);
     if (adapter.pollPresence === undefined) return;
     const poll = adapter.pollPresence;
     const controller = new AbortController();
@@ -494,9 +506,11 @@ function RoomView({
     const tick = async () => {
       try {
         const next = await poll(snapshot.roomID, controller.signal);
-        if (next !== null && !controller.signal.aborted) setPresence(next);
-      } catch {}
-      if (stopped) return;
+        if (stopped || controller.signal.aborted) return;
+        if (next !== null) setPresence(next);
+      } catch {
+        if (stopped || controller.signal.aborted) return;
+      }
       timeout = setTimeout(() => void tick(), PRESENCE_POLL_MS);
     };
     void tick();
@@ -546,16 +560,20 @@ function RoomView({
         window.alert(`Save failed: ${result.reason ?? result.status}`);
         return;
       }
-      const href = result.downloadURL ?? bytesToObjectURL(result.bytes);
+      const ownedURL = result.downloadURL === undefined ? bytesToObjectURL(result.bytes) : null;
+      const href = result.downloadURL ?? ownedURL;
       if (href === null) return;
-      const a = document.createElement("a");
-      a.href = href;
-      a.download = `${result.saveID}.otsave`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      if (result.bytes !== undefined && result.downloadURL === undefined) {
-        setTimeout(() => URL.revokeObjectURL(href), 30_000);
+      try {
+        const a = document.createElement("a");
+        a.href = href;
+        a.download = `${result.saveID}.otsave`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } finally {
+        if (ownedURL !== null) {
+          setTimeout(() => URL.revokeObjectURL(ownedURL), 30_000);
+        }
       }
     } catch (caught) {
       window.alert(`Save failed: ${caught instanceof Error ? caught.message : String(caught)}`);
@@ -579,7 +597,7 @@ function RoomView({
           return;
         }
         adapter.writeRoomIDToLocation?.(result.snapshot.roomID);
-        window.location.reload();
+        onSnapshotChange(result.snapshot);
       } catch (caught) {
         window.alert(`Load failed: ${caught instanceof Error ? caught.message : String(caught)}`);
       }
@@ -595,7 +613,9 @@ function RoomView({
       window.alert(`Reset failed: ${result.reason ?? result.status}`);
       return;
     }
-    window.location.reload();
+    // Re-join refreshes the snapshot (fresh token, fresh bridge init).
+    const rejoin = await adapter.joinRoom(snapshot.roomID);
+    if (rejoin.status === "ok") onSnapshotChange(rejoin.snapshot);
   }
 
   async function handleReturnToLobby() {
@@ -606,7 +626,8 @@ function RoomView({
       window.alert(`Return-to-lobby failed: ${result.reason ?? result.status}`);
       return;
     }
-    window.location.reload();
+    const rejoin = await adapter.joinRoom(snapshot.roomID);
+    if (rejoin.status === "ok") onSnapshotChange(rejoin.snapshot);
   }
 
   const toolbarLead = (

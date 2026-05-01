@@ -1,6 +1,6 @@
 {
   "name": "@openturn/replay",
-  "version": "0.1.1",
+  "version": "0.2.3",
   "type": "module",
   "openturn": {
     "runtime": "worker"
@@ -18,11 +18,11 @@
     "postpack": "node ../../scripts/postpack.mjs"
   },
   "dependencies": {
-    "@openturn/core": "^0.1.1",
-    "@openturn/json": "^0.1.1"
+    "@openturn/core": "^0.2.3",
+    "@openturn/json": "^0.2.3"
   },
   "devDependencies": {
-    "@openturn/gamekit": "^0.1.1"
+    "@openturn/gamekit": "^0.2.3"
   },
   "license": "Apache-2.0",
   "repository": {
