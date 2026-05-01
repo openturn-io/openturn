@@ -187,7 +187,7 @@ function OpenSeatHostMenu(props: {
                 id={`${labelID}-bots`}
                 role="menu"
                 aria-labelledby={labelID}
-                className="openturn-lobby-seat__bot-options absolute left-0 right-0 z-10 mt-1 flex flex-col gap-px overflow-hidden rounded-md border border-indigo-200 bg-white shadow-lg"
+                className="openturn-lobby-seat__bot-options absolute left-0 right-0 z-50 mt-1 flex flex-col gap-px overflow-hidden rounded-md border border-indigo-200 bg-white shadow-lg"
               >
                 {availableBots.map((bot) => (
                   <li key={bot.botID} role="none">
