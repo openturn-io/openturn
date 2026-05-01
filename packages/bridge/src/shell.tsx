@@ -13,8 +13,24 @@ import {
   type BridgeCapabilityPreset,
 } from "./schema";
 
+// `allow-same-origin` is required: the bundle's dev server serves ES module
+// imports (entry chunk, HMR client, refresh runtime) which the iframe has to
+// fetch from its own origin. Without it, those module fetches fail CORS
+// because the iframe's origin becomes the opaque `null`.
+//
+// The MDN warning about `allow-scripts` + `allow-same-origin` only applies
+// when the iframe's document shares an origin with the parent — in that case
+// the iframe could reach into the parent and strip its own sandbox. Openturn
+// always serves the bundle from a different origin than the parent shell:
+// `localhost:<bundle-port>` vs `localhost:<dev-port>` in CLI dev, and a
+// deployment domain vs the play domain in cloud. The bridge host also
+// enforces `expectOrigin` on every inbound postMessage.
+//
+// `allow-clipboard-write` was here historically — it is NOT a sandbox token
+// (it's a Permissions Policy directive); browsers warn on it. Clipboard
+// access is granted via the separate `allow` attribute below.
 const DEFAULT_IFRAME_SANDBOX =
-  "allow-scripts allow-same-origin allow-modals allow-clipboard-write allow-forms";
+  "allow-scripts allow-same-origin allow-modals allow-forms";
 const DEFAULT_IFRAME_ALLOW = "clipboard-write";
 
 export interface PlayShellProps {
@@ -80,12 +96,12 @@ export function PlayShell({
       <div
         className={
           toolbarClassName ??
-          "flex flex-none flex-wrap items-center gap-3 border-b border-slate-200 bg-white/80 px-4 py-2 text-sm text-slate-600"
+          "flex flex-none flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-200 bg-white/80 px-4 py-2 text-sm text-slate-600"
         }
       >
         <strong className="text-slate-900">{gameName}</strong>
         {toolbarLead}
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1">
           <CapabilityHeaderButtons capabilities={headerCaps} onInvoke={invoke} />
           {toolbarTrail}
           <CapabilityOverflowMenu capabilities={menuCaps} onInvoke={invoke} />

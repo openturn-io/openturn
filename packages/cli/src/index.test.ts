@@ -403,7 +403,10 @@ describe("@openturn/cli", () => {
 
       const playShell = await fetch(`${server.url}/play/dev?room=${hostSnapshot.roomID}`);
       expect(playShell.status).toBe(200);
-      expect(await playShell.text()).toContain("playerID: snapshot.playerID");
+      const playShellHTML = await playShell.text();
+      expect(playShellHTML).toContain('id="root"');
+      expect(playShellHTML).toContain("/__openturn/play-app/main.js");
+      expect(playShellHTML).toContain("__OPENTURN_PLAY__");
 
       lobbySocket.close();
       for (const socket of guestSockets) {
@@ -846,17 +849,16 @@ describe("@openturn/cli", () => {
       const shellResponse = await fetch(`${server.url}/play/dev`);
       expect(shellResponse.status).toBe(200);
       const shell = await shellResponse.text();
-      expect(shell).toContain('allow="clipboard-write"');
-      expect(shell).toContain('sandbox="allow-scripts allow-same-origin allow-modals allow-clipboard-write allow-forms"');
-      expect(shell).toContain('id="actions"');
-      expect(shell).toContain('id="returnToLobby"');
-      expect(shell).toContain('params.set("openturn-bridge"');
+      expect(shell).toContain('id="root"');
+      expect(shell).toContain("/__openturn/play-app/main.js");
+      expect(shell).toContain("__OPENTURN_PLAY__");
       expect(shell).not.toContain("openturn-backend");
-      expect(shell).toContain("openturn:bridge:token-refresh-request");
-      expect(shell).toContain("openturn:bridge:token-refresh-response");
-      expect(shell).toContain('headers: { authorization: `Bearer ${stored}` }');
-      expect(shell).toContain("sessionStorage.removeItem(sessionKey);");
-      expect(shell).toContain("caught?.status !== 401");
+
+      const playAppResponse = await fetch(`${server.url}/__openturn/play-app/main.js`);
+      expect(playAppResponse.status).toBe(200);
+      expect(playAppResponse.headers.get("content-type")).toContain("javascript");
+      const playAppBody = await playAppResponse.text();
+      expect(playAppBody).toContain("openturn:bridge");
     } finally {
       await server.stop();
       removeDatabaseFile(databasePath);
@@ -918,6 +920,77 @@ describe("@openturn/cli", () => {
 
     expect(deployment.gameKey).toBe("tic-tac-toe-multiplayer");
     expect(deployment.deploymentVersion).toBe("dev");
+  });
+
+  test("static.shell: false serves the raw built index.html instead of the play shell", async () => {
+    const databasePath = createDatabasePath("static-shell-false");
+    const staticDir = createStaticDir("static-shell-false");
+    writeFileSync(join(staticDir, "index.html"), "<!doctype html><title>Raw Built</title>");
+    const server = await startLocalDevServer({
+      dbPath: databasePath,
+      deployment,
+      port: createTestPort(),
+      static: {
+        deploymentID: "dep_42",
+        gameName: "Local Game",
+        outDir: staticDir,
+        shell: false,
+      },
+    });
+
+    try {
+      const rootResponse = await fetch(`${server.url}/`);
+      expect(rootResponse.status).toBe(200);
+      const rootBody = await rootResponse.text();
+      expect(rootBody).toContain("Raw Built");
+      expect(rootBody).not.toContain("id=\"actions\"");
+
+      const playResponse = await fetch(`${server.url}/play/dep_42`);
+      expect(playResponse.status).toBe(200);
+      expect(await playResponse.text()).toContain("Raw Built");
+    } finally {
+      await server.stop();
+      removeDatabaseFile(databasePath);
+      rmSync(staticDir, { force: true, recursive: true });
+    }
+  });
+
+  test("auth: \"none\" disables better-auth and accepts ?userID= for room creation", async () => {
+    const databasePath = createDatabasePath("auth-none");
+    const server = await startLocalDevServer({
+      auth: "none",
+      dbPath: databasePath,
+      deployment,
+      port: createTestPort(),
+    });
+
+    try {
+      const authResponse = await fetch(`${server.url}/api/auth/session`);
+      expect(authResponse.status).toBe(404);
+
+      const anonResponse = await fetch(`${server.url}/api/dev/session/anonymous`, {
+        method: "POST",
+      });
+      expect(anonResponse.status).toBe(404);
+
+      const healthResponse = await fetch(`${server.url}/api/dev/health`);
+      expect(healthResponse.status).toBe(200);
+
+      const meResponse = await fetch(`${server.url}/api/dev/me?userID=alice`);
+      expect(meResponse.status).toBe(200);
+      const meBody = (await meResponse.json()) as { user: { id: string; name: string } };
+      expect(meBody.user.id).toBe("alice");
+
+      const roomResponse = await fetch(`${server.url}/api/dev/rooms?userID=alice`, {
+        method: "POST",
+      });
+      expect(roomResponse.status).toBe(201);
+      const roomBody = (await roomResponse.json()) as { roomID: string };
+      expect(roomBody.roomID.startsWith("room_")).toBe(true);
+    } finally {
+      await server.stop();
+      removeDatabaseFile(databasePath);
+    }
   });
 });
 

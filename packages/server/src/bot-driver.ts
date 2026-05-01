@@ -33,6 +33,12 @@ export interface BotRegistryShape<TGame extends AnyGame> {
   readonly entries: ReadonlyArray<BotEntryShape<TGame>>;
 }
 
+export interface BotSeatRecordShape {
+  readonly kind: "human" | "bot";
+  readonly seatIndex: number;
+  readonly botID?: string;
+}
+
 type ActionDelaySleeper = (ms: number, signal: AbortSignal) => Promise<void>;
 
 export function resolveBotMap<TGame extends AnyGame>(
@@ -48,6 +54,29 @@ export function resolveBotMap<TGame extends AnyGame>(
     out.set(assignment.playerID, entry.bot);
   }
   return out.size > 0 ? out : null;
+}
+
+export function resolveBotMapFromSeats<TGame extends AnyGame>(
+  registry: BotRegistryShape<TGame> | undefined,
+  seats: ReadonlyArray<BotSeatRecordShape>,
+  playerIDs: readonly string[],
+): Map<string, Bot<TGame>> | null {
+  const assignments = seats.flatMap((seat) => {
+    if (seat.kind !== "bot") return [];
+    if (seat.botID === undefined) return [];
+    // Bot's seatIndex MUST map to a real entry in `playerIDs` — falling back
+    // to the botID would produce a non-existent player ID, silently breaking
+    // the driver. If the index is out of range, drop the assignment so the
+    // caller surfaces "no bots" rather than running a phantom seat.
+    const playerID = playerIDs[seat.seatIndex];
+    if (playerID === undefined) return [];
+    return [{
+      kind: "bot" as const,
+      playerID,
+      botID: seat.botID,
+    }];
+  });
+  return resolveBotMap(registry, assignments);
 }
 
 /**

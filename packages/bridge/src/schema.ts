@@ -52,7 +52,7 @@ export const BRIDGE_CAPABILITY_PRESETS: Record<
   BridgeCapabilityPreset,
   BridgeCapabilityPresetMeta
 > = {
-  "share-invite": { label: "Share invite", icon: "share", slot: "menu" },
+  "share-invite": { label: "Copy Invite", icon: "share", slot: "menu" },
   "current-turn": { label: "Current turn", icon: "info", slot: "header" },
   "new-game": { label: "New game", icon: "refresh", slot: "header" },
   "rules": { label: "Rules", icon: "book", slot: "menu" },

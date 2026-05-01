@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import chokidar from "chokidar";
@@ -21,6 +21,7 @@ import {
   loadOpenturnProjectDeployment,
   resolveOpenturnProject,
   type BuildOpenturnProjectResult,
+  type OpenturnDeploymentManifest,
   type OpenturnDeploymentRuntime,
 } from "@openturn/deploy";
 import { parseJsonText, stringifyJson } from "@openturn/json";
@@ -59,11 +60,18 @@ import type { ProtocolClientMessage } from "@openturn/protocol";
 
 import { DEFAULT_CLOUD_URL, cloudDeploy, loadCloudAuth, saveCloudAuth } from "./cloud";
 import { startDevBundleServer, type DevBundleServer } from "./dev-bundle";
+import { getDevPlayAppBundle, getDevPlayAppTailwind } from "./play-app-bundle";
 import { loadTelemetryConfig } from "./telemetry/config";
 import { createTelemetryClient, ensureTelemetryConfig } from "./telemetry/client";
 import { printFirstRunNotice } from "./telemetry/notice";
 
-const LOCAL_DEV_HOST = "localhost";
+// Bind explicitly to loopback. The dev server runs in `auth: "none"` mode
+// and reads identity from `?userID=`, so reachability beyond the local
+// machine would be a real impersonation surface. "localhost" can resolve to
+// other interfaces in some configurations; "127.0.0.1" cannot.
+const LOCAL_DEV_HOST = "127.0.0.1";
+// Friendlier hostname for printed URLs / browser-launch.
+const LOCAL_DEV_DISPLAY_HOST = "localhost";
 const CREATE_TEMPLATES = ["local", "multiplayer"] as const;
 const LOCAL_DEV_PORT_GUARD_HOSTS = ["127.0.0.1", "::1"] as const;
 
@@ -188,6 +196,14 @@ const authVerificationsTable = sqliteTable("verification", {
 });
 
 export interface LocalDevServerOptions {
+  /**
+   * "dev" (default) sets up better-auth with anonymous sign-in for local
+   * development. "none" skips better-auth entirely and derives userIDs from
+   * `?userID=` on each request (or generates a random UUID per request) —
+   * matches the production-shape used by `openturn start`, where auth is
+   * expected to be layered externally.
+   */
+  auth?: "dev" | "none";
   dbPath?: string;
   deployment: GameDeployment;
   iframe?: {
@@ -201,6 +217,11 @@ export interface LocalDevServerOptions {
     deploymentID: string;
     gameName: string;
     outDir: string;
+    /**
+     * When false, serve the built `<outDir>/index.html` directly at `/` and
+     * `/play/{deploymentID}` instead of the inspector play shell. Default true.
+     */
+    shell?: boolean;
   };
 }
 
@@ -214,7 +235,7 @@ export interface LocalDevServer {
 export async function startLocalDevServer(options: LocalDevServerOptions): Promise<LocalDevServer> {
   const port = options.port ?? 4010;
   await assertLocalDevPortAvailable(port);
-  const url = `http://${LOCAL_DEV_HOST}:${port}`;
+  const url = `http://${LOCAL_DEV_DISPLAY_HOST}:${port}`;
   const secret = options.secret ?? "openturn-local-dev-secret-1234567890";
   const dbPath = options.dbPath ?? resolve(process.cwd(), ".openturn/local-dev.sqlite");
   ensureSQLiteDatabaseParentDirectory(dbPath);
@@ -224,10 +245,11 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
   const drizzleDB = drizzle({ client: sqlite });
 
   let currentDeployment = options.deployment;
+  const authMode = options.auth ?? "dev";
 
   bootstrapLocalTables(sqlite);
 
-  const auth = betterAuth({
+  const auth = authMode === "dev" ? betterAuth({
     basePath: "/api/auth",
     baseURL: url,
     database: drizzleAdapter(drizzleDB, {
@@ -244,8 +266,10 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
       enabled: false,
     },
     secret,
-  });
-  bootstrapBetterAuthTables(sqlite, auth.options);
+  }) : null;
+  if (auth !== null) {
+    bootstrapBetterAuthTables(sqlite, auth.options);
+  }
 
   const roomPersistence = createSQLiteRoomPersistence(drizzleDB);
   const saveSecret = secret;
@@ -442,7 +466,7 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
         return createCorsPreflightResponse(corsOrigin);
       }
 
-      if (requestURL.pathname.startsWith("/api/auth/")) {
+      if (auth !== null && requestURL.pathname.startsWith("/api/auth/")) {
         return withCors(await auth.handler(request), corsOrigin);
       }
 
@@ -452,24 +476,67 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
             bundleURL: options.iframe.bundleURL,
             deploymentID: options.iframe.deploymentID,
             gameName: options.iframe.gameName,
+            multiplayer: extractMultiplayerConfig(currentDeployment),
           }));
+        }
+
+        if (request.method === "GET" && requestURL.pathname === "/__openturn/play-app/main.js") {
+          const bundle = await getDevPlayAppBundle();
+          return new Response(bundle.js, {
+            headers: { "Content-Type": bundle.jsContentType, "Cache-Control": "no-store" },
+          });
+        }
+
+        if (request.method === "GET" && requestURL.pathname === "/__openturn/play-app/tailwind.js") {
+          return new Response(getDevPlayAppTailwind(), {
+            headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store" },
+          });
         }
       }
 
       if (options.static !== undefined) {
-        if (request.method === "GET" && (requestURL.pathname === "/" || requestURL.pathname === `/play/${options.static.deploymentID}`)) {
-          return htmlResponse(createLocalPlayShell({
-            deploymentID: options.static.deploymentID,
-            gameName: options.static.gameName,
-          }));
+        const staticOptions = options.static;
+        const wantsShell = staticOptions.shell !== false;
+        if (request.method === "GET" && (requestURL.pathname === "/" || requestURL.pathname === `/play/${staticOptions.deploymentID}`)) {
+          if (wantsShell) {
+            return htmlResponse(createLocalPlayShell({
+              deploymentID: staticOptions.deploymentID,
+              gameName: staticOptions.gameName,
+              multiplayer: extractMultiplayerConfig(currentDeployment),
+            }));
+          }
+          return fileResponse(resolve(staticOptions.outDir, "index.html"), "text/html; charset=utf-8");
         }
 
         if (request.method === "GET" && requestURL.pathname.startsWith("/__openturn/bundle/")) {
           const relativePath = requestURL.pathname.slice("/__openturn/bundle/".length) || "index.html";
-          if (relativePath.split("/").includes("..")) {
+          const resolved = resolveAssetPath(staticOptions.outDir, relativePath);
+          if (resolved === null) {
             return jsonResponse({ error: "invalid_asset_path" }, 400);
           }
-          return fileResponse(resolve(options.static.outDir, relativePath), contentTypeForPath(relativePath));
+          return fileResponse(resolved, contentTypeForPath(relativePath));
+        }
+
+        if (request.method === "GET" && requestURL.pathname === "/__openturn/play-app/main.js") {
+          const bundle = await getDevPlayAppBundle();
+          return new Response(bundle.js, {
+            headers: { "Content-Type": bundle.jsContentType, "Cache-Control": "no-store" },
+          });
+        }
+
+        if (request.method === "GET" && requestURL.pathname === "/__openturn/play-app/tailwind.js") {
+          return new Response(getDevPlayAppTailwind(), {
+            headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store" },
+          });
+        }
+
+        if (!wantsShell && request.method === "GET" && requestURL.pathname.startsWith("/assets/")) {
+          const relativePath = requestURL.pathname.slice(1);
+          const resolved = resolveAssetPath(staticOptions.outDir, relativePath);
+          if (resolved === null) {
+            return jsonResponse({ error: "invalid_asset_path" }, 400);
+          }
+          return fileResponse(resolved, contentTypeForPath(relativePath));
         }
       }
 
@@ -481,7 +548,7 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
         }), corsOrigin);
       }
 
-      if (requestURL.pathname === "/api/dev/session/anonymous" && request.method === "POST") {
+      if (auth !== null && requestURL.pathname === "/api/dev/session/anonymous" && request.method === "POST") {
         return withCors(await auth.handler(
           new Request(new URL("/api/auth/sign-in/anonymous", url), {
             headers: request.headers,
@@ -1653,12 +1720,53 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
   }
 
   async function getSession(request: Request) {
+    if (auth === null) {
+      const userID = resolveAuthlessUserID(request);
+      const sessionID = `nosession_${userID}`;
+      return {
+        session: {
+          id: sessionID,
+          userId: userID,
+          token: sessionID,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          ipAddress: null,
+          userAgent: null,
+        },
+        user: {
+          id: userID,
+          name: userID,
+          email: `${userID}@local`,
+          emailVerified: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          image: null,
+        },
+      } as unknown as NonNullable<Awaited<ReturnType<NonNullable<typeof auth>["api"]["getSession"]>>>;
+    }
     const result = await auth.api.getSession({
       headers: request.headers,
     });
 
     return result;
   }
+}
+
+/**
+ * Pulls a userID from `?userID=` on the request URL, or falls back to a fresh
+ * UUID. Used by `startLocalDevServer({ auth: "none" })` to identify connections
+ * without better-auth.
+ */
+function resolveAuthlessUserID(request: Request): string {
+  try {
+    const requestURL = new URL(request.url);
+    const provided = requestURL.searchParams.get("userID");
+    if (provided !== null && provided.length > 0) {
+      return provided;
+    }
+  } catch {}
+  return `anon_${crypto.randomUUID()}`;
 }
 
 async function runCli(rawArgs: readonly string[]): Promise<void> {
@@ -1713,6 +1821,9 @@ async function runCli(rawArgs: readonly string[]): Promise<void> {
         break;
       case "logout":
         await runLogoutCommand();
+        break;
+      case "start":
+        await runLocalStart(args);
         break;
       default:
         console.error(`Unknown command: ${command}`);
@@ -1834,6 +1945,190 @@ function printBuildResult(result: BuildOpenturnProjectResult, label: string) {
   console.log(`Entry: ${result.manifest.entry}`);
 }
 
+async function runLocalStart(args: readonly string[]) {
+  const projectDir = readPositionalProjectDir(args);
+  const outFlag = readFlagValue(args, "--out") ?? ".openturn/deploy";
+  const portFlag = readFlagValue(args, "--port");
+  const port = portFlag === null ? 3000 : Number(portFlag);
+  const dbPath = readFlagValue(args, "--db");
+  const shellFlag = readBooleanFlag(args, "--shell");
+  const shell = shellFlag ?? true;
+
+  const absoluteProjectDir = resolve(process.cwd(), projectDir);
+  const outDir = resolve(absoluteProjectDir, outFlag);
+  const manifest = loadDeploymentManifest(outDir);
+  const deploymentID = manifest.deploymentID ?? "dep";
+
+  if (manifest.runtime === "local") {
+    const server = await startStaticServer({
+      deploymentID,
+      gameName: manifest.gameName,
+      outDir,
+      port,
+      shell,
+    });
+    const playURL = shell ? `${server.url}/play/${deploymentID}` : server.url;
+    console.log("");
+    console.log(`  ▶ Play URL:  ${playURL}`);
+    console.log(`    Mode:      single-player${shell ? "" : " (no shell)"}`);
+    console.log("");
+
+    await waitForShutdownSignal();
+    await server.stop();
+    return;
+  }
+
+  const deploymentVersion = manifest.multiplayer?.deploymentVersion ?? "dev";
+  const deployment = await loadOpenturnProjectDeployment({
+    deploymentVersion,
+    projectDir: absoluteProjectDir,
+  }) as GameDeployment;
+
+  const serverOptions: LocalDevServerOptions = {
+    auth: "none",
+    deployment,
+    port,
+    static: {
+      deploymentID,
+      gameName: manifest.gameName,
+      outDir,
+      shell,
+    },
+  };
+  if (dbPath !== null) {
+    serverOptions.dbPath = dbPath;
+  }
+
+  const server = await startLocalDevServer(serverOptions);
+  const playURL = shell ? `${server.url}/play/${deploymentID}` : server.url;
+  console.log("");
+  console.log(`  ▶ Play URL:  ${playURL}`);
+  console.log(`    Mode:      multiplayer (no-auth)${shell ? "" : ", no shell"}`);
+  console.log(`    Note:      local emulation; production uses Cloudflare Workers.`);
+  console.log("");
+
+  await waitForShutdownSignal();
+  await server.stop();
+}
+
+interface StaticServerHandle {
+  port: number;
+  stop(): Promise<void>;
+  url: string;
+}
+
+async function startStaticServer(options: {
+  deploymentID: string;
+  gameName: string;
+  outDir: string;
+  port: number;
+  shell: boolean;
+}): Promise<StaticServerHandle> {
+  await assertLocalDevPortAvailable(options.port);
+  const url = `http://${LOCAL_DEV_DISPLAY_HOST}:${options.port}`;
+
+  const server = Bun.serve({
+    async fetch(request) {
+      const requestURL = new URL(request.url);
+
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        return jsonResponse({ error: "method_not_allowed" }, 405);
+      }
+
+      if (options.shell) {
+        if (requestURL.pathname === "/" || requestURL.pathname === `/play/${options.deploymentID}`) {
+          return htmlResponse(createLocalPlayShell({
+            deploymentID: options.deploymentID,
+            gameName: options.gameName,
+          }));
+        }
+
+        if (requestURL.pathname.startsWith("/__openturn/bundle/")) {
+          const relativePath = requestURL.pathname.slice("/__openturn/bundle/".length) || "index.html";
+          const resolved = resolveAssetPath(options.outDir, relativePath);
+          if (resolved === null) {
+            return jsonResponse({ error: "invalid_asset_path" }, 400);
+          }
+          return fileResponse(resolved, contentTypeForPath(relativePath));
+        }
+
+        if (requestURL.pathname === "/__openturn/play-app/main.js") {
+          const bundle = await getDevPlayAppBundle();
+          return new Response(bundle.js, {
+            headers: { "Content-Type": bundle.jsContentType, "Cache-Control": "no-store" },
+          });
+        }
+
+        if (requestURL.pathname === "/__openturn/play-app/tailwind.js") {
+          return new Response(getDevPlayAppTailwind(), {
+            headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store" },
+          });
+        }
+
+        return jsonResponse({ error: "not_found" }, 404);
+      }
+
+      if (requestURL.pathname === "/" || requestURL.pathname === `/play/${options.deploymentID}`) {
+        return fileResponse(resolve(options.outDir, "index.html"), "text/html; charset=utf-8");
+      }
+
+      const relativePath = requestURL.pathname.replace(/^\/+/, "");
+      const resolved = resolveAssetPath(options.outDir, relativePath);
+      if (resolved === null) {
+        return jsonResponse({ error: "not_found" }, 404);
+      }
+      return fileResponse(resolved, contentTypeForPath(relativePath));
+    },
+    hostname: LOCAL_DEV_HOST,
+    port: options.port,
+  });
+
+  return {
+    port: server.port ?? options.port,
+    async stop() {
+      await server.stop();
+    },
+    url,
+  };
+}
+
+function loadDeploymentManifest(outDir: string): OpenturnDeploymentManifest {
+  const manifestPath = resolve(outDir, "manifest.json");
+  if (!existsSync(manifestPath)) {
+    throw new Error(
+      `No build artifacts found at ${outDir}. Run \`openturn build\` first (or pass --out <dir>).`,
+    );
+  }
+  const raw = readFileSync(manifestPath, "utf8");
+  return JSON.parse(raw) as OpenturnDeploymentManifest;
+}
+
+/**
+ * Read a boolean flag pair like `--shell` / `--no-shell`. Returns:
+ *  - `true` when only `--name` is present (or appears after `--no-name`)
+ *  - `false` when only `--no-name` is present (or appears after `--name`)
+ *  - `undefined` when neither is present
+ */
+function readBooleanFlag(args: readonly string[], flag: string): boolean | undefined {
+  if (!flag.startsWith("--")) {
+    throw new Error(`readBooleanFlag expects a --flag name, got ${flag}`);
+  }
+  const positiveFlag = flag;
+  const negativeFlag = `--no-${flag.slice(2)}`;
+  let value: boolean | undefined;
+  for (const arg of args) {
+    if (arg === positiveFlag) value = true;
+    else if (arg === negativeFlag) value = false;
+    else if (arg.startsWith(`${positiveFlag}=`)) {
+      const raw = arg.slice(positiveFlag.length + 1).toLowerCase();
+      if (raw === "true" || raw === "1" || raw === "yes") value = true;
+      else if (raw === "false" || raw === "0" || raw === "no") value = false;
+      else throw new Error(`Invalid value for ${positiveFlag}: ${arg.slice(positiveFlag.length + 1)} (expected true/false)`);
+    }
+  }
+  return value;
+}
+
 async function runCreateCommand(args: readonly string[]) {
   const projectDir = readPositionalProjectDir(args);
   const template = readFlagValue(args, "--template") ?? "local";
@@ -1921,6 +2216,7 @@ function createProjectPackageJson(input: {
     scripts: {
       dev: "openturn dev .",
       build: "openturn build .",
+      start: "openturn start .",
       deploy: "openturn deploy .",
       typecheck: "tsc -p tsconfig.json --pretty false",
     },
@@ -2480,6 +2776,23 @@ function fileResponse(path: string, contentType: string): Response {
   });
 }
 
+/**
+ * Resolves `relativePath` underneath `rootDir` and returns the absolute path
+ * iff the result stays inside `rootDir`. Returns null on traversal attempts
+ * (`..` segments, absolute paths, Windows drive prefixes, backslash escapes).
+ *
+ * Substring-based checks like `path.split("/").includes("..")` miss `..\` on
+ * Windows and absolute paths like `/etc/passwd` (which `resolve` would happily
+ * walk to). Doing one final `startsWith(rootDir + sep)` catches both.
+ */
+function resolveAssetPath(rootDir: string, relativePath: string): string | null {
+  if (relativePath.length === 0) return null;
+  const root = resolve(rootDir);
+  const candidate = resolve(root, relativePath);
+  if (candidate !== root && !candidate.startsWith(root + sep)) return null;
+  return candidate;
+}
+
 function htmlResponse(html: string): Response {
   return new Response(html, {
     headers: {
@@ -2488,468 +2801,65 @@ function htmlResponse(html: string): Response {
   });
 }
 
+
+// HTML wrapper for the React-based dev play shell. The actual UI lives in
+// packages/cli/src/play-app/main.tsx and is bundled on demand by
+// `getDevPlayAppBundle()`. Tailwind utility classes are JIT-compiled in the
+// browser via `@tailwindcss/browser`, served locally from the CLI's own
+// node_modules so the dev shell works offline and doesn't depend on a CDN.
+interface DevPlayMultiplayerConfig {
+  minPlayers: number;
+  maxPlayers: number;
+  players: readonly string[];
+}
+
+function extractMultiplayerConfig(deployment: GameDeployment): DevPlayMultiplayerConfig {
+  const declaredPlayerIDs = (deployment.game as { playerIDs?: readonly string[] }).playerIDs;
+  if (declaredPlayerIDs === undefined || declaredPlayerIDs.length === 0) {
+    // The dev play shell needs `playerIDs` to mint seats. A multiplayer
+    // deployment that ships without them yields a 0-seat lobby that silently
+    // does nothing — surface that loudly so the developer can fix it.
+    throw new Error(
+      `Multiplayer deployment "${deployment.gameKey ?? "unknown"}" is missing \`game.playerIDs\`. ` +
+      `Add a non-empty playerIDs array to the game definition.`,
+    );
+  }
+  const players = [...declaredPlayerIDs];
+  const maxPlayers = players.length;
+  const minPlayers = (deployment.game as { minPlayers?: number }).minPlayers ?? maxPlayers;
+  return { players, minPlayers, maxPlayers };
+}
+
 function createLocalPlayShell(input: {
   bundleURL?: string;
   deploymentID: string;
   gameName: string;
+  multiplayer?: DevPlayMultiplayerConfig;
 }): string {
   const title = escapeHTML(input.gameName);
-  const bundleBase = input.bundleURL ?? "/__openturn/bundle";
-
+  const bundleBase = input.bundleURL ?? "/__openturn/bundle/";
+  const config = {
+    deploymentID: input.deploymentID,
+    gameName: input.gameName,
+    bundleBase,
+    multiplayer: input.multiplayer,
+  };
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>${title}</title>
+    <script src="/__openturn/play-app/tailwind.js"></script>
     <style>
       html, body, #root { height: 100%; margin: 0; }
       body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-      #bar { align-items: center; border-bottom: 1px solid #d9dee7; display: flex; flex-wrap: wrap; gap: 12px; min-height: 44px; padding: 6px 16px; }
-      #bar strong { color: #111827; }
-      #bar span, #bar button { color: #4b5563; font-size: 13px; }
-      #bar button { background: #fff; border: 1px solid #d1d5db; border-radius: 6px; cursor: pointer; padding: 5px 9px; }
-      #bar button[disabled] { cursor: not-allowed; opacity: 0.5; }
-      #actions, #caps { align-items: center; display: flex; flex-wrap: wrap; gap: 6px; }
-      #caps[hidden] { display: none; }
-      #caps button .badge { color: #6b7280; margin-left: 4px; }
-      #seats { align-items: center; display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; margin-right: 8px; }
-      .seat { align-items: center; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 9999px; color: #4b5563; display: inline-flex; font-size: 12px; gap: 6px; padding: 3px 10px; }
-      .seat[data-state="open"] { background: #fff; color: #94a3b8; font-style: italic; }
-      .seat[data-state="disconnected"] { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
-      .seat[data-state="connected"] { background: #ecfdf5; border-color: #a7f3d0; color: #047857; }
-      .seat .dot { background: currentColor; border-radius: 50%; height: 7px; width: 7px; }
-      .seat[data-state="open"] .dot { background: transparent; border: 1px dashed currentColor; }
-      .seat .ready { color: #059669; }
-      iframe { border: 0; display: block; flex: 1; width: 100%; }
-      body { display: flex; flex-direction: column; }
-      #error { color: #b91c1c; padding: 16px; }
     </style>
   </head>
   <body>
-    <div id="bar">
-      <strong>${title}</strong>
-      <span id="status">Opening local room...</span>
-      <div id="seats" hidden></div>
-      <div id="actions" hidden>
-        <button id="reset" type="button" disabled>Reset</button>
-        <button id="returnToLobby" type="button" disabled>Back to lobby</button>
-        <button id="save" type="button">Save</button>
-        <button id="load" type="button">Load</button>
-      </div>
-      <div id="caps" hidden></div>
-      <button id="copy" hidden type="button">Copy invite</button>
-    </div>
-    <iframe id="game" title="${title}" allow="clipboard-write" sandbox="allow-scripts allow-same-origin allow-modals allow-clipboard-write allow-forms"></iframe>
-    <div id="error" hidden></div>
-    <script type="module">
-      const deploymentID = ${JSON.stringify(input.deploymentID)};
-      const bundleBase = ${JSON.stringify(bundleBase)};
-      const PRESETS = ${JSON.stringify(BRIDGE_CAPABILITY_PRESETS)};
-      const status = document.getElementById("status");
-      const copy = document.getElementById("copy");
-      const frame = document.getElementById("game");
-      const error = document.getElementById("error");
-      const seatsEl = document.getElementById("seats");
-      const actions = document.getElementById("actions");
-      const reset = document.getElementById("reset");
-      const returnToLobby = document.getElementById("returnToLobby");
-      const save = document.getElementById("save");
-      const load = document.getElementById("load");
-      const capsEl = document.getElementById("caps");
-      const sessionKey = "openturn.dev.play-token";
-
-      const capButtons = new Map();
-      function renderCap(descriptor) {
-        const meta = PRESETS[descriptor.preset];
-        if (!meta) return;
-        let btn = capButtons.get(descriptor.preset);
-        if (!btn) {
-          btn = document.createElement("button");
-          btn.type = "button";
-          btn.dataset.preset = descriptor.preset;
-          btn.addEventListener("click", () => {
-            if (btn.disabled) return;
-            const requestID = (typeof crypto !== "undefined" && crypto.randomUUID)
-              ? crypto.randomUUID()
-              : "req_" + Math.random().toString(36).slice(2);
-            frame.contentWindow?.postMessage({
-              kind: "openturn:bridge:capability-invoke",
-              requestID,
-              preset: descriptor.preset,
-            }, "*");
-          });
-          capsEl.appendChild(btn);
-          capButtons.set(descriptor.preset, btn);
-        }
-        btn.disabled = descriptor.disabled === true;
-        const label = meta.label;
-        btn.textContent = "";
-        btn.appendChild(document.createTextNode(label));
-        if (descriptor.badge !== undefined && descriptor.badge !== null) {
-          const span = document.createElement("span");
-          span.className = "badge";
-          span.textContent = "(" + String(descriptor.badge) + ")";
-          btn.appendChild(span);
-        }
-        capsEl.hidden = capButtons.size === 0;
-      }
-      function removeCap(preset) {
-        const btn = capButtons.get(preset);
-        if (!btn) return;
-        btn.remove();
-        capButtons.delete(preset);
-        capsEl.hidden = capButtons.size === 0;
-      }
-
-      async function requestJSON(path, init = {}) {
-        const response = await fetch(path, init);
-        const payload = await response.json().catch(() => null);
-        if (!response.ok) {
-          const error = new Error(payload?.error ?? payload?.code ?? \`request_failed_\${response.status}\`);
-          error.status = response.status;
-          error.payload = payload;
-          throw error;
-        }
-        return payload;
-      }
-
-      async function sessionToken() {
-        const stored = sessionStorage.getItem(sessionKey);
-        if (stored) {
-          const existing = await fetch("/api/dev/me", {
-            headers: { authorization: \`Bearer \${stored}\` },
-          }).catch(() => null);
-          if (existing?.ok) return stored;
-          sessionStorage.removeItem(sessionKey);
-        }
-        const existing = await fetch("/api/dev/me").catch(() => null);
-        if (existing?.ok) {
-          return null;
-        }
-        try {
-          const session = await requestJSON("/api/dev/session/anonymous", { method: "POST" });
-          sessionStorage.setItem(sessionKey, session.token);
-          return session.token;
-        } catch (caught) {
-          if (
-            caught?.status === 400 &&
-            caught?.payload?.code === "ANONYMOUS_USERS_CANNOT_SIGN_IN_AGAIN_ANONYMOUSLY"
-          ) {
-            return null;
-          }
-          throw caught;
-        }
-      }
-
-      async function authorized(path, init = {}) {
-        const token = await sessionToken();
-        try {
-          return await requestJSON(path, {
-            ...init,
-            headers: {
-              ...(init.headers ?? {}),
-              ...(token === null ? {} : { authorization: \`Bearer \${token}\` }),
-            },
-          });
-        } catch (caught) {
-          if (caught?.status !== 401 || token === null) {
-            throw caught;
-          }
-          sessionStorage.removeItem(sessionKey);
-        }
-        const freshToken = await sessionToken();
-        return await requestJSON(path, {
-          ...init,
-          headers: {
-            ...(init.headers ?? {}),
-            ...(freshToken === null ? {} : { authorization: \`Bearer \${freshToken}\` }),
-          },
-        });
-      }
-
-      function roomIDFromURL() {
-        return new URL(window.location.href).searchParams.get("room");
-      }
-
-      function inviteURL(roomID) {
-        const url = new URL(window.location.href);
-        url.pathname = \`/play/\${deploymentID}\`;
-        url.searchParams.set("room", roomID);
-        return url.toString();
-      }
-
-      async function fetchLobbySnapshot(roomID) {
-        if (!roomID) {
-          return await authorized("/api/dev/rooms", { method: "POST" });
-        }
-        return await authorized(
-          \`/api/dev/rooms/\${encodeURIComponent(roomID)}/lobby-token\`,
-          { method: "POST" },
-        );
-      }
-
-      try {
-        const existingRoomID = roomIDFromURL();
-        const snapshot = await fetchLobbySnapshot(existingRoomID);
-        const roomID = snapshot.roomID;
-        if (!existingRoomID) {
-          const nextURL = new URL(window.location.href);
-          nextURL.pathname = \`/play/\${deploymentID}\`;
-          nextURL.searchParams.set("room", roomID);
-          history.replaceState({}, "", nextURL);
-        }
-
-        const backend = {
-          roomID,
-          userID: snapshot.userID,
-          userName: snapshot.userName,
-          scope: snapshot.scope,
-          token: snapshot.token,
-          tokenExpiresAt: snapshot.tokenExpiresAt,
-          websocketURL: snapshot.websocketURL,
-          parentOrigin: window.location.origin,
-          targetCapacity: snapshot.targetCapacity,
-          minPlayers: snapshot.minPlayers,
-          maxPlayers: snapshot.maxPlayers,
-          isHost: snapshot.isHost,
-          hostUserID: snapshot.hostUserID,
-          playerID: snapshot.playerID,
-        };
-        const params = new URLSearchParams();
-        params.set("openturn-bridge", btoa(JSON.stringify(backend)));
-        frame.src = \`\${bundleBase}/#\${params.toString()}\`;
-        status.textContent = snapshot.isHost
-          ? \`room \${roomID} · host\`
-          : \`room \${roomID} · guest\`;
-        copy.hidden = false;
-        copy.addEventListener("click", () => navigator.clipboard?.writeText(inviteURL(roomID)));
-        actions.hidden = false;
-
-        function applyMatchActive(active) {
-          reset.disabled = !active;
-          returnToLobby.disabled = !active;
-        }
-        applyMatchActive(snapshot.scope === "game");
-        window.addEventListener("message", (event) => {
-          if (event.source !== frame.contentWindow) return;
-          const data = event.data;
-          if (data === null || typeof data !== "object") return;
-          if (data.kind === "openturn:bridge:match-state" && typeof data.matchActive === "boolean") {
-            applyMatchActive(data.matchActive);
-          }
-          if (data.kind === "openturn:bridge:capability-expose" && data.descriptor && PRESETS[data.descriptor.preset]) {
-            renderCap(data.descriptor);
-          }
-          if (data.kind === "openturn:bridge:capability-retire" && typeof data.preset === "string") {
-            removeCap(data.preset);
-          }
-        });
-
-        async function runDevAction(action, actionRoomID = roomID, extra = {}) {
-          if (action === "reset") {
-            await authorized(
-              \`/api/dev/rooms/\${encodeURIComponent(actionRoomID)}/reset\`,
-              { method: "POST" },
-            );
-            window.location.reload();
-            return;
-          }
-          if (action === "return-to-lobby") {
-            await authorized(
-              \`/api/dev/rooms/\${encodeURIComponent(actionRoomID)}/return-to-lobby\`,
-              { method: "POST" },
-            );
-            window.location.reload();
-            return;
-          }
-          if (action === "save") {
-            const result = await authorized(
-              \`/api/dev/rooms/\${encodeURIComponent(actionRoomID)}/save\`,
-              { method: "POST" },
-            );
-            const href = result?.downloadURL ?? \`/api/dev/saves/\${encodeURIComponent(result.saveID)}\`;
-            const a = document.createElement("a");
-            a.href = href;
-            a.download = \`\${result.saveID}.otsave\`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            return;
-          }
-          if (action === "load" && Array.isArray(extra.bytes)) {
-            const bytes = new Uint8Array(extra.bytes);
-            const token = await sessionToken();
-            const uploadResponse = await fetch("/api/dev/saves", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/octet-stream",
-                ...(token === null ? {} : { authorization: \`Bearer \${token}\` }),
-              },
-              body: bytes,
-            });
-            const uploadBody = await uploadResponse.json().catch(() => null);
-            if (!uploadResponse.ok) {
-              window.alert(\`Load failed: \${uploadBody?.error ?? uploadResponse.status}\`);
-              return;
-            }
-            const newRoom = await authorized(
-              \`/api/dev/saves/\${encodeURIComponent(uploadBody.saveID)}/new-room\`,
-              { method: "POST" },
-            );
-            const nextURL = new URL(window.location.href);
-            nextURL.pathname = \`/play/\${deploymentID}\`;
-            nextURL.searchParams.set("room", newRoom.roomID);
-            window.location.assign(nextURL.toString());
-          }
-        }
-
-        function reportDevActionFailure(action, caught) {
-          window.alert(\`Dev action "\${action}" failed: \${caught instanceof Error ? caught.message : String(caught)}\`);
-        }
-
-        reset.addEventListener("click", async () => {
-          if (reset.disabled) return;
-          if (!window.confirm("Reset match to start? Players will be reconnected.")) return;
-          try {
-            await runDevAction("reset");
-          } catch (caught) {
-            reportDevActionFailure("reset", caught);
-          }
-        });
-        returnToLobby.addEventListener("click", async () => {
-          if (returnToLobby.disabled) return;
-          if (!window.confirm("End the match and return to lobby?")) return;
-          try {
-            await runDevAction("return-to-lobby");
-          } catch (caught) {
-            reportDevActionFailure("return-to-lobby", caught);
-          }
-        });
-        save.addEventListener("click", async () => {
-          try {
-            await runDevAction("save");
-          } catch (caught) {
-            reportDevActionFailure("save", caught);
-          }
-        });
-        load.addEventListener("click", () => {
-          const input = document.createElement("input");
-          input.type = "file";
-          input.accept = ".otsave,application/octet-stream";
-          input.addEventListener("change", async () => {
-            const file = input.files?.[0];
-            if (file === undefined) return;
-            try {
-              const buffer = await file.arrayBuffer();
-              await runDevAction("load", roomID, { bytes: Array.from(new Uint8Array(buffer)) });
-            } catch (caught) {
-              reportDevActionFailure("load", caught);
-            }
-          });
-          input.click();
-        });
-
-        async function refreshPresence() {
-          try {
-            const presence = await authorized(
-              \`/api/dev/rooms/\${encodeURIComponent(roomID)}/presence\`,
-            );
-            renderSeats(presence);
-          } catch {}
-        }
-        function renderSeats(presence) {
-          if (!presence || !Array.isArray(presence.seats)) {
-            seatsEl.hidden = true;
-            return;
-          }
-          seatsEl.hidden = false;
-          seatsEl.innerHTML = "";
-          for (const seat of presence.seats) {
-            const chip = document.createElement("span");
-            chip.className = "seat";
-            const state = seat.userID === null
-              ? "open"
-              : seat.connected ? "connected" : "disconnected";
-            chip.dataset.state = state;
-            const dot = document.createElement("span");
-            dot.className = "dot";
-            const label = document.createElement("span");
-            const name = seat.userID === null
-              ? \`Seat \${seat.seatIndex + 1} · open\`
-              : (seat.userName ?? \`Player \${seat.userID.slice(0, 6)}\`);
-            label.textContent = name;
-            chip.appendChild(dot);
-            chip.appendChild(label);
-            if (seat.userID !== null && seat.ready && presence.phase === "lobby") {
-              const ready = document.createElement("span");
-              ready.className = "ready";
-              ready.textContent = "✓";
-              chip.appendChild(ready);
-            }
-            if (seat.userID !== null && !seat.connected && presence.phase === "active") {
-              const tag = document.createElement("span");
-              tag.textContent = "(disconnected)";
-              chip.appendChild(tag);
-            }
-            seatsEl.appendChild(chip);
-          }
-        }
-        void refreshPresence();
-        setInterval(refreshPresence, 3000);
-        window.addEventListener("message", async (event) => {
-          const data = event.data;
-          if (
-            data === null ||
-            typeof data !== "object" ||
-            data.kind !== "openturn:bridge:token-refresh-request" ||
-            data.roomID !== roomID ||
-            typeof data.requestID !== "string"
-          ) {
-            return;
-          }
-
-          try {
-            const refreshed = await authorized(
-              \`/api/dev/rooms/\${encodeURIComponent(roomID)}/lobby-token\`,
-              { method: "POST" },
-            );
-            event.source?.postMessage(
-              {
-                kind: "openturn:bridge:token-refresh-response",
-                requestID: data.requestID,
-                token: refreshed.token,
-                tokenExpiresAt: refreshed.tokenExpiresAt,
-              },
-              { targetOrigin: event.origin === "null" ? "*" : event.origin },
-            );
-          } catch {}
-        });
-
-        window.addEventListener("message", async (event) => {
-          const data = event.data;
-          if (
-            data === null ||
-            typeof data !== "object" ||
-            data.kind !== "openturn:dev-action" ||
-            typeof data.action !== "string"
-          ) {
-            return;
-          }
-
-          const actionRoomID = typeof data.roomID === "string" ? data.roomID : roomID;
-          try {
-            await runDevAction(data.action, actionRoomID, data);
-          } catch (caught) {
-            reportDevActionFailure(data.action, caught);
-          }
-        });
-      } catch (caught) {
-        status.textContent = "Local room failed";
-        error.hidden = false;
-        error.textContent = caught instanceof Error ? caught.message : String(caught);
-      }
-    </script>
+    <div id="root"></div>
+    <script>window.__OPENTURN_PLAY__ = ${escapeJSONForScript(config)};</script>
+    <script type="module" src="/__openturn/play-app/main.js"></script>
   </body>
 </html>
 `;
@@ -2962,6 +2872,20 @@ function escapeHTML(value: string): string {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
 }
+
+function escapeJSONForScript(value: unknown): string {
+  return JSON.stringify(value).replace(/[<>&\u2028\u2029]/g, (ch) => {
+    return JSON_SCRIPT_ESCAPES[ch] ?? ch;
+  });
+}
+
+const JSON_SCRIPT_ESCAPES: Record<string, string> = {
+  "<": "\\u003c",
+  ">": "\\u003e",
+  "&": "\\u0026",
+  "\u2028": "\\u2028",
+  "\u2029": "\\u2029",
+};
 
 function contentTypeForPath(path: string): string {
   if (path.endsWith(".html")) {
@@ -3041,12 +2965,29 @@ const CLI_COMMANDS: Record<string, CliCommand> = {
     ],
   },
   build: {
-    summary: "Build a deployable bundle to disk.",
+    summary: "Build a deployable bundle to disk (single-player or multiplayer).",
     usage: ["openturn build [project-dir] [--out <dir>] [--deployment-id <id>] [--project-id <id>]"],
     flags: [
       { name: "--out", value: "<dir>", description: "Output directory (default: .openturn/deploy)." },
       { name: "--deployment-id", value: "<id>", description: "Override the generated deployment ID." },
       { name: "--project-id", value: "<id>", description: "Override the generated project ID." },
+    ],
+    notes: [
+      "Runtime is read from app/openturn.ts. Multiplayer projects also emit a server bundle.",
+    ],
+  },
+  start: {
+    summary: "Run a previously-built bundle locally.",
+    usage: ["openturn start [project-dir] [--port <port>] [--out <dir>] [--no-shell] [--db <path>]"],
+    flags: [
+      { name: "--port", value: "<port>", description: "Port to bind (default: 3000)." },
+      { name: "--out", value: "<dir>", description: "Build output directory to serve (default: .openturn/deploy)." },
+      { name: "--no-shell", description: "Serve the raw built game without the inspector toolbar shell." },
+      { name: "--db", value: "<path>", description: "SQLite path for room persistence (multiplayer only)." },
+    ],
+    notes: [
+      "Requires a prior `openturn build`. Multiplayer mode runs the bun server with no auth injection — layer auth externally.",
+      "Multiplayer is local emulation; production runs on Cloudflare Workers.",
     ],
   },
   deploy: {

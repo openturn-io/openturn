@@ -10,6 +10,8 @@
     "./game": "./src/game.ts",
     "./host": "./src/host.ts",
     "./shell": "./src/shell.tsx",
+    "./play": "./src/play.tsx",
+    "./play-types": "./src/play-types.ts",
     "./dev-transport": "./src/dev-transport.ts"
   },
   "types": "./src/index.ts",
@@ -24,13 +26,18 @@
   "dependencies": {
     "@openturn/client": "^0.2.3",
     "@openturn/json": "^0.2.3",
+    "sonner": "^2.0.7",
     "zod": "^4.1.12"
   },
   "peerDependencies": {
-    "react": "^19.2.0"
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
   },
   "peerDependenciesMeta": {
     "react": {
+      "optional": true
+    },
+    "react-dom": {
       "optional": true
     }
   },
@@ -72,6 +79,14 @@
       "./shell": {
         "types": "./dist/shell.d.ts",
         "import": "./dist/shell.js"
+      },
+      "./play": {
+        "types": "./dist/play.d.ts",
+        "import": "./dist/play.js"
+      },
+      "./play-types": {
+        "types": "./dist/play-types.d.ts",
+        "import": "./dist/play-types.js"
       },
       "./dev-transport": {
         "types": "./dist/dev-transport.d.ts",

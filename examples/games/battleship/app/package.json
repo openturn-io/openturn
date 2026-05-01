@@ -9,6 +9,7 @@
     "build": "bun run ../../../../packages/cli/src/index.ts build .",
     "deploy": "bun run ../../../../packages/cli/src/index.ts deploy . --project battleship --name \"Battleship\"",
     "dev": "bun run ../../../../packages/cli/src/index.ts dev . --port 3006",
+    "start": "bun run ../../../../packages/cli/src/index.ts start . --port 3006",
     "typecheck": "bun x tsc -p tsconfig.json --pretty false"
   },
   "dependencies": {

@@ -3,7 +3,7 @@ import { defineBot } from "@openturn/bot";
 import { createLocalSession, type PlayerID } from "@openturn/core";
 import { defineGame, turn } from "@openturn/gamekit";
 
-import { BotDriver, resolveBotMap } from "./bot-driver";
+import { BotDriver, resolveBotMap, resolveBotMapFromSeats } from "./bot-driver";
 
 interface CounterState {
   value: number;
@@ -92,6 +92,28 @@ describe("resolveBotMap()", () => {
     expect(map!.size).toBe(1);
     expect(map!.has("0")).toBe(false);
     expect(map!.has("1")).toBe(true);
+  });
+});
+
+describe("resolveBotMapFromSeats()", () => {
+  test("rebuilds bot assignments from persisted lobby seats", () => {
+    const map = resolveBotMapFromSeats(registry as never, [
+      { kind: "human", seatIndex: 0 },
+      { kind: "bot", seatIndex: 2, botID: "three" },
+    ], ["0", "1", "3"]);
+
+    expect(map).not.toBeNull();
+    expect(map!.size).toBe(1);
+    expect(map!.get("3")).toBe(alwaysThreeBot as never);
+  });
+
+  test("returns null when persisted seats contain no known bots", () => {
+    const map = resolveBotMapFromSeats(registry as never, [
+      { kind: "human", seatIndex: 0 },
+      { kind: "bot", seatIndex: 1, botID: "missing" },
+    ], ["0", "1"]);
+
+    expect(map).toBeNull();
   });
 });
 

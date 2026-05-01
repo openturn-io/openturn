@@ -1,6 +1,11 @@
 import { DurableObject } from "cloudflare:workers";
 
-import { BotDriver, resolveBotMap, type BotRegistryShape } from "./bot-driver";
+import {
+  BotDriver,
+  resolveBotMap,
+  resolveBotMapFromSeats,
+  type BotRegistryShape,
+} from "./bot-driver";
 import type { AnyGame, PlayerID } from "@openturn/core";
 import {
   isLobbyClientMessageText,
@@ -576,30 +581,9 @@ export function createGameWorker<TGame extends AnyGame>(
       }
       this.#lobby = runtime;
 
-      // Rehydrate the bot driver if the persisted lobby is already past
-      // start (`mode: "active"` with bot seats). On cold-start after DO
-      // hibernation, `lobby.start()` won't fire again; we read seat state
-      // from the persisted record and rebuild the driver in place.
-      if (this.#botDriver === null && persisted !== undefined) {
-        const botSeats = persisted.seats.filter((s) => s.kind === "bot");
-        if (botSeats.length > 0) {
-          const registry = (erasedDeployment.game as { bots?: BotRegistryShape<AnyGame> }).bots;
-          if (registry !== undefined) {
-            const assignmentsForRehydrate = botSeats.map((s) => ({
-              kind: "bot" as const,
-              playerID: meta.playerIDs[s.seatIndex] ?? s.botID,
-              botID: s.botID,
-            }));
-            const botMap = resolveBotMap(registry, assignmentsForRehydrate);
-            if (botMap !== null) {
-              this.#botDriver = new BotDriver({
-                game: erasedDeployment.game,
-                bots: botMap,
-              });
-            }
-          }
-        }
-      }
+      // Use the post-prune snapshot so bot rehydration sees the same seat
+      // set as everything else in this runtime.
+      await this.ensureBotDriver(meta, runtime.toPersisted());
       return runtime;
     }
 
@@ -834,6 +818,27 @@ export function createGameWorker<TGame extends AnyGame>(
       }
     }
 
+    private async ensureBotDriver(
+      meta: InitMeta,
+      persistedLobby?: LobbyPersistedState,
+    ): Promise<void> {
+      if (this.#botDriver !== null) return;
+      const persisted =
+        persistedLobby
+        ?? this.#lobby?.toPersisted()
+        ?? await this.ctx.storage.get<LobbyPersistedState>(LOBBY_KEY);
+      if (persisted === undefined || persisted.mode !== "active") return;
+
+      const registry = (erasedDeployment.game as { bots?: BotRegistryShape<AnyGame> }).bots;
+      const botMap = resolveBotMapFromSeats(registry, persisted.seats, meta.playerIDs);
+      if (botMap === null) return;
+
+      this.#botDriver = new BotDriver({
+        game: erasedDeployment.game,
+        bots: botMap,
+      });
+    }
+
     private broadcastLobbyState(meta: InitMeta, lobby: LobbyRuntime): void {
       const message = lobby.buildStateMessage(
         meta.roomID,
@@ -933,9 +938,8 @@ export function createGameWorker<TGame extends AnyGame>(
       // After every human dispatch, give bot seats a chance to act. The
       // driver no-ops cheaply when no bot is registered or no bot's seat is
       // currently active.
-      if (this.#botDriver !== null) {
-        await this.tickBotDriver(meta, runtime);
-      }
+      await this.ensureBotDriver(meta);
+      await this.tickBotDriver(meta, runtime);
       await this.scheduleIdleReap();
     }
 
