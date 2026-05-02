@@ -231,6 +231,26 @@ describe("LobbyRuntime — bot + human start", () => {
     expect(result.assignments.map((a) => a.kind)).toEqual(["bot", "bot"]);
   });
 
+  test("requireHumanSeat rejects bots-only start with no_humans_seated", () => {
+    const runtime = new LobbyRuntime(
+      env({ knownBots: knownBots(), requireHumanSeat: true }),
+    );
+    runtime.assignBot(HOST, 0, "random");
+    runtime.assignBot(HOST, 1, "minimax-hard");
+    expect(runtime.start(HOST)).toEqual({ ok: false, reason: "no_humans_seated" });
+  });
+
+  test("requireHumanSeat allows mixed human + bot start", () => {
+    const runtime = new LobbyRuntime(
+      env({ knownBots: knownBots(), requireHumanSeat: true }),
+    );
+    runtime.assignBot(HOST, 1, "random");
+    runtime.takeSeat(ALICE, "Alice", 0);
+    runtime.setReady(ALICE, true);
+    const result = runtime.start(HOST);
+    expect(result.ok).toBe(true);
+  });
+
   test("dropUser does not touch bot seats", () => {
     const runtime = new LobbyRuntime(env({ knownBots: knownBots() }));
     runtime.assignBot(HOST, 0, "random");

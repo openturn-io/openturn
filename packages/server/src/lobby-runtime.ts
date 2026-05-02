@@ -31,6 +31,13 @@ export interface LobbyEnv {
    * job once the lobby transitions to game.
    */
   knownBots?: ReadonlyMap<string, LobbyAvailableBotInfo>;
+  /**
+   * When true, `start()` rejects with `no_humans_seated` if every seated
+   * player is a bot. Hosted (cloud) deployments enable this so randos can't
+   * spawn pure-bot rooms; local CLI dev leaves it off so authors can dry-run
+   * bot-vs-bot matches.
+   */
+  requireHumanSeat?: boolean;
 }
 
 export interface LobbyAvailableBotInfo {
@@ -373,6 +380,12 @@ export class LobbyRuntime {
     const seated = [...this.#seats.values()].sort((a, b) => a.seatIndex - b.seatIndex);
     if (seated.length < this.env.minPlayers) {
       return { ok: false, reason: "below_min_players" };
+    }
+    if (this.env.requireHumanSeat === true) {
+      const hasHuman = seated.some((seat) => seat.kind === "human");
+      if (!hasHuman) {
+        return { ok: false, reason: "no_humans_seated" };
+      }
     }
     // Bot seats are implicitly ready; only humans need to opt in.
     const humansNotReady = seated.some(

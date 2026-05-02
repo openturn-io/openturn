@@ -571,6 +571,7 @@ export function createGameWorker<TGame extends AnyGame>(
         targetCapacity: meta.initialTargetCapacity,
         playerIDs: meta.playerIDs,
         ...(deploymentKnownBots === null ? {} : { knownBots: deploymentKnownBots }),
+        requireHumanSeat: true,
       };
       const runtime = new LobbyRuntime(env, persisted);
       // Enforce "disconnect frees seat": any user without a live lobby WS

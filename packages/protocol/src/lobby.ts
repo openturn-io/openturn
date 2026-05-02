@@ -49,6 +49,7 @@ export type LobbyRejectionReason =
   | "not_host"
   | "not_ready"
   | "below_min_players"
+  | "no_humans_seated"
   | "bad_phase"
   | "room_closed"
   | "seat_has_bot"
@@ -273,6 +274,7 @@ export const LobbyRejectedMessageSchema = z.object({
     "not_host",
     "not_ready",
     "below_min_players",
+    "no_humans_seated",
     "bad_phase",
     "room_closed",
     "seat_has_bot",

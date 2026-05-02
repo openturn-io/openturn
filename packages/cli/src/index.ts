@@ -1571,6 +1571,7 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
           .filter((a): a is typeof a & { userID: string } => a.userID !== null)
           .map((a) => a.userID),
       );
+      const roomHostUserID = roomHostsByRoom.get(ws.data.roomID) ?? null;
       const sockets = socketsByRoom.get(ws.data.roomID);
       if (sockets !== undefined) {
         for (const socket of sockets) {
@@ -1580,7 +1581,10 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
             try {
               socket.send(stringifyLobbyServerMessage(transition.message));
             } catch {}
-          } else if (!seatedUsers.has(socket.data.userID)) {
+          } else if (
+            !seatedUsers.has(socket.data.userID)
+            && socket.data.userID !== roomHostUserID
+          ) {
             try {
               socket.send(
                 stringifyLobbyServerMessage({
