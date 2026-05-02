@@ -14,8 +14,7 @@
     "typecheck": "bun x tsc -p tsconfig.json --pretty false",
     "build": "vite build -c vite.build.config.ts",
     "prepublishOnly": "bun run build",
-    "prepack": "node ../../scripts/prepack.mjs",
-    "postpack": "node ../../scripts/postpack.mjs"
+    "prepack": "node ../../scripts/prepack.mjs"
   },
   "dependencies": {
     "@openturn/bridge": "^0.4.0",

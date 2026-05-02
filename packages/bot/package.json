@@ -14,8 +14,7 @@
     "typecheck": "bun x tsc -p tsconfig.json --pretty false",
     "build": "tsc -p tsconfig.build.json",
     "prepublishOnly": "bun run build",
-    "prepack": "node ../../scripts/prepack.mjs",
-    "postpack": "node ../../scripts/postpack.mjs"
+    "prepack": "node ../../scripts/prepack.mjs"
   },
   "dependencies": {
     "@openturn/client": "^0.4.0",

@@ -1,23 +1,15 @@
 #!/usr/bin/env node
 // Runs from the cwd of the package being packed (npm sets cwd = package dir).
-// Backs up package.json to .package.json.prepack.bak, then merges
-// `publishConfig` into the top-level fields so the tarball ships with
-// dist-pointing exports/main/types/bin while dev keeps src-pointing fields.
-// `postpack.mjs` restores the original.
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+// Merges `publishConfig` into the top-level fields so the tarball ships with
+// dist-pointing exports/main/types/bin. The release script restores the
+// dev-paths package.json via `git restore` after `changeset publish` finishes
+// — npm publish reads its registry metadata from on-disk package.json AFTER
+// pack, so the modified file must remain in place through publish.
+import { readFileSync, writeFileSync } from "node:fs";
 
 const pkgPath = "package.json";
-const bakPath = ".package.json.prepack.bak";
 
-const original = readFileSync(pkgPath, "utf8");
-if (existsSync(bakPath)) {
-  // Defensive: a previous postpack didn't run. Don't double-backup over the
-  // original — keep the existing .bak (which is the true original).
-} else {
-  writeFileSync(bakPath, original);
-}
-
-const pkg = JSON.parse(original);
+const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
 const overrides = pkg.publishConfig ?? {};
 
 // publishConfig fields that npm itself consumes at publish time (not as
