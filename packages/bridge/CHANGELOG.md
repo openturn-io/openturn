@@ -1,5 +1,18 @@
 # @openturn/bridge
 
+## 0.5.0
+
+### Minor Changes
+
+- 43742b6: Fix same-tab play shell theme propagation so embedded dev bars and inspector chrome follow the selected dark theme, and keep the lobby React chrome fixed instead of accepting consumer skinning props (`Lobby` no longer accepts `className` or `renderSeat` — use `LobbyWithBots` for the bot-aware variant).
+
+### Patch Changes
+
+- Updated dependencies [aad0ac5]
+  - @openturn/manifest@0.5.0
+  - @openturn/client@0.5.0
+  - @openturn/json@0.5.0
+
 ## 0.4.0
 
 ### Minor Changes

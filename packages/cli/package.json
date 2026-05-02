@@ -1,6 +1,6 @@
 {
   "name": "@openturn/cli",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "bin": {
     "openturn": "./src/index.ts"
@@ -23,14 +23,14 @@
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "^1.6.0",
-    "@openturn/bridge": "^0.4.0",
-    "@openturn/core": "^0.4.0",
-    "@openturn/deploy": "^0.4.0",
-    "@openturn/inspector-ui": "^0.4.0",
-    "@openturn/json": "^0.4.0",
-    "@openturn/protocol": "^0.4.0",
-    "@openturn/react": "^0.4.0",
-    "@openturn/server": "^0.4.0",
+    "@openturn/bridge": "^0.5.0",
+    "@openturn/core": "^0.5.0",
+    "@openturn/deploy": "^0.5.0",
+    "@openturn/inspector-ui": "^0.5.0",
+    "@openturn/json": "^0.5.0",
+    "@openturn/protocol": "^0.5.0",
+    "@openturn/react": "^0.5.0",
+    "@openturn/server": "^0.5.0",
     "@tailwindcss/browser": "^4.2.2",
     "@tailwindcss/vite": "^4.2.2",
     "@vitejs/plugin-react": "^6.0.1",
