@@ -16,3 +16,6 @@ coverage
 .env.local
 
 .openturn/
+
+# Claude scheduled tasks runtime lock
+.claude/scheduled_tasks.lock
