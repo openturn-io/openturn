@@ -330,23 +330,23 @@
     },
     "packages/bot": {
       "name": "@openturn/bot",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
-        "@openturn/client": "^0.3.0",
-        "@openturn/core": "^0.3.0",
-        "@openturn/json": "^0.3.0",
+        "@openturn/client": "^0.4.0",
+        "@openturn/core": "^0.4.0",
+        "@openturn/json": "^0.4.0",
       },
       "devDependencies": {
-        "@openturn/gamekit": "^0.3.0",
+        "@openturn/gamekit": "^0.4.0",
       },
     },
     "packages/bridge": {
       "name": "@openturn/bridge",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
-        "@openturn/client": "^0.3.0",
-        "@openturn/json": "^0.3.0",
-        "@openturn/manifest": "^0.3.0",
+        "@openturn/client": "^0.4.0",
+        "@openturn/json": "^0.4.0",
+        "@openturn/manifest": "^0.4.0",
         "sonner": "^2.0.7",
         "zod": "^4.1.12",
       },
@@ -367,26 +367,26 @@
     },
     "packages/cli": {
       "name": "@openturn/cli",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "bin": {
         "openturn": "./src/index.ts",
       },
       "dependencies": {
         "@better-auth/drizzle-adapter": "^1.6.0",
-        "@openturn/bridge": "^0.3.0",
-        "@openturn/core": "^0.3.0",
-        "@openturn/deploy": "^0.3.0",
-        "@openturn/inspector-ui": "^0.3.0",
-        "@openturn/json": "^0.3.0",
-        "@openturn/protocol": "^0.3.0",
-        "@openturn/react": "^0.3.0",
-        "@openturn/server": "^0.3.0",
+        "@openturn/bridge": "^0.4.0",
+        "@openturn/core": "^0.4.0",
+        "@openturn/deploy": "^0.4.0",
+        "@openturn/inspector-ui": "^0.4.0",
+        "@openturn/json": "^0.4.0",
+        "@openturn/protocol": "^0.4.0",
+        "@openturn/react": "^0.4.0",
+        "@openturn/server": "^0.4.0",
         "@tailwindcss/browser": "^4.2.2",
         "@tailwindcss/vite": "^4.2.2",
         "@vitejs/plugin-react": "^6.0.1",
         "better-auth": "^1.6.0",
         "chokidar": "^5.0.0",
-        "drizzle-orm": "beta",
+        "drizzle-orm": "1.0.0-rc.1",
         "posthog-node": "^5.30.8",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",
@@ -401,28 +401,28 @@
     },
     "packages/client": {
       "name": "@openturn/client",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
-        "@openturn/json": "^0.3.0",
-        "@openturn/protocol": "^0.3.0",
+        "@openturn/json": "^0.4.0",
+        "@openturn/protocol": "^0.4.0",
       },
     },
     "packages/core": {
       "name": "@openturn/core",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
-        "@openturn/json": "^0.3.0",
+        "@openturn/json": "^0.4.0",
       },
     },
     "packages/deploy": {
       "name": "@openturn/deploy",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
-        "@openturn/core": "^0.3.0",
-        "@openturn/json": "^0.3.0",
-        "@openturn/manifest": "^0.3.0",
-        "@openturn/protocol": "^0.3.0",
-        "@openturn/server": "^0.3.0",
+        "@openturn/core": "^0.4.0",
+        "@openturn/json": "^0.4.0",
+        "@openturn/manifest": "^0.4.0",
+        "@openturn/protocol": "^0.4.0",
+        "@openturn/server": "^0.4.0",
         "@tailwindcss/vite": "^4.2.2",
         "@vitejs/plugin-react": "^6.0.1",
         "tailwindcss": "^4.2.2",
@@ -440,33 +440,33 @@
     },
     "packages/gamekit": {
       "name": "@openturn/gamekit",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
-        "@openturn/core": "^0.3.0",
-        "@openturn/json": "^0.3.0",
+        "@openturn/core": "^0.4.0",
+        "@openturn/json": "^0.4.0",
       },
     },
     "packages/inspector": {
       "name": "@openturn/inspector",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
-        "@openturn/core": "^0.3.0",
-        "@openturn/protocol": "^0.3.0",
-        "@openturn/replay": "^0.3.0",
+        "@openturn/core": "^0.4.0",
+        "@openturn/protocol": "^0.4.0",
+        "@openturn/replay": "^0.4.0",
       },
       "devDependencies": {
-        "@openturn/gamekit": "^0.3.0",
+        "@openturn/gamekit": "^0.4.0",
       },
     },
     "packages/inspector-ui": {
       "name": "@openturn/inspector-ui",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
-        "@openturn/bridge": "^0.3.0",
-        "@openturn/core": "^0.3.0",
-        "@openturn/inspector": "^0.3.0",
-        "@openturn/react": "^0.3.0",
-        "@openturn/replay": "^0.3.0",
+        "@openturn/bridge": "^0.4.0",
+        "@openturn/core": "^0.4.0",
+        "@openturn/inspector": "^0.4.0",
+        "@openturn/react": "^0.4.0",
+        "@openturn/replay": "^0.4.0",
         "@xyflow/react": "^12.10.2",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
@@ -498,23 +498,23 @@
     },
     "packages/json": {
       "name": "@openturn/json",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
         "zod": "^4.1.12",
       },
     },
     "packages/lobby": {
       "name": "@openturn/lobby",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
-        "@openturn/bot": "^0.3.0",
-        "@openturn/client": "^0.3.0",
-        "@openturn/core": "^0.3.0",
-        "@openturn/protocol": "^0.3.0",
-        "@openturn/server": "^0.3.0",
+        "@openturn/bot": "^0.4.0",
+        "@openturn/client": "^0.4.0",
+        "@openturn/core": "^0.4.0",
+        "@openturn/protocol": "^0.4.0",
+        "@openturn/server": "^0.4.0",
       },
       "devDependencies": {
-        "@openturn/gamekit": "^0.3.0",
+        "@openturn/gamekit": "^0.4.0",
         "@testing-library/react": "^16.3.0",
         "@types/react": "^19.2.0",
         "jsdom": "^29.0.1",
@@ -526,18 +526,18 @@
     },
     "packages/manifest": {
       "name": "@openturn/manifest",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
         "zod": "^4.1.12",
       },
     },
     "packages/plugin-chat": {
       "name": "@openturn/plugin-chat",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
-        "@openturn/core": "^0.3.0",
-        "@openturn/gamekit": "^0.3.0",
-        "@openturn/plugins": "^0.3.0",
+        "@openturn/core": "^0.4.0",
+        "@openturn/gamekit": "^0.4.0",
+        "@openturn/plugins": "^0.4.0",
       },
       "devDependencies": {
         "@testing-library/react": "^16.3.0",
@@ -553,37 +553,37 @@
     },
     "packages/plugins": {
       "name": "@openturn/plugins",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
-        "@openturn/core": "^0.3.0",
-        "@openturn/gamekit": "^0.3.0",
-        "@openturn/json": "^0.3.0",
+        "@openturn/core": "^0.4.0",
+        "@openturn/gamekit": "^0.4.0",
+        "@openturn/json": "^0.4.0",
       },
     },
     "packages/protocol": {
       "name": "@openturn/protocol",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
-        "@openturn/core": "^0.3.0",
-        "@openturn/json": "^0.3.0",
+        "@openturn/core": "^0.4.0",
+        "@openturn/json": "^0.4.0",
         "zod": "^4.1.12",
       },
     },
     "packages/react": {
       "name": "@openturn/react",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
-        "@openturn/bot": "^0.3.0",
-        "@openturn/bridge": "^0.3.0",
-        "@openturn/client": "^0.3.0",
-        "@openturn/core": "^0.3.0",
-        "@openturn/inspector": "^0.3.0",
-        "@openturn/lobby": "^0.3.0",
-        "@openturn/protocol": "^0.3.0",
-        "@openturn/replay": "^0.3.0",
+        "@openturn/bot": "^0.4.0",
+        "@openturn/bridge": "^0.4.0",
+        "@openturn/client": "^0.4.0",
+        "@openturn/core": "^0.4.0",
+        "@openturn/inspector": "^0.4.0",
+        "@openturn/lobby": "^0.4.0",
+        "@openturn/protocol": "^0.4.0",
+        "@openturn/replay": "^0.4.0",
       },
       "devDependencies": {
-        "@openturn/gamekit": "^0.3.0",
+        "@openturn/gamekit": "^0.4.0",
         "@testing-library/react": "^16.3.0",
         "@types/react": "^19.2.0",
         "jsdom": "^28.1.0",
@@ -595,30 +595,33 @@
     },
     "packages/replay": {
       "name": "@openturn/replay",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
-        "@openturn/core": "^0.3.0",
-        "@openturn/json": "^0.3.0",
+        "@openturn/core": "^0.4.0",
+        "@openturn/json": "^0.4.0",
       },
       "devDependencies": {
-        "@openturn/gamekit": "^0.3.0",
+        "@openturn/gamekit": "^0.4.0",
       },
     },
     "packages/server": {
       "name": "@openturn/server",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
-        "@openturn/bot": "^0.3.0",
-        "@openturn/core": "^0.3.0",
-        "@openturn/json": "^0.3.0",
-        "@openturn/protocol": "^0.3.0",
+        "@openturn/bot": "^0.4.0",
+        "@openturn/core": "^0.4.0",
+        "@openturn/json": "^0.4.0",
+        "@openturn/protocol": "^0.4.0",
         "zod": "^4.1.12",
       },
       "devDependencies": {
         "@cloudflare/workers-types": "^4.20260417.1",
-        "@openturn/gamekit": "^0.3.0",
+        "@openturn/gamekit": "^0.4.0",
       },
     },
+  },
+  "overrides": {
+    "drizzle-orm": "1.0.0-rc.1",
   },
   "packages": {
     "@acemir/cssom": ["@acemir/cssom@0.9.31", "", {}, "sha512-ZnR3GSaH+/vJ0YlHau21FjfLYjMpYVIzTD8M8vIEQvIGxeOXyXdzCI140rrCY862p/C/BbzWsjc1dgnM9mkoTA=="],
@@ -1667,7 +1670,7 @@
 
     "dotenv": ["dotenv@17.4.2", "", {}, "sha512-nI4U3TottKAcAD9LLud4Cb7b2QztQMUEfHbvhTH09bqXTxnSie8WnjPALV/WMCrJZ6UV/qHJ6L03OqO3LcdYZw=="],
 
-    "drizzle-orm": ["drizzle-orm@1.0.0-beta.22", "", { "peerDependencies": { "@aws-sdk/client-rds-data": ">=3", "@cloudflare/workers-types": ">=4", "@effect/sql": "^0.48.5", "@effect/sql-pg": "^0.49.7", "@electric-sql/pglite": ">=0.2.0", "@libsql/client": ">=0.10.0", "@libsql/client-wasm": ">=0.10.0", "@neondatabase/serverless": ">=0.10.0", "@op-engineering/op-sqlite": ">=2", "@opentelemetry/api": "^1.4.1", "@planetscale/database": ">=1.13", "@sinclair/typebox": ">=0.34.8", "@sqlitecloud/drivers": ">=1.0.653", "@tidbcloud/serverless": "*", "@tursodatabase/database": ">=0.2.1", "@tursodatabase/database-common": ">=0.2.1", "@tursodatabase/database-wasm": ">=0.2.1", "@types/better-sqlite3": "*", "@types/mssql": "^9.1.4", "@types/pg": "*", "@types/sql.js": "*", "@upstash/redis": ">=1.34.7", "@vercel/postgres": ">=0.8.0", "@xata.io/client": "*", "arktype": ">=2.0.0", "better-sqlite3": ">=9.3.0", "bun-types": "*", "expo-sqlite": ">=14.0.0", "gel": ">=2", "mssql": "^11.0.1", "mysql2": ">=2", "pg": ">=8", "postgres": ">=3", "sql.js": ">=1", "sqlite3": ">=5", "typebox": ">=1.0.0", "valibot": ">=1.0.0-beta.7", "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["@aws-sdk/client-rds-data", "@cloudflare/workers-types", "@effect/sql", "@effect/sql-pg", "@electric-sql/pglite", "@libsql/client", "@libsql/client-wasm", "@neondatabase/serverless", "@op-engineering/op-sqlite", "@opentelemetry/api", "@planetscale/database", "@sinclair/typebox", "@sqlitecloud/drivers", "@tidbcloud/serverless", "@tursodatabase/database", "@tursodatabase/database-common", "@tursodatabase/database-wasm", "@types/better-sqlite3", "@types/mssql", "@types/pg", "@types/sql.js", "@upstash/redis", "@vercel/postgres", "@xata.io/client", "arktype", "better-sqlite3", "bun-types", "expo-sqlite", "gel", "mssql", "mysql2", "pg", "postgres", "sql.js", "sqlite3", "typebox", "valibot", "zod"] }, "sha512-F+DZyVIvH0oVKa/w08Cle1xfoH+pc+htIXHG/frnMLG72aby9NYYr9oc+9XvghnoO4umxFItduz0OMmQJMnenw=="],
+    "drizzle-orm": ["drizzle-orm@1.0.0-rc.1", "", { "peerDependencies": { "@aws-sdk/client-rds-data": ">=3", "@cloudflare/workers-types": ">=4", "@effect/sql-pg": ">=4.0.0-beta.58 || >=4.0.0", "@electric-sql/pglite": ">=0.2.0", "@libsql/client": ">=0.10.0", "@libsql/client-wasm": ">=0.10.0", "@neondatabase/serverless": ">=0.10.0", "@op-engineering/op-sqlite": ">=2", "@opentelemetry/api": "^1.4.1", "@planetscale/database": ">=1.13", "@sinclair/typebox": ">=0.34.8", "@sqlitecloud/drivers": ">=1.0.653", "@tidbcloud/serverless": "*", "@tursodatabase/database": ">=0.2.1", "@tursodatabase/database-common": ">=0.2.1", "@tursodatabase/database-wasm": ">=0.2.1", "@types/better-sqlite3": "*", "@types/mssql": "^9.1.4", "@types/pg": "*", "@types/sql.js": "*", "@upstash/redis": ">=1.34.7", "@vercel/postgres": ">=0.8.0", "@xata.io/client": "*", "arktype": ">=2.0.0", "better-sqlite3": ">=9.3.0", "bun-types": "*", "effect": ">=4.0.0-beta.58 || >=4.0.0", "expo-sqlite": ">=14.0.0", "mssql": "^11.0.1", "mysql2": ">=2", "pg": ">=8", "postgres": ">=3", "sql.js": ">=1", "sqlite3": ">=5", "typebox": ">=1.0.0", "valibot": ">=1.0.0-beta.7", "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["@aws-sdk/client-rds-data", "@cloudflare/workers-types", "@effect/sql-pg", "@electric-sql/pglite", "@libsql/client", "@libsql/client-wasm", "@neondatabase/serverless", "@op-engineering/op-sqlite", "@opentelemetry/api", "@planetscale/database", "@sinclair/typebox", "@sqlitecloud/drivers", "@tidbcloud/serverless", "@tursodatabase/database", "@tursodatabase/database-common", "@tursodatabase/database-wasm", "@types/better-sqlite3", "@types/mssql", "@types/pg", "@types/sql.js", "@upstash/redis", "@vercel/postgres", "@xata.io/client", "arktype", "better-sqlite3", "bun-types", "effect", "expo-sqlite", "mssql", "mysql2", "pg", "postgres", "sql.js", "sqlite3", "typebox", "valibot", "zod"] }, "sha512-jGCqAgxpz+OSHP2jQGooUHBxnFMTYl0TTRSfULBl52VNf7CtyNRnazUi+VdbSxvJrDP2lnIsmUh5O+HhKeSJCg=="],
 
     "dunder-proto": ["dunder-proto@1.0.1", "", { "dependencies": { "call-bind-apply-helpers": "^1.0.1", "es-errors": "^1.3.0", "gopd": "^1.2.0" } }, "sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A=="],
 
@@ -2517,8 +2520,6 @@
 
     "@babel/helper-create-class-features-plugin/semver": ["semver@6.3.1", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
 
-    "@better-auth/drizzle-adapter/drizzle-orm": ["drizzle-orm@1.0.0-beta.21", "", { "peerDependencies": { "@aws-sdk/client-rds-data": ">=3", "@cloudflare/workers-types": ">=4", "@effect/sql": "^0.48.5", "@effect/sql-pg": "^0.49.7", "@electric-sql/pglite": ">=0.2.0", "@libsql/client": ">=0.10.0", "@libsql/client-wasm": ">=0.10.0", "@neondatabase/serverless": ">=0.10.0", "@op-engineering/op-sqlite": ">=2", "@opentelemetry/api": "^1.4.1", "@planetscale/database": ">=1.13", "@sinclair/typebox": ">=0.34.8", "@sqlitecloud/drivers": ">=1.0.653", "@tidbcloud/serverless": "*", "@tursodatabase/database": ">=0.2.1", "@tursodatabase/database-common": ">=0.2.1", "@tursodatabase/database-wasm": ">=0.2.1", "@types/better-sqlite3": "*", "@types/mssql": "^9.1.4", "@types/pg": "*", "@types/sql.js": "*", "@upstash/redis": ">=1.34.7", "@vercel/postgres": ">=0.8.0", "@xata.io/client": "*", "arktype": ">=2.0.0", "better-sqlite3": ">=9.3.0", "bun-types": "*", "expo-sqlite": ">=14.0.0", "gel": ">=2", "mssql": "^11.0.1", "mysql2": ">=2", "pg": ">=8", "postgres": ">=3", "sql.js": ">=1", "sqlite3": ">=5", "typebox": ">=1.0.0", "valibot": ">=1.0.0-beta.7", "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["@aws-sdk/client-rds-data", "@cloudflare/workers-types", "@effect/sql", "@effect/sql-pg", "@electric-sql/pglite", "@libsql/client", "@libsql/client-wasm", "@neondatabase/serverless", "@op-engineering/op-sqlite", "@opentelemetry/api", "@planetscale/database", "@sinclair/typebox", "@sqlitecloud/drivers", "@tidbcloud/serverless", "@tursodatabase/database", "@tursodatabase/database-common", "@tursodatabase/database-wasm", "@types/better-sqlite3", "@types/pg", "@types/sql.js", "@upstash/redis", "@vercel/postgres", "@xata.io/client", "arktype", "better-sqlite3", "bun-types", "expo-sqlite", "gel", "mysql2", "pg", "postgres", "sql.js", "sqlite3", "typebox", "valibot", "zod"] }, "sha512-HZcIbVn5J9T/Z91Wj12Pn7Pi8/1aykS/GPJf2lXeZnEuPjxaBfQ+YAt0Sl+XI+9R/D1BpK+2fdIqbpuaTbcvqA=="],
-
     "@dotenvx/dotenvx/commander": ["commander@11.1.0", "", {}, "sha512-yPVavfyCcRhmorC7rWlkHn15b4wDVgVmBA7kV4QVBsF7kv/9TKJAbAXVTxvTnwP8HHKjRCJDClKbciiYS7p0DQ=="],
 
     "@dotenvx/dotenvx/execa": ["execa@5.1.1", "", { "dependencies": { "cross-spawn": "^7.0.3", "get-stream": "^6.0.0", "human-signals": "^2.1.0", "is-stream": "^2.0.0", "merge-stream": "^2.0.0", "npm-run-path": "^4.0.1", "onetime": "^5.1.2", "signal-exit": "^3.0.3", "strip-final-newline": "^2.0.0" } }, "sha512-8uSpZZocAZRBAPIEINJj3Lo9HyGitllczc27Eh5YYojjMFMn8yHMDMaUHE2Jqfq05D/wucwI4JGURyXt1vchyg=="],
@@ -2596,8 +2597,6 @@
     "@vue/language-core/minimatch": ["minimatch@9.0.9", "", { "dependencies": { "brace-expansion": "^2.0.2" } }, "sha512-OBwBN9AL4dqmETlpS2zasx+vTeWclWzkblfZk7KTA5j3jeOONz/tRCnZomUyvNg83wL5Zv9Ss6HMJXAgL8R2Yg=="],
 
     "anymatch/picomatch": ["picomatch@2.3.2", "", {}, "sha512-V7+vQEJ06Z+c5tSye8S+nHUfI51xoXIXjHQ99cQtKUkQqqO1kO/KCJUfZXuB47h/YBlDhah2H3hdUGXn8ie0oA=="],
-
-    "better-auth/drizzle-orm": ["drizzle-orm@1.0.0-beta.21", "", { "peerDependencies": { "@aws-sdk/client-rds-data": ">=3", "@cloudflare/workers-types": ">=4", "@effect/sql": "^0.48.5", "@effect/sql-pg": "^0.49.7", "@electric-sql/pglite": ">=0.2.0", "@libsql/client": ">=0.10.0", "@libsql/client-wasm": ">=0.10.0", "@neondatabase/serverless": ">=0.10.0", "@op-engineering/op-sqlite": ">=2", "@opentelemetry/api": "^1.4.1", "@planetscale/database": ">=1.13", "@sinclair/typebox": ">=0.34.8", "@sqlitecloud/drivers": ">=1.0.653", "@tidbcloud/serverless": "*", "@tursodatabase/database": ">=0.2.1", "@tursodatabase/database-common": ">=0.2.1", "@tursodatabase/database-wasm": ">=0.2.1", "@types/better-sqlite3": "*", "@types/mssql": "^9.1.4", "@types/pg": "*", "@types/sql.js": "*", "@upstash/redis": ">=1.34.7", "@vercel/postgres": ">=0.8.0", "@xata.io/client": "*", "arktype": ">=2.0.0", "better-sqlite3": ">=9.3.0", "bun-types": "*", "expo-sqlite": ">=14.0.0", "gel": ">=2", "mssql": "^11.0.1", "mysql2": ">=2", "pg": ">=8", "postgres": ">=3", "sql.js": ">=1", "sqlite3": ">=5", "typebox": ">=1.0.0", "valibot": ">=1.0.0-beta.7", "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["@aws-sdk/client-rds-data", "@cloudflare/workers-types", "@effect/sql", "@effect/sql-pg", "@electric-sql/pglite", "@libsql/client", "@libsql/client-wasm", "@neondatabase/serverless", "@op-engineering/op-sqlite", "@opentelemetry/api", "@planetscale/database", "@sinclair/typebox", "@sqlitecloud/drivers", "@tidbcloud/serverless", "@tursodatabase/database", "@tursodatabase/database-common", "@tursodatabase/database-wasm", "@types/better-sqlite3", "@types/pg", "@types/sql.js", "@upstash/redis", "@vercel/postgres", "@xata.io/client", "arktype", "better-sqlite3", "bun-types", "expo-sqlite", "gel", "mysql2", "pg", "postgres", "sql.js", "sqlite3", "typebox", "valibot", "zod"] }, "sha512-HZcIbVn5J9T/Z91Wj12Pn7Pi8/1aykS/GPJf2lXeZnEuPjxaBfQ+YAt0Sl+XI+9R/D1BpK+2fdIqbpuaTbcvqA=="],
 
     "cheerio/parse5": ["parse5@7.3.0", "", { "dependencies": { "entities": "^6.0.0" } }, "sha512-IInvU7fabl34qmi9gY8XOVxhYyMyuH2xUNpb2q8/Y+7552KlejkRvqvD19nMoUW/uQGGbqNpA6Tufu5FL5BZgw=="],
 
