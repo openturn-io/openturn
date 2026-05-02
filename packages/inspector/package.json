@@ -1,6 +1,6 @@
 {
   "name": "@openturn/inspector",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "openturn": {
     "runtime": "worker"
@@ -17,12 +17,12 @@
     "prepack": "node ../../scripts/prepack.mjs"
   },
   "dependencies": {
-    "@openturn/core": "^0.5.0",
-    "@openturn/protocol": "^0.5.0",
-    "@openturn/replay": "^0.5.0"
+    "@openturn/core": "^0.6.0",
+    "@openturn/protocol": "^0.6.0",
+    "@openturn/replay": "^0.6.0"
   },
   "devDependencies": {
-    "@openturn/gamekit": "^0.5.0"
+    "@openturn/gamekit": "^0.6.0"
   },
   "license": "Apache-2.0",
   "repository": {

@@ -1,5 +1,14 @@
 # @openturn/inspector
 
+## 0.6.0
+
+### Patch Changes
+
+- Updated dependencies [ffb51b3]
+  - @openturn/protocol@0.6.0
+  - @openturn/core@0.6.0
+  - @openturn/replay@0.6.0
+
 ## 0.5.0
 
 ### Patch Changes

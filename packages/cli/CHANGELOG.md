@@ -1,5 +1,21 @@
 # @openturn/cli
 
+## 0.6.0
+
+### Patch Changes
+
+- ffb51b3: Add `LobbyEnv.requireHumanSeat` so hosted lobbies reject all-bot starts with the new `no_humans_seated` rejection reason; the cloud worker enables it by default. The CLI dev server keeps it off so authors can dry-run bot-vs-bot matches: when the host starts a room with only bot seats, the dev server mints them a game token bound to seat 0's playerID and transitions them straight into the running match so they can watch the bots play out the game. (The host technically connects as player 0 — they shouldn't dispatch during a bot-vs-bot watch, but cloud doesn't expose this path.)
+- Updated dependencies [ffb51b3]
+- Updated dependencies [ffb51b3]
+  - @openturn/bridge@0.6.0
+  - @openturn/protocol@0.6.0
+  - @openturn/server@0.6.0
+  - @openturn/deploy@0.6.0
+  - @openturn/react@0.6.0
+  - @openturn/core@0.6.0
+  - @openturn/inspector-ui@0.6.0
+  - @openturn/json@0.6.0
+
 ## 0.5.0
 
 ### Minor Changes
