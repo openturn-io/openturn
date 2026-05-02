@@ -1,5 +1,16 @@
 # @openturn/deploy
 
+## 0.6.0
+
+### Patch Changes
+
+- Updated dependencies [ffb51b3]
+  - @openturn/protocol@0.6.0
+  - @openturn/server@0.6.0
+  - @openturn/core@0.6.0
+  - @openturn/json@0.6.0
+  - @openturn/manifest@0.6.0
+
 ## 0.5.0
 
 ### Minor Changes
