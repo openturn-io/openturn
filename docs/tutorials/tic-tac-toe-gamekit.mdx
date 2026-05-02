@@ -79,8 +79,8 @@ export const ticTacToe = defineGame({
       run({ G, args, move, player }) {
         const board = placeMark(G.board, args.row, args.col, player.id);
         if (board === null) return move.invalid("occupied", args);
-        if (getWinner(board) !== null) return move.win(player.id, { board });
-        if (isBoardFull(board)) return move.draw({ board });
+        if (getWinner(board) !== null) return move.finish({ winner: player.id }, { board });
+        if (isBoardFull(board)) return move.finish({ draw: true }, { board });
         return move.endTurn({ board });
       },
     }),
@@ -263,7 +263,7 @@ bun --filter @my/tic-tac-toe-cli run src/index.ts
 ## What you learned
 
 - A game definition is a pure value you can share across a worker package, a React app, and a Bun CLI.
-- Gamekit moves compile to core transitions; `move.invalid`, `move.endTurn`, `move.win`, and `move.draw` are the outcomes you will use most.
+- Gamekit moves compile to core transitions; `move.invalid`, `move.endTurn`, and `move.finish` are the outcomes you will use most.
 - `createOpenturnBindings` gives you typed React bindings with no boilerplate.
 - The CLI uses the raw `createLocalSession` because it does not need React.
 

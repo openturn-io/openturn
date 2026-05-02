@@ -30,7 +30,7 @@ If your `decide` body changes shape across these four, you are doing more work t
 
 ## Why bots are not plugins
 
-Openturn already has [`@openturn/plugins`](/concepts/gamekit). Plugins are in-engine state mutators: they declare a slice on `G.plugins`, expose moves, and execute synchronously inside the reducer. They are the right tool for chat, scoreboards, deck ownership, and any cross-cutting state.
+Openturn already has [`@openturn/plugins`](/reference/plugins). Plugins are in-engine state mutators: they declare a slice on `G.plugins`, expose moves, and execute synchronously inside the reducer. They are the right tool for chat, scoreboards, deck ownership, and any cross-cutting state.
 
 Bots are different. A bot runs **outside** the reducer, **after** a snapshot exists, and produces an event to feed back in. It is closer to a player client than to a piece of game logic. Conflating the two would push turn ownership into the plugin layer and break determinism — `decide` may take seconds (an LLM call), and a synchronous reducer cannot await that.
 

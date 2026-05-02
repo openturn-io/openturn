@@ -64,7 +64,7 @@ export const game = defineGame({
   profile,
   setup: () => ({ over: false }),
   moves: ({ move }) => ({
-    tap: move({ run: ({ player, move: m }) => m.win(player.id, { over: true }) }),
+    tap: move({ run: ({ player, move: m }) => m.finish({ winner: player.id }, { over: true }) }),
   }),
 });
 ```

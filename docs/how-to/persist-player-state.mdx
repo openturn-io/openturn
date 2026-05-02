@@ -27,7 +27,7 @@ const profile = defineProfile<{ wins: number }>({
     return { wins: typeof obj.wins === "number" ? obj.wins : 0 };
   },
   commit: ({ profile, result }) => {
-    // Gamekit sets `result.winner` when a move calls `move.win(playerID)`.
+    // Gamekit records the result you pass to `move.finish(...)`; `{ winner }` is the conventional shape.
     const winner = (result as { winner?: string } | null)?.winner;
     if (winner === undefined) return {};
     return profile.inc(winner, "wins", 1);
@@ -52,7 +52,7 @@ export const game = defineGame({
   setup: () => ({ over: false }),
   moves: ({ move }) => ({
     tap: move({
-      run: ({ player, move: m }) => m.win(player.id, { over: true }),
+      run: ({ player, move: m }) => m.finish({ winner: player.id }, { over: true }),
     }),
   }),
   phases: {
@@ -64,7 +64,7 @@ export const game = defineGame({
 });
 ```
 
-That's the full wiring. When `move.win(...)` fires, gamekit sets `result.winner` and the engine calls `profile.commit`. The host persists the returned delta.
+That's the full wiring. When `move.finish({ winner })` fires, gamekit sets `result.winner` and the engine calls `profile.commit`. The host persists the returned delta.
 
 ## 3. Test locally
 

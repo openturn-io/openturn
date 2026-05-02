@@ -44,7 +44,7 @@ moves: ({ move, queue }) => ({
       if (G.players[args.target].hp <= 0) return move.invalid("already_defeated");
       const damage = rng.int(6) + 1;
       const nextHp = G.players[args.target].hp - damage;
-      if (nextHp <= 0 && allDefeated(G)) return move.win(player.id, { ... });
+      if (nextHp <= 0 && allDefeated(G)) return move.finish({ winner: player.id }, { ... });
       return move.endTurn({ players: { ...G.players, [args.target]: { hp: nextHp } } });
     },
   }),
@@ -56,7 +56,7 @@ Each move declares:
 - **`args?`** — the payload type. Use `move<T>` to type it explicitly.
 - **`canPlayer?`** — predicate gating the dispatch.
 - **`phases?`** — restrict the move to specific phases.
-- **`run`** — the pure state transition. Must return an outcome from `move.stay | endTurn | goto | win | draw | invalid`.
+- **`run`** — the pure state transition. Must return an outcome from `move.stay | endTurn | goto | finish | invalid`.
 
 `queue(kind, payload?)` is a helper for building internal events to enqueue from `run`.
 

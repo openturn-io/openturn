@@ -1,0 +1,140 @@
+---
+title: "@openturn/plugin-chat"
+description: First-party in-room chat plugin — server-authoritative chat slice plus a drop-in React widget.
+sidebarTitle: Plugin · chat
+---
+
+Mixed runtime. The plugin definition (`./` entry) is worker-safe. The React widget (`./react` entry) is browser-only. State lives at `G.plugins.chat` once composed via `withPlugins(baseDef, [chatPlugin])`. Every seated player can send messages regardless of whose turn it is.
+
+## Install
+
+```bash
+bun add @openturn/plugin-chat @openturn/plugins
+```
+
+## Compose into your game
+
+```ts
+import { withPlugins } from "@openturn/plugins";
+import { chatPlugin } from "@openturn/plugin-chat";
+
+export const game = withPlugins(
+  {
+    maxPlayers: 2,
+    setup: () => ({ board: emptyBoard() }),
+    moves: ({ move }) => ({ /* ... */ }),
+    views: { public: ({ G }) => ({ board: G.board }) },
+  },
+  [chatPlugin],
+);
+```
+
+The plugin contributes:
+
+- A `G.plugins.chat: ChatSlice` slice initialized to `{ messages: [] }`.
+- A namespaced `chat__send` move dispatchable by every seated player.
+- Auto-merge of the chat slice into both `views.public` and `views.player` (when declared) so clients receive history without extra wiring.
+
+## Server-side surface
+
+### `chatPlugin`
+
+The plugin definition. Pass it to `withPlugins`. Plugin id is `"chat"` (`CHAT_PLUGIN_ID`).
+
+### `chat__send` move
+
+```ts
+match.dispatch.chat__send({ text: "hi", displayName: "Alice" });
+```
+
+Validation, applied server-side:
+
+- Empty / whitespace-only `text` rejects with `reason: "empty_message"`.
+- `text` is trimmed and capped to `MAX_MESSAGE_LENGTH` (500 chars).
+- `displayName` is trimmed and capped to `MAX_DISPLAY_NAME_LENGTH` (40 chars). Empty falls back to `Player {playerID}`.
+- History is capped to `MAX_HISTORY` (200 messages); older entries fall off the front.
+
+Each accepted message lands on `G.plugins.chat.messages` as:
+
+```ts
+{ authorPlayerID: string; authorDisplayName: string; text: string }
+```
+
+### Constants
+
+| Name | Value |
+| --- | --- |
+| `CHAT_PLUGIN_ID` | `"chat"` |
+| `MAX_MESSAGE_LENGTH` | `500` |
+| `MAX_DISPLAY_NAME_LENGTH` | `40` |
+| `MAX_HISTORY` | `200` |
+
+### Types
+
+- **`ChatMessage`** — `{ authorPlayerID, authorDisplayName, text }`.
+- **`ChatSlice`** — `{ messages: readonly ChatMessage[] }`.
+- **`ChatSendArgs`** — `{ text: string; displayName: string }`.
+- **`ChatPluginEvent`** — `"chat__send"`.
+
+## React widget — `./react`
+
+```tsx
+import { ChatBubble } from "@openturn/plugin-chat/react";
+import { useRoom } from "./bindings"; // your createOpenturnBindings() output
+
+export function App() {
+  const room = useRoom();
+  return (
+    <main>
+      {/* ...your game UI... */}
+      <ChatBubble room={room} />
+    </main>
+  );
+}
+```
+
+`<ChatBubble />` renders a floating chat bubble in the bottom-right corner via a portal. It auto-hides until the match is live (when `room.game` is null, e.g. in lobby), so you can mount it once outside any lobby/game branch and let it persist across the transition.
+
+### Props
+
+```ts
+interface ChatBubbleProps {
+  room: ChatHostRoom;                  // pass `useRoom()` from @openturn/react
+  displayName?: string | null;         // override the local user's display name
+  portalContainer?: HTMLElement | null; // defaults to document.body
+}
+```
+
+The component is structural over the room shape — it accepts any object that exposes `userID`, `userName`, and `game.{ snapshot, dispatch, playerID }`. It does not import `@openturn/react` directly, so the package stays free of UI plumbing dependencies.
+
+### Display name resolution
+
+The bubble picks the first available, non-generic value:
+
+1. Explicit `displayName` prop.
+2. `room.userName`.
+3. `Player {userID slice}` from `room.userID`.
+4. `Player {playerID}` (or `Spectator` when no seat).
+
+Generic placeholders like `"anonymous"` are skipped.
+
+### Behavior
+
+- Sending: Enter to submit (Shift+Enter is reserved for IME composition; the input is intentionally not a `<form>` to survive sandboxed iframes that omit `allow-forms`).
+- Spectators (`playerID === null`) can read but not send.
+- Unread badge: messages received while the panel is closed bump a counter; opening the panel marks them seen.
+- Auto-scroll on new messages; auto-focus the input on open.
+- Server rejections surface as inline error text under the composer (`humanizeChatError` maps `empty_message`, `inactive_player`, `not_connected` to user-friendly copy).
+
+### Styling
+
+The widget uses inline styles only — no Tailwind, CSS modules, or stylesheet imports. This keeps the package drop-in for any host shell. The portal mounts on `document.body` by default with a high `z-index` (`2147483000`) so it floats above app chrome.
+
+## Example
+
+[`examples/plugins/tic-tac-toe-with-chat`](https://github.com/openturn-io/openturn/tree/main/openturn/examples/plugins/tic-tac-toe-with-chat) — the canonical end-to-end example. Game is composed with `withPlugins`; the app mounts `<ChatBubble />` outside the `HostedRoom` switch so it persists across the lobby → game transition.
+
+## See also
+
+- [`@openturn/plugins`](/reference/plugins) — the composition surface (`withPlugins`, `definePlugin`).
+- [Reference: `@openturn/react`](/reference/react) — `createOpenturnBindings` and `useRoom`.

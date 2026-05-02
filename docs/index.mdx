@@ -19,7 +19,7 @@ export const game = defineGame({
       canPlayer: permissions.currentPlayer,
       run({ G, move, player }) {
         const value = G.value + 1;
-        if (value >= 5) return move.win(player.id, { value });
+        if (value >= 5) return move.finish({ winner: player.id }, { value });
         return move.endTurn({ value });
       },
     }),

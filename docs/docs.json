@@ -111,6 +111,8 @@
               "reference/packages",
               "reference/core",
               "reference/gamekit",
+              "reference/plugins",
+              "reference/plugin-chat",
               "reference/bot",
               "reference/json"
             ]

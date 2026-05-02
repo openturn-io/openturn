@@ -41,8 +41,8 @@ Openturn is split across eighteen packages. This page is the decision tree: "I w
 
 | Package | Runtime | Why |
 | --- | --- | --- |
-| `@openturn/plugins` | worker | Plugin authoring helpers (typed plugin definitions, registration utilities). |
-| `@openturn/plugin-chat` | mixed | First-party in-room chat plugin: server-side moderation hooks plus a React widget under `./react`. |
+| [`@openturn/plugins`](/reference/plugins) | worker | Plugin authoring + composition: `definePlugin`, `definePluginMove`, `withPlugins`. Compose cross-cutting features (chat, votes, emotes) into a gamekit game without forking the host. |
+| [`@openturn/plugin-chat`](/reference/plugin-chat) | mixed | First-party in-room chat plugin: `chatPlugin` (worker-safe) plus a `<ChatBubble />` React widget under `./react`. |
 
 ## Quick recipes
 

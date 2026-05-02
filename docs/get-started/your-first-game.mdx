@@ -41,7 +41,7 @@ export const game = defineGame({
       canPlayer: permissions.currentPlayer,
       run({ G, move, player }) {
         const value = G.value + 1;
-        if (value >= 5) return move.win(player.id, { value });
+        if (value >= 5) return move.finish({ winner: player.id }, { value });
         return move.endTurn({ value });
       },
     }),
@@ -56,7 +56,7 @@ Four ideas to notice:
 
 1. **`playerIDs`** declares the seat pool: which players the game can seat. Here, two seats with IDs `"0"` and `"1"` (every seat must fill — set `minPlayers` lower to declare a variable-player range like 2–4).
 2. **`setup`** returns the authoritative state `G` at the start of the match. `G` is plain JSON-serializable data — no functions, no class instances.
-3. **`moves.increment`** is a pure function from state and args to an *outcome*. Outcomes are built with the `move` helper: `move.endTurn(...)`, `move.win(...)`, `move.invalid(...)`, etc. You never mutate `G` directly — you return a patch describing what changed. See [moves and outcomes](/concepts/gamekit-moves-and-outcomes) for the full set.
+3. **`moves.increment`** is a pure function from state and args to an *outcome*. Outcomes are built with the `move` helper: `move.endTurn(...)`, `move.finish(...)`, `move.invalid(...)`, etc. You never mutate `G` directly — you return a patch describing what changed. See [moves and outcomes](/concepts/gamekit-moves-and-outcomes) for the full set.
 4. **`views.public`** projects the state into the shape the client receives. You can also add `views.player` to hand different data to each seat (useful for hidden info).
 
 ## 3. Run the game
@@ -81,7 +81,7 @@ moves: {
     canPlayer: permissions.currentPlayer,
     run({ G, move, player }) {
       const value = G.value + 1;
-      if (value >= 3) return move.win(player.id, { value });
+      if (value >= 3) return move.finish({ winner: player.id }, { value });
       return move.endTurn({ value });
     },
   }),
