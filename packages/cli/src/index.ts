@@ -3121,6 +3121,7 @@ async function runDeployCommand(args: readonly string[]) {
 
   console.log(`Deployment ID: ${result.deploymentID}`);
   console.log(`Project ID:    ${result.projectID}`);
+  console.log(`Game URL:      ${result.gameURL}`);
   console.log(`Play URL:      ${result.playURL}`);
   console.log(`Dashboard:     ${result.dashboardURL}`);
 

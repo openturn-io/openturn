@@ -28,6 +28,7 @@ export interface CloudDeployResult {
   projectID: string;
   url: string;
   playURL: string;
+  gameURL: string;
   dashboardURL: string;
   serverBundleStatus?: "none" | "uploading" | "live" | "failed";
 }
@@ -263,6 +264,7 @@ export async function cloudDeploy(options: CloudDeployOptions): Promise<CloudDep
       deploymentID: string;
       projectID: string;
       playURL: string;
+      gameURL: string;
       dashboardURL: string;
       policyPlayURL?: string;
     };
@@ -272,6 +274,7 @@ export async function cloudDeploy(options: CloudDeployOptions): Promise<CloudDep
       projectID: complete.projectID,
       url: baseURL,
       playURL: resolveCloudPlayURL(baseURL, complete),
+      gameURL: resolveCloudURL(baseURL, complete.gameURL),
       dashboardURL: resolveCloudURL(baseURL, complete.dashboardURL),
       ...(serverBundleStatus === undefined ? {} : { serverBundleStatus }),
     };
