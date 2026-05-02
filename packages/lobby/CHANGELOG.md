@@ -1,5 +1,19 @@
 # @openturn/lobby
 
+## 0.5.0
+
+### Minor Changes
+
+- 43742b6: Fix same-tab play shell theme propagation so embedded dev bars and inspector chrome follow the selected dark theme, and keep the lobby React chrome fixed instead of accepting consumer skinning props (`Lobby` no longer accepts `className` or `renderSeat` — use `LobbyWithBots` for the bot-aware variant).
+
+### Patch Changes
+
+- @openturn/bot@0.5.0
+- @openturn/client@0.5.0
+- @openturn/core@0.5.0
+- @openturn/protocol@0.5.0
+- @openturn/server@0.5.0
+
 ## 0.4.0
 
 ### Patch Changes

@@ -1,5 +1,29 @@
 # @openturn/cli
 
+## 0.5.0
+
+### Minor Changes
+
+- aad0ac5: Add bundle size limits and image asset support for `openturn deploy`. The CLI now (a) enables Vite's `public/` folder so static images can ship alongside imported assets, (b) records per-asset sizes in the deployment manifest, and (c) rejects oversized bundles before contacting the cloud (per-asset 25 MiB, total assets 25 MiB, total images 25 MiB, multiplayer worker 3 MiB gzipped). The cloud control plane re-validates the same limits as defense in depth.
+
+### Patch Changes
+
+- 2389816: Pin drizzle-orm to 1.0.0-rc.1.
+- ea887a0: Stop the dev shell theme styles from overriding game document backgrounds, preserving example-specific surfaces such as Splendor's green felt gradient.
+- c6b1ef8: Remove the Inspector tip line from `openturn dev` project startup logs.
+- 9876f69: Preserve the lobby-start player roster when resetting active dev rooms.
+- e6c6181: Print only the canonical Play URL when `openturn dev` starts a project server.
+- Updated dependencies [aad0ac5]
+- Updated dependencies [43742b6]
+  - @openturn/deploy@0.5.0
+  - @openturn/bridge@0.5.0
+  - @openturn/inspector-ui@0.5.0
+  - @openturn/react@0.5.0
+  - @openturn/core@0.5.0
+  - @openturn/json@0.5.0
+  - @openturn/protocol@0.5.0
+  - @openturn/server@0.5.0
+
 ## 0.4.0
 
 ### Minor Changes
