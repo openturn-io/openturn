@@ -620,6 +620,49 @@ describe("@openturn/cli", () => {
       const lastStep = turn3Batch.steps[turn3Batch.steps.length - 1]!;
       expect(lastStep.snapshot.derived.activePlayers).toEqual(["0"]);
 
+      hostGameMessages.length = 0;
+      guestGameMessages.length = 0;
+      const resetResponse = await fetch(`${server.url}/api/dev/rooms/${hostSnapshot.roomID}/reset`, {
+        headers: {
+          authorization: `Bearer ${hostSession.token}`,
+        },
+        method: "POST",
+      });
+      expect(resetResponse.status).toBe(200);
+
+      await waitFor(() => hostGameMessages.some(isFreshResetSnapshot));
+      await waitFor(() => guestGameMessages.some(isFreshResetSnapshot));
+      expect(hostGameSocket.readyState).toBe(WebSocket.OPEN);
+      expect(guestGameSocket.readyState).toBe(WebSocket.OPEN);
+
+      hostGameMessages.length = 0;
+      guestGameMessages.length = 0;
+      hostGameSocket.send(JSON.stringify({
+        type: "action",
+        clientActionID: "reset-t1",
+        event: "place",
+        matchID: hostSnapshot.roomID,
+        payload: { index: 0 },
+        playerID: hostGameInfo.playerID,
+      }));
+      await waitFor(() => hostGameMessages.some((m) => isBatchAppliedRevision(m, 1)));
+
+      guestGameSocket.send(JSON.stringify({
+        type: "action",
+        clientActionID: "reset-t2",
+        event: "place",
+        matchID: hostSnapshot.roomID,
+        payload: { index: 1 },
+        playerID: guestGameInfo.playerID,
+      }));
+      await waitFor(() => hostGameMessages.some((m) => isBatchAppliedRevision(m, 2)));
+
+      const resetTurn3Batch = hostGameMessages.find((m) => isBatchAppliedRevision(m, 2)) as {
+        steps: ReadonlyArray<{ snapshot: { derived: { activePlayers: readonly string[] } } }>;
+      };
+      const resetLastStep = resetTurn3Batch.steps[resetTurn3Batch.steps.length - 1]!;
+      expect(resetLastStep.snapshot.derived.activePlayers).toEqual(["0"]);
+
       hostGameSocket.close();
       guestGameSocket.close();
       await waitForClose(hostGameSocket);

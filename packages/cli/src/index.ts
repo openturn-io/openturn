@@ -332,6 +332,13 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
     };
   }
 
+  function deploymentWithMatch(match: GameDeployment["match"]): typeof currentDeployment {
+    return {
+      ...currentDeployment,
+      match,
+    } as typeof currentDeployment;
+  }
+
   /**
    * Pull `game.bots` (set via `attachBots(game, registry)` in the consumer's
    * bots package) and flatten to `LobbyEnv.knownBots`. The dev server stays
@@ -883,7 +890,7 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
           const now = Date.now();
           const runtime = await createRoomRuntime({
             connectedPlayers: [...connectedGamePlayerIDs(roomID)],
-            deployment: currentDeployment,
+            deployment: deploymentWithMatch(persisted.match as GameDeployment["match"]),
             initialNow: persisted.initialNow,
             onSaveRequest: saveHandler,
             persistence: roomPersistence,
@@ -1482,14 +1489,10 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
         const filteredMatch = {
           players: activePlayerIDs as unknown as readonly [string, ...string[]],
         };
-        const filteredDeployment = {
-          ...currentDeployment,
-          match: filteredMatch,
-        } as typeof currentDeployment;
         const startNow = Date.now();
         const startSeed = `${ws.data.roomID}:seed`;
         const filteredRuntime = await createRoomRuntime({
-          deployment: filteredDeployment,
+          deployment: deploymentWithMatch(filteredMatch as GameDeployment["match"]),
           initialNow: startNow,
           onSaveRequest: saveHandler,
           persistence: roomPersistence,
