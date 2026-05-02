@@ -474,7 +474,6 @@ const DEV_THEME_CSS = [
   "  --otd-button-bg-active: #6c8cff;",
   "  --otd-button-text-active: #ffffff;",
   "}",
-  "html, body { background: var(--otd-bg); color: var(--otd-text); }",
 ].join("\\n");
 
 function ensureDevThemeStyle() {
