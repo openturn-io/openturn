@@ -1883,7 +1883,6 @@ async function runDevCommand(args: readonly string[]) {
   const playURL = `${server.url}/play/${server.deploymentID}`;
   console.log("");
   console.log(`  ▶ Play URL:  ${playURL}`);
-  console.log(`    Dev root:  ${server.url}`);
   console.log("");
 
   await waitForShutdownSignal();
