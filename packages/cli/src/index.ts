@@ -1885,8 +1885,6 @@ async function runDevCommand(args: readonly string[]) {
   console.log(`  ▶ Play URL:  ${playURL}`);
   console.log(`    Dev root:  ${server.url}`);
   console.log("");
-  console.log("  Tip: toggle the Inspector with the toolbar button or Alt+I.");
-  console.log("");
 
   await waitForShutdownSignal();
   await server.stop();
