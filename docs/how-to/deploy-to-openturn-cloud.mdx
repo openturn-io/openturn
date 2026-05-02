@@ -89,6 +89,26 @@ openturn deploy app --project my-tic-tac-toe --name "Tic Tac Toe"
 
 Deployed apps read `window.location.hash` for a `HOSTED_FRAGMENT_KEY` value (encoded JSON from `@openturn/bridge`). Share the full play URL — the fragment is what tells the React app how to find the hosted backend.
 
+## Static assets and images
+
+There are two supported ways to ship images, fonts, or other static files:
+
+1. **Import from JS or CSS** — `import logo from "./logo.png"` or `background-image: url("./bg.svg")`. Vite emits the file under `assets/<name>-<hash>.<ext>` so the URL is stable forever; small images (< 4 KiB by default) are inlined as data URLs. This is the right pattern for assets your code references directly.
+2. **Drop into `public/`** — files under `<projectDir>/public/**` are copied into the deployment root verbatim and served at the same path. A file at `public/banner.png` is reachable at `/banner.png` from your page. These files are *not* hashed; the per-deployment cache key comes from the deployment ID, so a redeploy with a changed file invalidates downstream caches.
+
+### Bundle size limits
+
+`openturn deploy` enforces these limits before contacting the cloud, and the cloud re-validates them on receipt:
+
+| Limit | Cap |
+|---|---|
+| Per-asset size | 25 MiB |
+| Total assets | 25 MiB |
+| Total images | 25 MiB |
+| Multiplayer worker bundle (gzipped) | 3 MiB |
+
+The worker-bundle ceiling matches the Cloudflare Workers Free-tier script size. The asset and image caps keep iframe load times reasonable. If a build breaches a limit, the CLI fails fast with a structured error like `bundle_too_large_per_asset` and prints the offending file. To shrink: optimize images (`squoosh`, `oxipng`), code-split with dynamic `import()`, or drop unused dependencies.
+
 ## Schema versioning
 
 If you change `G` in a way the reducer no longer accepts old action logs for, bump `schemaVersion` in `app/openturn.ts`. Deployed rooms with the old version are closed on next restart; new rooms start fresh.

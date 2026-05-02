@@ -4,6 +4,7 @@ import { basename, dirname, join, resolve } from "node:path";
 
 import {
   buildOpenturnProject,
+  validateBundleSize,
   type BuildOpenturnProjectServerBundle,
   type OpenturnDeploymentManifest,
 } from "@openturn/deploy";
@@ -175,18 +176,31 @@ export async function cloudDeploy(options: CloudDeployOptions): Promise<CloudDep
   }
 
   const baseURL = stripTrailingSlash(config.url);
-  const projectSlug = options.projectSlug ?? defaultSlug(options.projectDir);
-
-  if (projectSlug.length === 0) {
-    throw new Error(`Could not determine project slug for ${options.projectDir}; pass --project <slug>.`);
-  }
 
   const build = await buildOpenturnProject({
     projectDir: options.projectDir,
     outDir: join(options.projectDir, ".openturn", "deploy"),
   });
 
+  // Reject oversized bundles client-side before we ask the cloud to presign
+  // upload URLs — otherwise we'd create a pending deployment record we can't
+  // fulfill, and the user would only learn about the limit after their assets
+  // had been uploaded.
+  validateBundleSize({
+    manifest: build.manifest,
+    serverBundle: build.serverBundle,
+  });
+
   const manifest = build.manifest;
+  // Precedence: --project flag > metadata.slug in app/openturn.ts > directory name.
+  const projectSlug = options.projectSlug ?? build.metadata.slug ?? defaultSlug(options.projectDir);
+
+  if (projectSlug.length === 0) {
+    throw new Error(
+      `Could not determine project slug for ${options.projectDir}; set "slug" in app/openturn.ts metadata or pass --project <slug>.`,
+    );
+  }
+
   const signBody = {
     projectSlug,
     ...(options.projectName !== undefined ? { projectName: options.projectName } : {}),

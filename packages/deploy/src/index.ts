@@ -5,12 +5,14 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { gzipSync } from "node:zlib";
 
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
@@ -18,6 +20,10 @@ import { build as viteBuild } from "vite";
 
 import {
   createDeploymentHTML as createDeploymentHTMLFromManifest,
+  DEPLOY_LIMITS,
+  describeLimitViolation,
+  isImageAsset,
+  type DeployLimitViolation,
   type OpenturnDeploymentManifest,
   type OpenturnDeploymentRuntime,
   type OpenturnInspectorPolicy,
@@ -42,6 +48,9 @@ export interface OpenturnProjectPaths {
 
 export interface OpenturnDeploymentMetadata {
   name?: string;
+  // URL-safe project handle. Forms the `{slug}` segment in `/games/{owner}/{slug}`
+  // PDP URLs. Optional; the CLI falls back to the project directory name.
+  slug?: string;
   runtime?: OpenturnDeploymentRuntime;
   multiplayer?: {
     gameKey?: string;
@@ -76,6 +85,10 @@ export interface BuildOpenturnProjectServerBundle {
   path: string;
   digest: string;
   size: number;
+  // Cloudflare measures the worker script size *after* gzip when applying
+  // the platform script-size limit, so the deploy validator compares this
+  // against `DEPLOY_LIMITS.WORKER_GZIPPED_BYTES` (the Free-tier ceiling).
+  gzippedSize: number;
   metadataPath: string;
   metadata: OpenturnWorkerScriptMetadata;
 }
@@ -99,6 +112,7 @@ export interface OpenturnWorkerScriptMetadata {
 
 export interface BuildOpenturnProjectResult {
   manifest: OpenturnDeploymentManifest;
+  metadata: OpenturnDeploymentMetadata;
   outDir: string;
   paths: OpenturnProjectPaths;
   serverBundle: BuildOpenturnProjectServerBundle | null;
@@ -112,6 +126,81 @@ export class OpenturnDeployError extends Error {
     this.code = code;
     this.name = "OpenturnDeployError";
   }
+}
+
+/**
+ * Enforce the shared `DEPLOY_LIMITS` against a built deployment. Called by
+ * `cloudDeploy` *before* requesting presigned upload URLs so we never start a
+ * deploy we can't finish — and never leave dangling pending records on the
+ * cloud side.
+ *
+ * Local `openturn dev` deliberately does not call this: the limits only apply
+ * to cloud deploys (the worker-script ceiling is a Cloudflare constraint, the
+ * asset budget is about R2/iframe load time).
+ */
+export function validateBundleSize(input: {
+  manifest: OpenturnDeploymentManifest;
+  serverBundle: BuildOpenturnProjectServerBundle | null;
+}): void {
+  const violation = findSizeViolation(input);
+  if (violation === null) return;
+  throw new OpenturnDeployError(
+    `bundle_too_large_${violation.kind}`,
+    describeLimitViolation(violation),
+  );
+}
+
+export function findSizeViolation(input: {
+  manifest: OpenturnDeploymentManifest;
+  serverBundle: BuildOpenturnProjectServerBundle | null;
+}): DeployLimitViolation | null {
+  const sizes = input.manifest.assetSizes;
+
+  if (sizes !== undefined) {
+    let total = 0;
+    let totalImages = 0;
+
+    for (const [asset, size] of Object.entries(sizes)) {
+      if (size > DEPLOY_LIMITS.PER_ASSET_BYTES) {
+        return {
+          kind: "per_asset",
+          limit: DEPLOY_LIMITS.PER_ASSET_BYTES,
+          actual: size,
+          asset,
+        };
+      }
+      total += size;
+      if (isImageAsset(asset)) totalImages += size;
+    }
+
+    if (totalImages > DEPLOY_LIMITS.TOTAL_IMAGES_BYTES) {
+      return {
+        kind: "total_images",
+        limit: DEPLOY_LIMITS.TOTAL_IMAGES_BYTES,
+        actual: totalImages,
+      };
+    }
+    if (total > DEPLOY_LIMITS.TOTAL_ASSETS_BYTES) {
+      return {
+        kind: "total_assets",
+        limit: DEPLOY_LIMITS.TOTAL_ASSETS_BYTES,
+        actual: total,
+      };
+    }
+  }
+
+  if (
+    input.serverBundle !== null &&
+    input.serverBundle.gzippedSize > DEPLOY_LIMITS.WORKER_GZIPPED_BYTES
+  ) {
+    return {
+      kind: "worker_gzipped",
+      limit: DEPLOY_LIMITS.WORKER_GZIPPED_BYTES,
+      actual: input.serverBundle.gzippedSize,
+    };
+  }
+
+  return null;
 }
 
 const REQUIRED_GAME_EXPORTS = ["game"] as const;
@@ -205,7 +294,6 @@ export async function buildOpenturnProject(
   const deploymentID = options.deploymentID ?? createID("dep");
   const projectID = options.projectID ?? basename(paths.projectDir);
   const outDir = resolve(paths.projectDir, options.outDir ?? DEFAULT_OUT_DIR);
-  const assetsDir = join(outDir, "assets");
   const buildDir = join(paths.projectDir, INTERNAL_BUILD_DIR, deploymentID);
   const entryPath = join(buildDir, "entry.tsx");
   const metadata = await loadMetadata(paths);
@@ -213,7 +301,7 @@ export async function buildOpenturnProject(
 
   rmSync(outDir, { force: true, recursive: true });
   rmSync(buildDir, { force: true, recursive: true });
-  mkdirSync(assetsDir, { recursive: true });
+  mkdirSync(outDir, { recursive: true });
   mkdirSync(buildDir, { recursive: true });
   writeFileSync(entryPath, createBrowserEntry(paths, deploymentID, projectID, runtime));
 
@@ -226,13 +314,16 @@ export async function buildOpenturnProject(
         cssCodeSplit: true,
         emptyOutDir: false,
         minify: false,
-        outDir: assetsDir,
+        // Build into the deployment root. Bundled JS/CSS are nested under
+        // `assets/` via the rollup output patterns below; files Vite copies
+        // from `<projectDir>/public/**` land at this root verbatim.
+        outDir,
         rollupOptions: {
           input: entryPath,
           output: {
-            assetFileNames: "[name]-[hash][extname]",
-            chunkFileNames: "[name]-[hash].js",
-            entryFileNames: "[name]-[hash].js",
+            assetFileNames: "assets/[name]-[hash][extname]",
+            chunkFileNames: "assets/[name]-[hash].js",
+            entryFileNames: "assets/[name]-[hash].js",
           },
         },
         target: "es2022",
@@ -240,7 +331,10 @@ export async function buildOpenturnProject(
       clearScreen: false,
       configFile: false,
       plugins: [openturnTailwindProjectSource(paths.projectDir), tailwindcss(), react()],
-      publicDir: false,
+      // `<projectDir>/public/**` is copied verbatim into `outDir`. Files there
+      // are NOT content-hashed; the per-deployment R2 prefix is the cache
+      // buster, so static images can be referenced by their stable filename.
+      publicDir: "public",
       root: paths.projectDir,
     });
     browserEntryFileName = findViteEntryFileName(browserBuild);
@@ -302,6 +396,7 @@ export async function buildOpenturnProject(
     const outServer = join(outDir, SERVER_SCRIPT_FILENAME);
     writeFileSync(outServer, serverBytes);
     const digest = await digestHex(serverBytes);
+    const gzippedSize = gzipSync(serverBytes).byteLength;
 
     const workerMetadata = createWorkerMetadata();
     const outMetadata = join(outDir, SERVER_METADATA_FILENAME);
@@ -311,6 +406,7 @@ export async function buildOpenturnProject(
       path: outServer,
       digest,
       size: serverBytes.byteLength,
+      gzippedSize,
       metadataPath: outMetadata,
       metadata: workerMetadata,
     };
@@ -332,15 +428,38 @@ export async function buildOpenturnProject(
 
   rmSync(buildDir, { force: true, recursive: true });
 
-  const assetFiles = await listFiles(assetsDir);
-  const assets = assetFiles.map((assetPath) => toRelativeURL(outDir, assetPath)).sort();
+  // Walk the full outDir, not just `assets/`, so files Vite copied from
+  // `<projectDir>/public/**` are included. Deployment metadata files written
+  // by this builder are excluded so they don't leak into the manifest.
+  const excludedFromAssets = new Set([
+    "manifest.json",
+    "index.html",
+    SERVER_SCRIPT_FILENAME,
+    SERVER_METADATA_FILENAME,
+  ]);
+  const outDirFiles = await listFiles(outDir);
+  const assetEntries = outDirFiles
+    .map((absolutePath) => ({
+      absolutePath,
+      relative: toRelativeURL(outDir, absolutePath),
+    }))
+    .filter(({ relative: rel }) => !excludedFromAssets.has(rel.replace(/^\.\//u, "")))
+    .sort((a, b) => a.relative.localeCompare(b.relative));
+  const assets = assetEntries.map((entry) => entry.relative);
+  const assetSizes: Record<string, number> = {};
+  for (const entry of assetEntries) {
+    assetSizes[entry.relative] = statSync(entry.absolutePath).size;
+  }
   const scripts = assets.filter((asset) => asset.endsWith(".js"));
   const styles = assets.filter((asset) => asset.endsWith(".css"));
+  // `browserEntryFileName` is already relative to outDir (e.g. `assets/entry-<hash>.js`)
+  // because rollup's `entryFileNames` pattern produces an outDir-relative path.
   const entry = browserEntryFileName === null
     ? scripts[0] ?? ""
-    : toRelativeURL(outDir, join(assetsDir, browserEntryFileName));
+    : toRelativeURL(outDir, join(outDir, browserEntryFileName));
   const manifest: OpenturnDeploymentManifest = {
     assets,
+    assetSizes,
     build: {
       at: new Date().toISOString(),
       openturn: readOpenturnPackageVersions(paths.projectDir),
@@ -364,6 +483,7 @@ export async function buildOpenturnProject(
 
   return {
     manifest,
+    metadata,
     outDir,
     paths,
     serverBundle,
@@ -830,10 +950,22 @@ async function loadMetadata(paths: OpenturnProjectPaths): Promise<OpenturnDeploy
   }
 
   const resolved = metadata as OpenturnDeploymentMetadata;
+
+  if (resolved.slug !== undefined) {
+    if (typeof resolved.slug !== "string" || !PROJECT_SLUG_RE.test(resolved.slug)) {
+      throw new OpenturnDeployError(
+        "invalid_metadata_slug",
+        `app/openturn.ts metadata.slug must be 2-64 lowercase letters/digits/dashes, starting with a letter (got ${JSON.stringify(resolved.slug)}).`,
+      );
+    }
+  }
+
   return resolved.runtime === undefined && runtime !== undefined
     ? { ...resolved, runtime }
     : resolved;
 }
+
+const PROJECT_SLUG_RE = /^[a-z][a-z0-9-]{1,63}$/u;
 
 function readGameName(metadata: OpenturnDeploymentMetadata, fallback: string): string {
   return typeof metadata.name === "string" && metadata.name.length > 0 ? metadata.name : fallback;

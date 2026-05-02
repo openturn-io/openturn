@@ -7,8 +7,12 @@ import {
   OpenturnDeployError,
   buildOpenturnProject,
   discoverOpenturnProject,
+  findSizeViolation,
+  validateBundleSize,
   validateOpenturnProject,
 } from "./index";
+
+import { DEPLOY_LIMITS } from "@openturn/manifest";
 
 const fixtureRoots: string[] = [];
 
@@ -250,20 +254,224 @@ describe.serial("@openturn/deploy", () => {
 
     await expect(validateOpenturnProject(paths)).rejects.toThrow("app/page.tsx must export a default React component");
   });
+
+  test("bundles an imported PNG and records its size in the manifest", async () => {
+    const fixture = createFixture("imported-image", {
+      "app/game.ts": `
+        export const game = { events: {}, setup: () => ({}), playerIDs: ["0", "1"], minPlayers: 2 };
+      `,
+      "app/openturn.ts": `
+        export const metadata = { name: "Imported Image", runtime: "local" };
+      `,
+      "app/page.tsx": `
+        import logo from "./logo.png";
+
+        export default function Page() {
+          return <img src={logo} alt="logo" />;
+        }
+      `,
+      "app/logo.png": FAKE_PNG_BYTES,
+      "package.json": JSON.stringify({
+        dependencies: {
+          "@openturn/core": "workspace:*",
+          "@openturn/react": "workspace:*",
+          react: "^19.2.0",
+          "react-dom": "^19.2.0",
+        },
+      }),
+    });
+    linkWorkspacePackage(fixture, "@openturn/react", "packages/react");
+    linkExampleAppPackage(fixture, "react");
+    linkExampleAppPackage(fixture, "react-dom");
+
+    const result = await buildOpenturnProject({
+      deploymentID: "dep_imported_image",
+      outDir: "dist",
+      projectDir: fixture,
+      projectID: "fixture",
+    });
+
+    const pngAssets = result.manifest.assets.filter((asset) => asset.endsWith(".png"));
+    expect(pngAssets.length).toBe(1);
+    const pngAsset = pngAssets[0]!;
+    // Vite content-hashes imported assets.
+    expect(pngAsset).toMatch(/logo-[A-Za-z0-9_-]+\.png$/u);
+    expect(result.manifest.assetSizes?.[pngAsset]).toBe(FAKE_PNG_BYTES.byteLength);
+
+    const onDisk = readFileSync(join(result.outDir, pngAsset.replace(/^\.\//u, "")));
+    expect(onDisk.byteLength).toBe(FAKE_PNG_BYTES.byteLength);
+  });
+
+  test("bundles a public/ image without hashing and records its size", async () => {
+    const fixture = createFixture("public-image", {
+      "app/game.ts": `
+        export const game = { events: {}, setup: () => ({}), playerIDs: ["0", "1"], minPlayers: 2 };
+      `,
+      "app/openturn.ts": `
+        export const metadata = { name: "Public Image", runtime: "local" };
+      `,
+      "app/page.tsx": `
+        export default function Page() {
+          return <img src="/banner.png" alt="banner" />;
+        }
+      `,
+      "public/banner.png": FAKE_PNG_BYTES,
+      "package.json": JSON.stringify({
+        dependencies: {
+          "@openturn/core": "workspace:*",
+          "@openturn/react": "workspace:*",
+          react: "^19.2.0",
+          "react-dom": "^19.2.0",
+        },
+      }),
+    });
+    linkWorkspacePackage(fixture, "@openturn/react", "packages/react");
+    linkExampleAppPackage(fixture, "react");
+    linkExampleAppPackage(fixture, "react-dom");
+
+    const result = await buildOpenturnProject({
+      deploymentID: "dep_public_image",
+      outDir: "dist",
+      projectDir: fixture,
+      projectID: "fixture",
+    });
+
+    // Public-folder files keep their original name (un-hashed) and live at the
+    // outDir root, not under `assets/`.
+    expect(result.manifest.assets).toContain("./banner.png");
+    expect(result.manifest.assetSizes?.["./banner.png"]).toBe(FAKE_PNG_BYTES.byteLength);
+    const onDisk = readFileSync(join(result.outDir, "banner.png"));
+    expect(onDisk.byteLength).toBe(FAKE_PNG_BYTES.byteLength);
+  });
 });
 
-function createFixture(name: string, files: Record<string, string>): string {
+describe("validateBundleSize", () => {
+  test("returns null when assetSizes is absent", () => {
+    expect(
+      findSizeViolation({
+        manifest: {
+          runtime: "local",
+          gameName: "x",
+          entry: "./entry.js",
+          styles: [],
+          assets: [],
+          build: { at: "now", openturn: {} },
+        },
+        serverBundle: null,
+      }),
+    ).toBeNull();
+  });
+
+  test("flags a per-asset overage", () => {
+    const violation = findSizeViolation({
+      manifest: {
+        runtime: "local",
+        gameName: "x",
+        entry: "./entry.js",
+        styles: [],
+        assets: ["./big.png"],
+        assetSizes: { "./big.png": DEPLOY_LIMITS.PER_ASSET_BYTES + 1 },
+        build: { at: "now", openturn: {} },
+      },
+      serverBundle: null,
+    });
+    expect(violation?.kind).toBe("per_asset");
+    expect(violation?.asset).toBe("./big.png");
+  });
+
+  test("flags an image-budget overage even when no single asset is too large", () => {
+    const halfPlusOne = Math.ceil(DEPLOY_LIMITS.TOTAL_IMAGES_BYTES / 2) + 1;
+    const violation = findSizeViolation({
+      manifest: {
+        runtime: "local",
+        gameName: "x",
+        entry: "./entry.js",
+        styles: [],
+        assets: ["./a.png", "./b.png"],
+        assetSizes: { "./a.png": halfPlusOne, "./b.png": halfPlusOne },
+        build: { at: "now", openturn: {} },
+      },
+      serverBundle: null,
+    });
+    expect(violation?.kind).toBe("total_images");
+  });
+
+  test("flags an oversized worker bundle by gzipped size", () => {
+    const violation = findSizeViolation({
+      manifest: {
+        runtime: "multiplayer",
+        gameName: "x",
+        entry: "./entry.js",
+        styles: [],
+        assets: [],
+        build: { at: "now", openturn: {} },
+      },
+      serverBundle: {
+        path: "/tmp/server.js",
+        digest: "deadbeef",
+        size: 0,
+        gzippedSize: DEPLOY_LIMITS.WORKER_GZIPPED_BYTES + 1,
+        metadataPath: "/tmp/server.metadata.json",
+        metadata: {
+          main_module: "server.js",
+          compatibility_date: "2026-04-17",
+          bindings: [],
+          migrations: { new_sqlite_classes: [] },
+        },
+      },
+    });
+    expect(violation?.kind).toBe("worker_gzipped");
+  });
+
+  test("validateBundleSize throws OpenturnDeployError on violation", () => {
+    expect(() =>
+      validateBundleSize({
+        manifest: {
+          runtime: "local",
+          gameName: "x",
+          entry: "./entry.js",
+          styles: [],
+          assets: ["./big.png"],
+          assetSizes: { "./big.png": DEPLOY_LIMITS.PER_ASSET_BYTES + 1 },
+          build: { at: "now", openturn: {} },
+        },
+        serverBundle: null,
+      }),
+    ).toThrow(OpenturnDeployError);
+  });
+});
+
+function createFixture(
+  name: string,
+  files: Record<string, string | Uint8Array>,
+): string {
   const root = join(import.meta.dir, "..", ".test-fixtures", `${name}-${crypto.randomUUID()}`);
   fixtureRoots.push(root);
 
   for (const [path, content] of Object.entries(files)) {
     const absolutePath = join(root, path);
     mkdirSync(dirname(absolutePath), { recursive: true });
-    writeFileSync(absolutePath, content.trimStart());
+    if (typeof content === "string") {
+      writeFileSync(absolutePath, content.trimStart());
+    } else {
+      writeFileSync(absolutePath, content);
+    }
   }
 
   return root;
 }
+
+// Synthetic binary fixture that begins with the PNG magic bytes, padded to
+// 5 KiB so it exceeds Vite's default `assetsInlineLimit` (4 KiB) — otherwise
+// the imported image is inlined as a data URL and we never see it in the
+// manifest's emitted assets. The bytes don't need to form a valid image; Vite
+// recognizes assets by extension, and the deploy pipeline only hashes/copies.
+const FAKE_PNG_BYTES = (() => {
+  const bytes = new Uint8Array(5 * 1024);
+  // PNG magic
+  bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+  return bytes;
+})();
 
 function dirname(path: string): string {
   return path.slice(0, path.lastIndexOf("/"));
