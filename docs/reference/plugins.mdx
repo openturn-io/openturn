@@ -1,0 +1,156 @@
+---
+title: "@openturn/plugins"
+description: Compose cross-cutting features (chat, votes, emotes) into a gamekit game without forking the host.
+sidebarTitle: Plugins
+---
+
+Worker-safe. Plugins extend a gamekit game definition with cross-cutting behavior (chat, emotes, vote-to-kick, spectator pings) without forking the host game. Composition happens at the gamekit-source level via `withPlugins(baseDef, plugins)`, which finalizes to a fully wired `GameDefinition` ready to pass to the runtime.
+
+## Install
+
+```bash
+bun add @openturn/plugins
+```
+
+## What plugins can do
+
+- Declare a state slice that lives at `G.plugins.<id>` and rides along on every snapshot the server sends to clients.
+- Expose moves namespaced as `${pluginID}__${moveName}` on the host game's dispatch surface.
+- Default to off-turn dispatch (`canPlayer: () => true`) so any seated player may send chat / votes / pings regardless of whose turn it is.
+
+The host game's own moves keep their original turn semantics: `withPlugins` shims an unspecified `canPlayer` on each base move to "current player only" while expanding `activePlayers` to the full seated roster.
+
+## Authoring
+
+### `definePlugin(plugin)`
+
+Identity helper that preserves literal types on the plugin's `id`, slice, and moves map.
+
+```ts
+import { definePlugin, definePluginMove } from "@openturn/plugins";
+
+interface ChatSlice { messages: readonly { authorID: string; text: string }[] }
+interface SendArgs { text: string }
+
+export const chatPlugin = definePlugin({
+  id: "chat",
+  setup: (): ChatSlice => ({ messages: [] }),
+  moves: {
+    send: definePluginMove<ChatSlice, SendArgs>({
+      run({ G, args, player }) {
+        const text = args.text.trim();
+        if (text.length === 0) return { kind: "invalid", reason: "empty" };
+        return {
+          kind: "stay",
+          patch: { messages: [...G.messages, { authorID: player.id, text }] },
+        };
+      },
+    }),
+  },
+});
+```
+
+### `definePluginMove(definition)`
+
+Identity helper for a single plugin move. Use when you want explicit `<TSlice, TArgs>` typing without inlining the move into the plugin's `moves` map.
+
+### Plugin move outcomes
+
+Plugin moves return one of two outcomes:
+
+| Outcome | Effect |
+| --- | --- |
+| `{ kind: "stay", patch?: Partial<TSlice> }` | Shallow-merges `patch` into `G.plugins.<id>`. Keeps phase and turn unchanged. |
+| `{ kind: "invalid", reason?: string, details?: JsonValue }` | Rejects the dispatch; the plugin slice is unchanged. |
+
+Plugin moves never end the host match, change phase, or advance the turn — those concerns belong to the host game. If you need that behavior, write a host move.
+
+### Permissions
+
+By default any seated player may dispatch any plugin move. Override `canPlayer` per move to restrict:
+
+```ts
+definePluginMove<VoteSlice, { target: string }>({
+  canPlayer: ({ player }) => player.id !== "spectator",
+  run({ G, args, player }) { /* ... */ },
+})
+```
+
+## Composition
+
+### `withPlugins(base, plugins)`
+
+Compose a base gamekit definition with one or more plugins and finalize via `defineGame`. The returned value is a fully wired `GameDefinition` — callers do not need to wrap it in `defineGame` again.
+
+```ts
+import { withPlugins } from "@openturn/plugins";
+import { turn } from "@openturn/gamekit";
+import { chatPlugin } from "@openturn/plugin-chat";
+
+export const game = withPlugins(
+  {
+    maxPlayers: 2,
+    setup: () => ({ board: emptyBoard() }),
+    turn: turn.roundRobin(),
+    moves: ({ move }) => ({
+      placeMark: move<{ row: number; col: number }>({
+        run({ G, args, player, move }) {
+          // ...
+        },
+      }),
+    }),
+    views: {
+      public: ({ G }) => ({ board: G.board }),
+    },
+  },
+  [chatPlugin],
+);
+```
+
+Two overloads mirror gamekit's `defineGame`:
+
+- `maxPlayers` form — pool size, default IDs `"0"`, `"1"`, …
+- `playerIDs` form — named seats, e.g. `playerIDs: ["white", "black"] as const`
+
+Pass exactly one. Contextual typing flows into the base author's `setup`, `moves`, `views`, etc. — authoring a game with plugins is the same as authoring one without.
+
+Plugin slices live at runtime under `G.plugins.<id>`; they are not surfaced on the static `TState`, since doing so would force every host move's `patch` to acknowledge plugin keys it never touches. Reach into `G.plugins.<id>` via the plugin's own typed accessors / the namespaced dispatch surface, not directly off the host state.
+
+### View merging
+
+When the base game declares `views.player` or `views.public`, `withPlugins` wraps each view to merge `G.plugins` into the projection. Plugin slices ride along on every snapshot the client receives. If a base view already produces a `plugins` field of its own, it is preserved as-is (the plugin merge is skipped).
+
+### Errors at composition time
+
+`withPlugins` throws synchronously when:
+
+- Two plugins share the same `id`.
+- A namespaced plugin move (`${pluginID}__${moveName}`) collides with an existing host move name.
+- The base game's `setup` already returns a `plugins` key on its state.
+
+These errors surface during authoring, not at first dispatch.
+
+## Constants
+
+| Constant | Value | Purpose |
+| --- | --- | --- |
+| `PLUGIN_STATE_KEY` | `"plugins"` | Reserved key on the host game's `G` where plugin slices live. Authors should avoid using this key in their own state. |
+| `PLUGIN_MOVE_SEPARATOR` | `"__"` | Joiner between a plugin id and a move name when registering on the host gamekit `moves` map. |
+
+## Key types
+
+- **`PluginDefinition<TID, TSlice, TMoves>`** — full plugin shape: `{ id, setup, moves }`.
+- **`PluginMoveDefinition<TSlice, TArgs, TPlayerID>`** — `{ args?, canPlayer?, run }` for a single plugin move.
+- **`PluginMoveOutcome<TSlice>`** — `{ kind: "stay", patch? } | { kind: "invalid", reason?, details? }`.
+- **`PluginMoveRunContext<TSlice, TArgs, TPlayerID>`** — the `run` context: `{ G, args, player, rng }`.
+- **`PluginMovePermissionContext<TPlayerID>`** — the `canPlayer` context: `{ player }`.
+- **`PluginsState<TPlugins>`** — `{ plugins: { [id]: TSlice } }`. Intersected with the base `TPublic` / `TPlayer` on the result of `withPlugins`.
+- **`PluginsSliceMap<TPlugins>`** — the `{ [id]: TSlice }` map alone.
+- **`PluginMoveName<TID, TMoveName>`** — `${TID}__${TMoveName}` template literal.
+- **`AnyPlugin`**, **`AnyPluginMoveDefinition`** — wide types for collections of plugins or moves with mixed parameters.
+
+## See also
+
+- [`@openturn/plugin-chat`](/reference/plugin-chat) — first-party in-room chat built on this package.
+- [Reference: `@openturn/gamekit`](/reference/gamekit) — base authoring surface that plugins extend.
+- [`packages/plugins/src/index.test.ts`](https://github.com/openturn-io/openturn/tree/main/openturn/packages/plugins/src/index.test.ts) — the canonical test for `withPlugins` semantics.

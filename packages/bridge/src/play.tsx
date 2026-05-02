@@ -31,6 +31,7 @@ import {
   type ShellControlMeta,
   type TrailShellControl,
 } from "./shell-controls";
+import { ThemeToggle, useTheme } from "./theme";
 
 const PUBLIC_ROOMS_REFRESH_MS = 15_000;
 const PRESENCE_POLL_MS = 3_000;
@@ -54,6 +55,12 @@ export interface PlayPageProps {
   chrome?: ReactNode;
   /** Override class names so each shell can re-skin to its design tokens. */
   classes?: PlayPageClassNames;
+  /**
+   * When true, render a theme toggle inline in the lobby header and the
+   * room toolbar trail. Set false for shells that already provide their
+   * own theme switcher in `chrome` to avoid duplication.
+   */
+  showThemeToggle?: boolean;
 }
 
 type LobbyCard = "create" | "join" | "save";
@@ -63,10 +70,12 @@ type CardState =
   | { kind: "loading"; card: LobbyCard }
   | { kind: "error"; card: LobbyCard; message: string };
 
-export function PlayPage({ adapter, initialRoomID, chrome, classes }: PlayPageProps) {
+export function PlayPage({ adapter, initialRoomID, chrome, classes, showThemeToggle = false }: PlayPageProps) {
   const [snapshot, setSnapshot] = useState<PlayRoomSnapshot | null>(null);
   const [cardState, setCardState] = useState<CardState>({ kind: "idle" });
   const isLoading = cardState.kind === "loading";
+
+  useShellThemeBroadcast();
 
   const performAction = useCallback(
     async (card: LobbyCard, thunk: () => Promise<PlayRoomResult>) => {
@@ -110,20 +119,21 @@ export function PlayPage({ adapter, initialRoomID, chrome, classes }: PlayPagePr
 
   if (snapshot !== null) {
     return (
-      <div className={classes?.inRoomRoot ?? "flex h-dvh flex-col bg-white text-slate-900"}>
+      <div className={classes?.inRoomRoot ?? "flex h-dvh flex-col bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100"}>
         {chrome}
         <RoomView
           snapshot={snapshot}
           adapter={adapter}
           classes={classes}
           onSnapshotChange={setSnapshot}
+          showThemeToggle={showThemeToggle}
         />
       </div>
     );
   }
 
   return (
-    <div className={classes?.root ?? "flex min-h-dvh flex-col bg-white text-slate-900"}>
+    <div className={classes?.root ?? "flex min-h-dvh flex-col bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100"}>
       {chrome}
       <LobbyView
         adapter={adapter}
@@ -132,6 +142,7 @@ export function PlayPage({ adapter, initialRoomID, chrome, classes }: PlayPagePr
         performAction={performAction}
         onError={(card, message) => setCardState({ kind: "error", card, message })}
         classes={classes}
+        showThemeToggle={showThemeToggle}
       />
     </div>
   );
@@ -144,6 +155,7 @@ function LobbyView({
   performAction,
   onError,
   classes,
+  showThemeToggle,
 }: {
   adapter: PlayShellAdapter;
   cardState: CardState;
@@ -151,6 +163,7 @@ function LobbyView({
   performAction: (card: LobbyCard, thunk: () => Promise<PlayRoomResult>) => Promise<void>;
   onError: (card: LobbyCard, message: string) => void;
   classes: PlayPageClassNames | undefined;
+  showThemeToggle: boolean;
 }) {
   const meta = adapter.meta;
   const createError = cardState.kind === "error" && cardState.card === "create" ? cardState.message : null;
@@ -163,7 +176,7 @@ function LobbyView({
       <main className={classes?.lobbyMain ?? "mx-auto w-full max-w-3xl px-6 py-16"}>
         <div className={cardClass(classes)}>
           <h1 className="text-xl font-semibold tracking-tight">{meta.gameName}</h1>
-          <p className="mt-2 text-sm text-slate-500">
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
             This deployment is marked multiplayer but is missing multiplayer metadata.
           </p>
         </div>
@@ -177,23 +190,26 @@ function LobbyView({
 
   return (
     <main className={classes?.lobbyMain ?? "mx-auto w-full max-w-5xl px-6 py-10"}>
-      <header className="mb-8 flex flex-col gap-2">
-        <span className="text-xs uppercase tracking-wider text-slate-500">Multiplayer lobby</span>
-        <h1 className="text-3xl font-semibold tracking-tight">{meta.gameName}</h1>
-        <p className="text-sm text-slate-500">
-          {playerCountLabel} game
-          {meta.user?.name !== undefined ? (
-            <>
-              {" "}· signed in as <span className="font-medium text-slate-900">{meta.user.name}</span>
-            </>
-          ) : null}
-        </p>
+      <header className="mb-8 flex items-start justify-between gap-4">
+        <div className="flex flex-col gap-2">
+          <span className="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">Multiplayer lobby</span>
+          <h1 className="text-3xl font-semibold tracking-tight">{meta.gameName}</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            {playerCountLabel} game
+            {meta.user?.name !== undefined ? (
+              <>
+                {" "}· signed in as <span className="font-medium text-slate-900 dark:text-slate-100">{meta.user.name}</span>
+              </>
+            ) : null}
+          </p>
+        </div>
+        {showThemeToggle ? <ThemeToggle /> : null}
       </header>
 
       <div className="grid gap-4 lg:grid-cols-12">
         <div className={`lg:col-span-7 ${cardClass(classes, createError !== null)}`}>
           <h2 className="text-base font-semibold">Create a new room</h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             Spins up a fresh room and gives you an invite link to share.
           </p>
           <div className="mt-4 flex flex-col gap-2">
@@ -206,7 +222,7 @@ function LobbyView({
               {createLoading ? "Creating room..." : "Create room"}
             </button>
             {createError !== null ? (
-              <p className="m-0 text-xs text-red-600">{createError}.</p>
+              <p className="m-0 text-xs text-red-600 dark:text-red-400">{createError}.</p>
             ) : null}
           </div>
         </div>
@@ -214,7 +230,7 @@ function LobbyView({
         <div className="flex flex-col gap-4 lg:col-span-5">
           <div className={cardClass(classes, joinError !== null)}>
             <h2 className="text-base font-semibold">Join with invite</h2>
-            <p className="mt-1 text-sm text-slate-500">Paste an invite link a host shared with you.</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Paste an invite link a host shared with you.</p>
             <div className="mt-3">
               <JoinRoomForm
                 disabled={isLoading}
@@ -222,7 +238,7 @@ function LobbyView({
                 classes={classes}
               />
               {joinError !== null ? (
-                <p className="mt-2 text-xs text-red-600">{joinError}.</p>
+                <p className="mt-2 text-xs text-red-600 dark:text-red-400">{joinError}.</p>
               ) : null}
             </div>
           </div>
@@ -230,7 +246,7 @@ function LobbyView({
           {isShellControlEnabled(adapter, "load") ? (
             <div className={cardClass(classes, saveError !== null)}>
               <h2 className="text-base font-semibold">Start from save</h2>
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                 Upload a <span className="font-mono">.otsave</span> file you (or another player) downloaded earlier.
               </p>
               <div className="mt-3">
@@ -247,7 +263,7 @@ function LobbyView({
                   onError={(message) => onError("save", message)}
                 />
                 {saveError !== null ? (
-                  <p className="mt-2 text-xs text-red-600">{saveError}.</p>
+                  <p className="mt-2 text-xs text-red-600 dark:text-red-400">{saveError}.</p>
                 ) : null}
               </div>
             </div>
@@ -289,7 +305,7 @@ function PdpSection({
       {description.length > 0 ? (
         <div className={cardClass(classes)}>
           <h2 className="text-base font-semibold">About</h2>
-          <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{description}</p>
+          <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300">{description}</p>
         </div>
       ) : null}
 
@@ -298,7 +314,7 @@ function PdpSection({
           <h2 className="text-base font-semibold">Screenshots</h2>
           <ul className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             {images.map((image) => (
-              <li key={image.url} className="overflow-hidden rounded-md border border-slate-200">
+              <li key={image.url} className="overflow-hidden rounded-md border border-slate-200 dark:border-slate-800">
                 <img
                   src={image.url}
                   alt={image.alt ?? ""}
@@ -314,7 +330,7 @@ function PdpSection({
       {rules.length > 0 ? (
         <details className={cardClass(classes)}>
           <summary className="cursor-pointer text-base font-semibold">Rules</summary>
-          <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{rules}</p>
+          <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300">{rules}</p>
         </details>
       ) : null}
     </section>
@@ -362,28 +378,28 @@ function PublicRoomsSection({
     <section className="mt-10 flex flex-col gap-3">
       <header className="flex items-baseline justify-between gap-2">
         <h2 className="text-base font-semibold tracking-tight">Open public rooms</h2>
-        <span className="text-xs text-slate-500">
+        <span className="text-xs text-slate-500 dark:text-slate-400">
           {loaded && rooms !== null ? `${rooms.length} open` : "Loading..."}
         </span>
       </header>
       {rooms !== null && rooms.length === 0 ? (
         <div className={cardClass(classes)}>
-          <p className="py-6 text-center text-sm text-slate-500">
+          <p className="py-6 text-center text-sm text-slate-500 dark:text-slate-400">
             No public rooms yet — create one above and toggle it Public to invite drop-ins.
           </p>
         </div>
       ) : null}
       {rooms !== null && rooms.length > 0 ? (
         <div className={`overflow-hidden p-0 ${cardClass(classes)}`}>
-          <ul className="divide-y divide-slate-200">
+          <ul className="divide-y divide-slate-200 dark:divide-slate-800">
             {rooms.map((room) => (
               <li key={room.roomID} className="flex items-center justify-between gap-3 px-4 py-3">
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                       {room.status === "active" ? "In game" : "In lobby"}
                     </span>
-                    <span className="truncate font-mono text-xs text-slate-500">{room.roomID}</span>
+                    <span className="truncate font-mono text-xs text-slate-500 dark:text-slate-400">{room.roomID}</span>
                   </div>
                 </div>
                 <button
@@ -428,7 +444,7 @@ export function JoinRoomForm({
           value={value}
           onChange={(event) => setValue(event.target.value)}
           placeholder="Paste invite link or room ID"
-          className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400"
+          className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:ring-slate-500"
         />
         <button
           type="submit"
@@ -439,8 +455,8 @@ export function JoinRoomForm({
         </button>
       </div>
       {extracted !== null && extracted !== value.trim() ? (
-        <p className="text-xs text-slate-500">
-          Will join <span className="font-mono text-slate-900">{extracted}</span>
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          Will join <span className="font-mono text-slate-900 dark:text-slate-100">{extracted}</span>
         </p>
       ) : null}
     </form>
@@ -493,12 +509,12 @@ export function SaveUploadForm({
           if (file !== undefined) void handleFile(file);
         }}
         className={joinClasses(
-          "relative flex flex-col items-center justify-center gap-1 rounded-md border border-dashed border-slate-300 px-4 py-6 text-center text-xs text-slate-500 transition-colors",
-          inputDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:border-slate-500 hover:bg-slate-50",
-          dragging ? "border-slate-900 bg-slate-50 text-slate-900" : "",
+          "relative flex flex-col items-center justify-center gap-1 rounded-md border border-dashed border-slate-300 px-4 py-6 text-center text-xs text-slate-500 transition-colors dark:border-slate-700 dark:text-slate-400",
+          inputDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:border-slate-500 hover:bg-slate-50 dark:hover:border-slate-500 dark:hover:bg-slate-900",
+          dragging ? "border-slate-900 bg-slate-50 text-slate-900 dark:border-slate-100 dark:bg-slate-900 dark:text-slate-100" : "",
         )}
       >
-        <span className="font-medium text-slate-900">
+        <span className="font-medium text-slate-900 dark:text-slate-100">
           {uploading ? "Uploading…" : "Drop .otsave here or click to browse"}
         </span>
         <span>Saves are pinned to this deployment's version.</span>
@@ -514,10 +530,10 @@ export function SaveUploadForm({
         />
       </label>
       {pending !== null ? (
-        <div className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs">
+        <div className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs dark:border-slate-800 dark:bg-slate-900">
           <span className="min-w-0 truncate">
-            <span className="font-medium text-slate-900">{pending.name}</span>
-            <span className="ml-1.5 text-slate-500">
+            <span className="font-medium text-slate-900 dark:text-slate-100">{pending.name}</span>
+            <span className="ml-1.5 text-slate-500 dark:text-slate-400">
               · {formatBytes(pending.size)}
               {uploading ? " · uploading…" : ""}
             </span>
@@ -526,7 +542,7 @@ export function SaveUploadForm({
             <button
               type="button"
               onClick={() => setPending(null)}
-              className="text-slate-500 transition-colors hover:text-slate-900"
+              className="text-slate-500 transition-colors hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
             >
               Remove
             </button>
@@ -542,11 +558,13 @@ function RoomView({
   adapter,
   classes,
   onSnapshotChange,
+  showThemeToggle,
 }: {
   snapshot: PlayRoomSnapshot;
   adapter: PlayShellAdapter;
   classes: PlayPageClassNames | undefined;
   onSnapshotChange: (next: PlayRoomSnapshot) => void;
+  showThemeToggle: boolean;
 }) {
   const host = useBridgeHost(snapshot, adapter);
   const matchActive = useBridgeMatchActive(host, snapshot.scope === "game");
@@ -741,11 +759,14 @@ function RoomView({
   };
 
   const toolbarTrail = (
-    <RoomToolbarActions
-      adapter={adapter}
-      matchActive={matchActive}
-      handlers={trailHandlers}
-    />
+    <>
+      <RoomToolbarActions
+        adapter={adapter}
+        matchActive={matchActive}
+        handlers={trailHandlers}
+      />
+      {showThemeToggle ? <ThemeToggle /> : null}
+    </>
   );
 
   if (host === null) return null;
@@ -782,15 +803,12 @@ function RoomToolbarLead({
 }) {
   return (
     <>
-      <span>
-        · room <span className="font-mono text-slate-900">{snapshot.roomID}</span>
-      </span>
-      <span>· {snapshot.isHost ? "you are host" : "guest"}</span>
+      <span>{snapshot.isHost ? "you are host" : "guest"}</span>
       {visibility !== undefined && onChangeVisibility !== undefined && snapshot.isHost ? (
         <VisibilityToggle value={visibility} pending={visibilityPending} onChange={onChangeVisibility} />
       ) : visibility !== undefined ? (
         <span
-          className="ml-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500"
+          className="ml-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400"
           aria-label={`room is ${visibility}`}
         >
           {visibility === "public" ? "Public" : "Private"}
@@ -799,7 +817,7 @@ function RoomToolbarLead({
       {onCopyInvite !== undefined ? (
         <button
           type="button"
-          className="ml-1 rounded-md border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50"
+          className="ml-1 rounded-md border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
           onClick={onCopyInvite}
         >
           Copy Invite
@@ -859,7 +877,7 @@ function ToolbarButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="ml-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+      className="ml-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
     >
       {children}
     </button>
@@ -879,7 +897,7 @@ export function VisibilityToggle({
     <span
       role="group"
       aria-label="Room visibility"
-      className="ml-1 inline-flex overflow-hidden rounded-md border border-slate-200 text-xs"
+      className="ml-1 inline-flex overflow-hidden rounded-md border border-slate-200 text-xs dark:border-slate-700"
     >
       {(["private", "public"] as const).map((option) => {
         const active = option === value;
@@ -892,8 +910,8 @@ export function VisibilityToggle({
             onClick={() => onChange(option)}
             className={
               active
-                ? "bg-slate-900 px-2 py-1 text-white"
-                : "px-2 py-1 text-slate-500 hover:bg-slate-100"
+                ? "bg-slate-900 px-2 py-1 text-white dark:bg-slate-100 dark:text-slate-900"
+                : "px-2 py-1 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
             }
           >
             {option === "public" ? "Public" : "Private"}
@@ -913,10 +931,10 @@ export function PlayerSeats({ presence }: { presence: PresenceSnapshot }) {
           seat.userID === null ? "open" : seat.connected ? "connected" : "disconnected";
         const tone =
           state === "connected"
-            ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+            ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950 dark:border-emerald-900 dark:text-emerald-400"
             : state === "disconnected"
-            ? "bg-red-50 border-red-200 text-red-700"
-            : "bg-white border-slate-200 text-slate-400 italic";
+            ? "bg-red-50 border-red-200 text-red-700 dark:bg-red-950 dark:border-red-900 dark:text-red-400"
+            : "bg-white border-slate-200 text-slate-400 italic dark:bg-slate-900 dark:border-slate-800 dark:text-slate-500";
         const dotTone =
           state === "open"
             ? "border border-dashed border-current"
@@ -934,10 +952,10 @@ export function PlayerSeats({ presence }: { presence: PresenceSnapshot }) {
             <span className={`h-1.5 w-1.5 rounded-full ${dotTone}`} />
             <span>{name}</span>
             {seat.userID !== null && seat.ready && presence.phase === "lobby" ? (
-              <span className="text-emerald-600">✓</span>
+              <span className="text-emerald-600 dark:text-emerald-400">✓</span>
             ) : null}
             {seat.userID !== null && !seat.connected && presence.phase === "active" ? (
-              <span className="text-[10px] text-red-700">(disconnected)</span>
+              <span className="text-[10px] text-red-700 dark:text-red-400">(disconnected)</span>
             ) : null}
           </span>
         );
@@ -997,19 +1015,19 @@ function cardClass(classes: PlayPageClassNames | undefined, hasError = false): s
     return joinClasses(classes.card, hasError ? classes.errorCard : undefined);
   }
   return joinClasses(
-    "rounded-lg border border-slate-200 bg-white p-5 shadow-sm",
-    hasError ? "ring-1 ring-red-300" : "",
+    "rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900",
+    hasError ? "ring-1 ring-red-300 dark:ring-red-900" : "",
   );
 }
 
 function primaryButtonClass(classes: PlayPageClassNames | undefined): string {
   return classes?.primaryButton ??
-    "inline-flex w-full items-center justify-center gap-1 rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50";
+    "inline-flex w-full items-center justify-center gap-1 rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300";
 }
 
 function outlineButtonClass(classes: PlayPageClassNames | undefined): string {
   return classes?.outlineButton ??
-    "inline-flex items-center justify-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50";
+    "inline-flex items-center justify-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800";
 }
 
 function joinClasses(...parts: ReadonlyArray<string | undefined>): string {
@@ -1022,6 +1040,108 @@ function formatBytes(bytes: number): string {
   if (kb < 1024) return `${kb.toFixed(1)} KB`;
   const mb = kb / 1024;
   return `${mb.toFixed(1)} MB`;
+}
+
+/**
+ * Broadcasts the host's resolved theme to every iframe rendered under the
+ * play shell, so embedded surfaces (CLI dev bar, inspector chrome) can
+ * follow the same light/dark choice the user made in the shell. The
+ * channel is a side message — `{ source: "openturn-shell-theme" }` —
+ * separate from the bridge's main protocol so it can evolve without
+ * touching the on-the-wire bridge schema.
+ *
+ * Three independent triggers ensure delivery even when iframe load and
+ * theme changes race: (1) responding to in-frame `request` messages,
+ * (2) re-broadcasting whenever resolved theme changes, and
+ * (3) MutationObserver + `load` listener for newly-mounted iframes.
+ */
+function useShellThemeBroadcast(): void {
+  const { resolvedTheme } = useTheme();
+  const themeRef = useRef(resolvedTheme);
+  useEffect(() => {
+    themeRef.current = resolvedTheme;
+  }, [resolvedTheme]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    function postTheme(target: Window | null) {
+      if (target === null) return;
+      try {
+        target.postMessage(
+          { source: "openturn-shell-theme", kind: "apply", theme: themeRef.current },
+          "*",
+        );
+      } catch {
+        // unreachable target — ignore.
+      }
+    }
+    function onMessage(event: MessageEvent) {
+      const data = event.data;
+      if (
+        data === null ||
+        typeof data !== "object" ||
+        (data as { source?: unknown }).source !== "openturn-shell-theme" ||
+        (data as { kind?: unknown }).kind !== "request"
+      ) {
+        return;
+      }
+      postTheme(event.source as Window | null);
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const broadcast = (frame: HTMLIFrameElement) => {
+      try {
+        frame.contentWindow?.postMessage(
+          { source: "openturn-shell-theme", kind: "apply", theme: themeRef.current },
+          "*",
+        );
+      } catch {
+        // cross-origin or detached — ignore.
+      }
+    };
+    for (const frame of Array.from(document.querySelectorAll("iframe"))) {
+      broadcast(frame);
+    }
+  }, [resolvedTheme]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const handlers = new WeakMap<HTMLIFrameElement, () => void>();
+    function attach(frame: HTMLIFrameElement) {
+      if (handlers.has(frame)) return;
+      const onLoad = () => {
+        try {
+          frame.contentWindow?.postMessage(
+            { source: "openturn-shell-theme", kind: "apply", theme: themeRef.current },
+            "*",
+          );
+        } catch {
+          /* ignore */
+        }
+      };
+      handlers.set(frame, onLoad);
+      frame.addEventListener("load", onLoad);
+      onLoad(); // also try immediately for already-loaded frames
+    }
+    document.querySelectorAll("iframe").forEach((frame) => attach(frame));
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        record.addedNodes.forEach((node) => {
+          if (node instanceof HTMLIFrameElement) {
+            attach(node);
+          } else if (node instanceof Element) {
+            node.querySelectorAll("iframe").forEach((frame) => attach(frame));
+          }
+        });
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
 }
 
 function bytesToObjectURL(bytes: Uint8Array | undefined): string | null {

@@ -15,7 +15,7 @@ Gamekit generates transitions from moves, phases, and outcomes. Core makes them 
 - Instead of `moves`, you declare `events` and `transitions`.
 - Instead of phases, you declare `states`, each with its own `activePlayers`, `label`, and `control`.
 - Instead of `turn.roundRobin()`, you compute the current player from `position.turn` and the roster.
-- Instead of outcomes like `move.win(playerID)`, you return `{ G, result, turn }` from the matching transition branch.
+- Instead of outcomes like `move.finish({ winner })`, you return `{ G, result, turn }` from the matching transition branch.
 
 The game plays identically. The definition is more verbose, more inspectable.
 
@@ -158,8 +158,8 @@ In the gamekit version, all three branches are expressed by a single `move.run`:
 run({ G, args, move, player }) {
   const board = placeMark(G.board, args.row, args.col, player.id);
   if (board === null) return move.invalid("occupied", args);
-  if (getWinner(board) !== null) return move.win(player.id, { board });
-  if (isBoardFull(board)) return move.draw({ board });
+  if (getWinner(board) !== null) return move.finish({ winner: player.id }, { board });
+  if (isBoardFull(board)) return move.finish({ draw: true }, { board });
   return move.endTurn({ board });
 }
 ```

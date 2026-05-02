@@ -51,15 +51,15 @@ moves: ({ move }) => ({
     run({ G, args, move, player }) {
       const board = placeMark(G.board, args.row, args.col, player.id);
       if (board === null) return move.invalid("occupied", args);
-      if (isWinner(board)) return move.win(player.id, { board });
-      if (isFull(board)) return move.draw({ board });
+      if (isWinner(board)) return move.finish({ winner: player.id }, { board });
+      if (isFull(board)) return move.finish({ draw: true }, { board });
       return move.endTurn({ board });
     },
   }),
 }),
 ```
 
-See [gamekit moves and outcomes](/concepts/gamekit-moves-and-outcomes) for the full outcome set (`stay`, `endTurn`, `goto`, `win`, `draw`, `invalid`).
+See [gamekit moves and outcomes](/concepts/gamekit-moves-and-outcomes) for the full outcome set (`stay`, `endTurn`, `goto`, `finish`, `invalid`).
 
 ## Permissions and turns
 

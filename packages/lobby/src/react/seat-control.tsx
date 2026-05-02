@@ -25,17 +25,17 @@ const CONTROL_BASE =
 const CONTROL_DISABLED = " cursor-not-allowed opacity-60";
 
 const TONE: Record<"open" | "mine" | "taken" | "bot", string> = {
-  open: " border-slate-200 bg-white text-slate-700 hover:border-slate-300",
-  mine: " border-slate-900 bg-slate-900 text-slate-50 shadow-sm",
-  taken: " border-slate-200 bg-slate-50 text-slate-600",
-  bot: " border-indigo-200 bg-indigo-50 text-indigo-900",
+  open: " border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-500",
+  mine: " border-slate-900 bg-slate-900 text-slate-50 shadow-sm dark:border-slate-100 dark:bg-slate-100 dark:text-slate-950",
+  taken: " border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-400",
+  bot: " border-indigo-200 bg-indigo-50 text-indigo-900 dark:border-indigo-900/70 dark:bg-indigo-950/50 dark:text-indigo-200",
 };
 
 const AVATAR_TONE: Record<"open" | "mine" | "taken" | "bot", string> = {
-  open: "border border-dashed border-slate-300 bg-slate-100 text-slate-400",
-  mine: "bg-slate-50 text-slate-900",
-  taken: "bg-slate-200 text-slate-700",
-  bot: "bg-indigo-100 text-indigo-900",
+  open: "border border-dashed border-slate-300 bg-slate-100 text-slate-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-500",
+  mine: "bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100",
+  taken: "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-400",
+  bot: "bg-indigo-100 text-indigo-900 dark:bg-indigo-900/80 dark:text-indigo-100",
 };
 
 /**
@@ -43,9 +43,7 @@ const AVATAR_TONE: Record<"open" | "mine" | "taken" | "bot", string> = {
  * compact card with host actions (bot seats; host viewers see a dropdown to
  * pick a bot from `availableBots`, plus a Clear button for occupied seats).
  *
- * This is the default `renderSeat` for `<LobbyWithBots>`. Apps that want
- * full custom seat chrome can pass their own `renderSeat` to plain `<Lobby>`
- * and call out to whatever shape they prefer.
+ * This is the fixed per-seat control used by `<LobbyWithBots>`.
  */
 export function LobbySeatControl(props: LobbySeatControlProps): ReactNode {
   const { seat, isMine, isHost, enabled, availableBots } = props;
@@ -94,7 +92,7 @@ export function LobbySeatControl(props: LobbySeatControlProps): ReactNode {
             aria-label={`Clear bot from seat ${seatNumber}`}
             disabled={!enabled}
             onClick={props.onClearSeat}
-            className="openturn-lobby-seat__clear text-[10px] font-medium uppercase tracking-wide text-indigo-700 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+            className="openturn-lobby-seat__clear text-[10px] font-medium uppercase tracking-wide text-indigo-700 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-indigo-300"
           >
             ✕ Clear
           </button>
@@ -120,7 +118,7 @@ export function LobbySeatControl(props: LobbySeatControlProps): ReactNode {
           aria-label="Leave seat"
           disabled={!enabled}
           onClick={props.onLeaveSeat}
-          className="openturn-lobby-seat__leave text-[10px] font-medium uppercase tracking-wide text-slate-50/80 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+          className="openturn-lobby-seat__leave text-[10px] font-medium uppercase tracking-wide text-slate-50/80 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-950/70"
         >
           Leave
         </button>
@@ -130,7 +128,7 @@ export function LobbySeatControl(props: LobbySeatControlProps): ReactNode {
           aria-label={`Kick player from seat ${seatNumber}`}
           disabled={!enabled}
           onClick={props.onClearSeat}
-          className="openturn-lobby-seat__kick text-[10px] font-medium uppercase tracking-wide text-slate-500 underline-offset-2 hover:text-red-600 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+          className="openturn-lobby-seat__kick text-[10px] font-medium uppercase tracking-wide text-slate-500 underline-offset-2 hover:text-red-600 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-400 dark:hover:text-red-400"
         >
           ✕ Kick
         </button>
@@ -165,7 +163,7 @@ function OpenSeatHostMenu(props: {
           aria-label={`Take seat ${seatNumber}`}
           disabled={!enabled}
           onClick={onTakeSeat}
-          className="openturn-lobby-seat__take w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-50"
+          className="openturn-lobby-seat__take w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-500"
         >
           Take seat
         </button>
@@ -178,7 +176,7 @@ function OpenSeatHostMenu(props: {
               aria-controls={`${labelID}-bots`}
               disabled={!enabled}
               onClick={() => setOpen((current) => !current)}
-              className="w-full rounded-md border border-indigo-300 bg-indigo-50 px-2 py-1 text-[11px] font-medium text-indigo-900 hover:border-indigo-400 disabled:cursor-not-allowed disabled:opacity-50"
+              className="w-full rounded-md border border-indigo-300 bg-indigo-50 px-2 py-1 text-[11px] font-medium text-indigo-900 hover:border-indigo-400 disabled:cursor-not-allowed disabled:opacity-50 dark:border-indigo-900 dark:bg-indigo-950 dark:text-indigo-200 dark:hover:border-indigo-700"
             >
               {open ? "Cancel" : "Assign bot ▾"}
             </button>
@@ -187,7 +185,7 @@ function OpenSeatHostMenu(props: {
                 id={`${labelID}-bots`}
                 role="menu"
                 aria-labelledby={labelID}
-                className="openturn-lobby-seat__bot-options absolute left-0 right-0 z-50 mt-1 flex flex-col gap-px overflow-hidden rounded-md border border-indigo-200 bg-white shadow-lg"
+                className="openturn-lobby-seat__bot-options absolute left-0 right-0 z-50 mt-1 flex flex-col gap-px overflow-hidden rounded-md border border-indigo-200 bg-white shadow-lg dark:border-indigo-900 dark:bg-slate-950 dark:shadow-black/40"
               >
                 {availableBots.map((bot) => (
                   <li key={bot.botID} role="none">
@@ -199,11 +197,11 @@ function OpenSeatHostMenu(props: {
                         setOpen(false);
                         onAssignBot(bot.botID);
                       }}
-                      className="openturn-lobby-seat__bot-option flex w-full flex-col items-start gap-0 px-2 py-1 text-left text-[11px] hover:bg-indigo-50"
+                      className="openturn-lobby-seat__bot-option flex w-full flex-col items-start gap-0 px-2 py-1 text-left text-[11px] hover:bg-indigo-50 dark:hover:bg-indigo-950/70"
                     >
-                      <span className="font-medium text-indigo-900">{bot.label}</span>
+                      <span className="font-medium text-indigo-900 dark:text-indigo-200">{bot.label}</span>
                       {bot.difficulty !== undefined ? (
-                        <span className="text-[10px] uppercase tracking-wide text-indigo-500">
+                        <span className="text-[10px] uppercase tracking-wide text-indigo-500 dark:text-indigo-400">
                           {bot.difficulty}
                         </span>
                       ) : null}

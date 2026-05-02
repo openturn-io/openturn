@@ -71,4 +71,12 @@ export {
   type ShellControlMeta,
   type TrailShellControl,
 } from "./shell-controls";
+export {
+  getInitialThemeScript,
+  ThemeToggle,
+  THEME_STORAGE_KEY,
+  useTheme,
+  type ResolvedTheme,
+  type Theme,
+} from "./theme";
 export type { HostedConnectionDescriptor } from "@openturn/client";

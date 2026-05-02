@@ -13,8 +13,7 @@ move({
     move.stay(patch?)
     move.endTurn(patch?)
     move.goto(phase, patch?, { endTurn?: boolean })
-    move.win(winnerID, patch?)
-    move.draw(patch?)
+    move.finish(result, patch?)
     move.invalid(reason?, details?)
   },
 })
@@ -42,15 +41,17 @@ Compiles to `to: <target phase>`, `turn: "preserve"` (or `"increment"`).
 
 Use `goto` when the game has multiple phases (planning → battle → game-over, bidding → play). The target phase must be listed in `phases`.
 
-## `win(winnerID, patch)`
+## `finish(result, patch)`
 
-End the match. The winner goes into `snapshot.meta.result.winner`. The engine moves to the internal `__gamekit_won` terminal state; no further moves are accepted.
+End the match. `result` is any JSON-compatible record — the conventional shapes are `{ winner: playerID }` and `{ draw: true }`, but multi-winner, ranked, scored, and co-op results are all valid. The result is recorded on `snapshot.meta.result` and `profile.commit` reads it. The engine moves to the internal `__gamekit_finished` terminal state; no further moves are accepted.
 
-Compiles to `to: "__gamekit_won"`, `turn: "increment"`, with a `result` field set.
+```ts
+return move.finish({ winner: player.id }, { board });
+return move.finish({ draw: true }, { board });
+return move.finish({ scores: { "0": 12, "1": 7 } });
+```
 
-## `draw(patch)`
-
-End the match without a winner. `snapshot.meta.result.draw === true`. Engine moves to `__gamekit_drawn`.
+Compiles to `to: "__gamekit_finished"`, `turn: "increment"`, with the result field set.
 
 ## `invalid(reason, details)`
 
@@ -85,8 +86,7 @@ Gamekit forwards `enqueue` straight to the core reducer. Internal events run thr
 - "I want the same player to go again": `stay`.
 - "I want the next player to go": `endTurn`.
 - "I want to change phases": `goto`.
-- "The game is over with a winner": `win`.
-- "The game is over as a tie": `draw`.
+- "The game is over": `finish` — pass `{ winner }`, `{ draw: true }`, or any JSON-shaped result your game records.
 - "The move is illegal": `invalid`.
 
 ## What to read next

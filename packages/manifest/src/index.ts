@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+export {
+  DEPLOY_LIMITS,
+  describeLimitViolation,
+  formatBytes,
+  isImageAsset,
+  type DeployLimitKind,
+  type DeployLimitViolation,
+} from "./limits";
+
 export type OpenturnDeploymentRuntime = "local" | "multiplayer";
 
 export type OpenturnInspectorMode = "always" | "dev-only" | "never";
@@ -77,6 +86,10 @@ export interface OpenturnDeploymentManifest {
   entry: string;
   styles: readonly string[];
   assets: readonly string[];
+  // Per-asset byte sizes keyed by manifest-relative asset path. Optional
+  // because pre-`limits` build artifacts won't carry it; when present, the
+  // cloud sign endpoint enforces deploy limits before issuing presigned URLs.
+  assetSizes?: Record<string, number> | undefined;
   build: {
     at: string;
     openturn: Record<string, string>;
@@ -145,6 +158,7 @@ export const OpenturnDeploymentManifestSchema = z
     entry: z.string().min(1),
     styles: z.array(z.string()),
     assets: z.array(z.string()),
+    assetSizes: z.record(z.string(), z.number().int().nonnegative()).optional(),
     build: z.object({
       at: z.string(),
       openturn: z.record(z.string(), z.string()),
@@ -161,12 +175,13 @@ export const OpenturnDeploymentManifestSchema = z
 
 export function parseDeploymentManifest(value: unknown): OpenturnDeploymentManifest {
   const parsed = OpenturnDeploymentManifestSchema.parse(value);
-  const { multiplayer, deploymentID, projectID, inspector, shellControls, ...rest } =
+  const { multiplayer, deploymentID, projectID, inspector, shellControls, assetSizes, ...rest } =
     parsed;
   const base: OpenturnDeploymentManifest = {
     ...rest,
     ...(deploymentID === undefined ? {} : { deploymentID }),
     ...(projectID === undefined ? {} : { projectID }),
+    ...(assetSizes === undefined ? {} : { assetSizes }),
     ...(inspector === undefined ? {} : { inspector: normalizeInspector(inspector) }),
     ...(shellControls === undefined
       ? {}

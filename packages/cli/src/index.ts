@@ -60,6 +60,8 @@ import type { ProtocolClientMessage } from "@openturn/protocol";
 
 import { DEFAULT_CLOUD_URL, cloudDeploy, loadCloudAuth, saveCloudAuth } from "./cloud";
 import { startDevBundleServer, type DevBundleServer } from "./dev-bundle";
+import { getInitialThemeScript } from "@openturn/bridge";
+
 import { getDevPlayAppBundle, getDevPlayAppTailwind } from "./play-app-bundle";
 import { loadTelemetryConfig } from "./telemetry/config";
 import { createTelemetryClient, ensureTelemetryConfig } from "./telemetry/client";
@@ -328,6 +330,13 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
       playerIDs: players,
       ...(knownBots === null ? {} : { knownBots }),
     };
+  }
+
+  function deploymentWithMatch(match: GameDeployment["match"]): typeof currentDeployment {
+    return {
+      ...currentDeployment,
+      match,
+    } as typeof currentDeployment;
   }
 
   /**
@@ -881,7 +890,7 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
           const now = Date.now();
           const runtime = await createRoomRuntime({
             connectedPlayers: [...connectedGamePlayerIDs(roomID)],
-            deployment: currentDeployment,
+            deployment: deploymentWithMatch(persisted.match as GameDeployment["match"]),
             initialNow: persisted.initialNow,
             onSaveRequest: saveHandler,
             persistence: roomPersistence,
@@ -1480,14 +1489,10 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
         const filteredMatch = {
           players: activePlayerIDs as unknown as readonly [string, ...string[]],
         };
-        const filteredDeployment = {
-          ...currentDeployment,
-          match: filteredMatch,
-        } as typeof currentDeployment;
         const startNow = Date.now();
         const startSeed = `${ws.data.roomID}:seed`;
         const filteredRuntime = await createRoomRuntime({
-          deployment: filteredDeployment,
+          deployment: deploymentWithMatch(filteredMatch as GameDeployment["match"]),
           initialNow: startNow,
           onSaveRequest: saveHandler,
           persistence: roomPersistence,
@@ -1881,9 +1886,6 @@ async function runDevCommand(args: readonly string[]) {
   const playURL = `${server.url}/play/${server.deploymentID}`;
   console.log("");
   console.log(`  ▶ Play URL:  ${playURL}`);
-  console.log(`    Dev root:  ${server.url}`);
-  console.log("");
-  console.log("  Tip: toggle the Inspector with the toolbar button or Alt+I.");
   console.log("");
 
   await waitForShutdownSignal();
@@ -2863,7 +2865,11 @@ function createLocalPlayShell(input: {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>${title}</title>
+    <script>${getInitialThemeScript()}</script>
     <script src="/__openturn/play-app/tailwind.js"></script>
+    <style type="text/tailwindcss">
+      @custom-variant dark (&:is(.dark *, .dark));
+    </style>
     <style>
       html, body, #root { height: 100%; margin: 0; }
       body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
@@ -3115,6 +3121,7 @@ async function runDeployCommand(args: readonly string[]) {
 
   console.log(`Deployment ID: ${result.deploymentID}`);
   console.log(`Project ID:    ${result.projectID}`);
+  console.log(`Game URL:      ${result.gameURL}`);
   console.log(`Play URL:      ${result.playURL}`);
   console.log(`Dashboard:     ${result.dashboardURL}`);
 
