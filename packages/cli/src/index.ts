@@ -1426,7 +1426,13 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
       return jsonResponse({ error: "room_not_started" }, 409);
     }
     const expected = lobby.playerIDFor(claims.userID);
-    if (expected !== claims.playerID) {
+    // The CLI-only "watch the bots" path mints the host a game token bound
+    // to seat 0's playerID even though the host never took a seat. Skip the
+    // seat-mismatch check for the room host so they can ride along on
+    // player 0's broadcast — the token signature is still verified above.
+    const isHostObserver =
+      expected === null && claims.userID === roomHostsByRoom.get(claims.roomID);
+    if (expected !== claims.playerID && !isHostObserver) {
       return jsonResponse({ error: "seat_mismatch" }, 403);
     }
 
@@ -1571,6 +1577,49 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
           .filter((a): a is typeof a & { userID: string } => a.userID !== null)
           .map((a) => a.userID),
       );
+      const roomHostUserID = roomHostsByRoom.get(ws.data.roomID) ?? null;
+      // CLI-only "watch the bots" affordance: when no human took a seat (only
+      // possible locally — cloud blocks this via `requireHumanSeat`), mint
+      // the host a game token bound to seat 0's playerID so they ride along
+      // on player 0's broadcast and can watch the bot vs bot match unfold.
+      // The host can technically dispatch as player 0 too, but in practice
+      // they're observing — see the changeset for the trade-off.
+      const allBotsWithHostObserver =
+        seatedUsers.size === 0
+        && roomHostUserID !== null
+        && startResult.assignments.length > 0;
+      if (allBotsWithHostObserver) {
+        const seatZeroPlayerID = startResult.assignments[0]!.playerID;
+        const signed = await signRoomToken(
+          {
+            deploymentVersion: currentDeployment.deploymentVersion,
+            exp: issuedAt + 60 * 10,
+            iat: issuedAt,
+            playerID: seatZeroPlayerID,
+            roomID: ws.data.roomID,
+            scope: "game",
+            userID: roomHostUserID,
+          },
+          secret,
+        );
+        transitions.push({
+          userID: roomHostUserID,
+          message: {
+            type: "lobby:transition_to_game",
+            roomID: ws.data.roomID,
+            playerID: seatZeroPlayerID,
+            roomToken: signed.token,
+            tokenExpiresAt: issuedAt + 60 * 10,
+            websocketURL: `${baseWsURL}?token=${encodeURIComponent(signed.token)}`,
+            playerAssignments,
+          },
+        });
+      }
+      // Sockets to close after the per-socket fan-out. We close each socket
+      // explicitly so the host's lobby socket can opt out and remain open
+      // when the room started with no human seats (CLI-only "watch the bots
+      // play" affordance — cloud blocks the case via `requireHumanSeat`).
+      const socketsToClose: ServerWebSocket[] = [];
       const sockets = socketsByRoom.get(ws.data.roomID);
       if (sockets !== undefined) {
         for (const socket of sockets) {
@@ -1580,7 +1629,11 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
             try {
               socket.send(stringifyLobbyServerMessage(transition.message));
             } catch {}
-          } else if (!seatedUsers.has(socket.data.userID)) {
+            socketsToClose.push(socket);
+          } else if (
+            !seatedUsers.has(socket.data.userID)
+            && socket.data.userID !== roomHostUserID
+          ) {
             try {
               socket.send(
                 stringifyLobbyServerMessage({
@@ -1589,7 +1642,11 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
                 }),
               );
             } catch {}
+            socketsToClose.push(socket);
           }
+          // Host with no seat falls through: socket stays open. The next
+          // `broadcastLobbyState` below pushes `phase: "active"` so the
+          // lobby UI flips from "Tap Ready" to "Game in progress.".
         }
       }
 
@@ -1606,7 +1663,12 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
         botDriversByRoom.delete(ws.data.roomID);
       }
 
-      closeLobbySockets(ws.data.roomID, 4010, "lobby_transition");
+      for (const socket of socketsToClose) {
+        try {
+          socket.close(4010, "lobby_transition");
+        } catch {}
+      }
+      broadcastLobbyState(ws.data.roomID);
       return;
     }
 

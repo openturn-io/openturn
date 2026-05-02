@@ -93,6 +93,11 @@ export function BridgeIframe({
 }: BridgeIframeProps) {
   return (
     <iframe
+      // Browsers don't reload an iframe on hash-only `src` changes, so when
+      // the bridge host is recreated for a new init (e.g. game→lobby after
+      // returnToLobby), keying on `host.src` forces React to remount the
+      // iframe and the bundle re-reads the fresh fragment.
+      key={host.src}
       title={title}
       src={host.src}
       sandbox={sandbox ?? DEFAULT_IFRAME_SANDBOX}

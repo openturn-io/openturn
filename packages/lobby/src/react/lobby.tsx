@@ -703,6 +703,8 @@ function describeRejection(rejection: LobbyRejectedMessage): string {
       return "Everyone seated must be ready before the game can start.";
     case "below_min_players":
       return "Not enough players seated yet.";
+    case "no_humans_seated":
+      return "At least one human player must take a seat to start.";
     case "bad_phase":
       return "The room is no longer accepting changes.";
     case "room_closed":
