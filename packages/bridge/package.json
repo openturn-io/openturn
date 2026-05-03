@@ -1,6 +1,6 @@
 {
   "name": "@openturn/bridge",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "type": "module",
   "openturn": {
     "runtime": "browser"
@@ -24,9 +24,9 @@
     "prepack": "node ../../scripts/prepack.mjs"
   },
   "dependencies": {
-    "@openturn/client": "^0.6.0",
-    "@openturn/json": "^0.6.0",
-    "@openturn/manifest": "^0.6.0",
+    "@openturn/client": "^0.6.1",
+    "@openturn/json": "^0.6.1",
+    "@openturn/manifest": "^0.6.1",
     "sonner": "^2.0.7",
     "zod": "^4.1.12"
   },

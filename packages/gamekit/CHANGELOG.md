@@ -1,5 +1,12 @@
 # @openturn/gamekit
 
+## 0.6.1
+
+### Patch Changes
+
+- @openturn/core@0.6.1
+- @openturn/json@0.6.1
+
 ## 0.6.0
 
 ### Patch Changes
