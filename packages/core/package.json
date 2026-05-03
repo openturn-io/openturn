@@ -1,6 +1,6 @@
 {
   "name": "@openturn/core",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "type": "module",
   "openturn": {
     "runtime": "worker"
@@ -17,7 +17,7 @@
     "prepack": "node ../../scripts/prepack.mjs"
   },
   "dependencies": {
-    "@openturn/json": "^0.6.0"
+    "@openturn/json": "^0.6.1"
   },
   "license": "Apache-2.0",
   "repository": {

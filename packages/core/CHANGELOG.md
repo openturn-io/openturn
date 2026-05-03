@@ -1,5 +1,11 @@
 # @openturn/core
 
+## 0.6.1
+
+### Patch Changes
+
+- @openturn/json@0.6.1
+
 ## 0.6.0
 
 ### Patch Changes

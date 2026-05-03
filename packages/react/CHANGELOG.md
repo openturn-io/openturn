@@ -1,5 +1,18 @@
 # @openturn/react
 
+## 0.6.1
+
+### Patch Changes
+
+- @openturn/bot@0.6.1
+- @openturn/bridge@0.6.1
+- @openturn/client@0.6.1
+- @openturn/core@0.6.1
+- @openturn/inspector@0.6.1
+- @openturn/lobby@0.6.1
+- @openturn/protocol@0.6.1
+- @openturn/replay@0.6.1
+
 ## 0.6.0
 
 ### Patch Changes
