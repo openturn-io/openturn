@@ -97,7 +97,7 @@ Each reference ends with a "see also" pointing at relevant `examples/games/*` an
 
 ### `references/views.md`
 - `views.public({G, turn})` vs `views.player({G, turn, player})`.
-- Defaults: if `views.public` is omitted, spectators see nothing; if `views.player` is omitted, players see only what's in `views.public`. (Verify behavior against `packages/gamekit` and `packages/core` at write time.)
+- Defaults (verified against `packages/gamekit/src/index.ts:1044-1056`): if `views.public` is omitted, the full `G` is returned as the public view; if `views.player` is omitted, the runner returns the full `G` to every player (NOT a fall-through to `views.public`). For any game with hidden state, both must be defined explicitly — defining only `public` does not hide state from players.
 - Patterns for hands, fog of war, sealed bids.
 - Anti-pattern: shaping views inside moves.
 

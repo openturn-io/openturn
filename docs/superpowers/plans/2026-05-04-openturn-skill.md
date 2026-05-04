@@ -87,9 +87,12 @@ move.invalid(reason?, details?)              // reject this dispatch (returned t
 
 // Views:
 views: {
-  public?: ({ G, C, phase, turn }) => TPublic,           // omit → full G
-  player?: ({ G, C, phase, turn }, { id }) => TPlayer,   // omit → public view
+  public?: ({ G, C, phase, turn }) => TPublic,           // omit → full G to spectators
+  player?: ({ G, C, phase, turn }, { id }) => TPlayer,   // omit → full G to every player
 }
+// ⚠️ Defining only `public` does NOT hide state from players. The runner
+//   does not fall back from omitted `player` to `public`; it returns full G.
+//   For hidden-info games, ALWAYS define both.
 
 // Turn policies:
 import { turn } from "@openturn/gamekit";

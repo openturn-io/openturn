@@ -16,7 +16,7 @@ The first-arg context (`ViewContext`) is identical for both callbacks: `G` is th
 ## Defaults
 
 - If `views.public` is omitted, the full `G` is returned as the public view. **For any game with hidden state, define `views.public` explicitly.**
-- If `views.player` is omitted, the public view is returned for every player. **For any game where one player should see something opponents shouldn't, define `views.player` explicitly.** (Note: the runner does not auto-call `views.public` to fill in an omitted `views.player` — once you have hidden state, define both.)
+- If `views.player` is omitted, **the runner returns the full `G` to every player** — *not* the public view. So defining `views.public` alone is not enough to hide state from players: forgetting `views.player` leaks every secret. **For any game with hidden state, always define both `views.public` and `views.player`.**
 
 ## Pattern: hand of cards
 
