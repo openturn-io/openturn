@@ -23,12 +23,13 @@ The first-arg context (`ViewContext`) is identical for both callbacks: `G` is th
 `G` holds every hand. `views.public` exposes only sizes; `views.player` exposes the caller's hand plus everything in the public shape. Factor a helper so the public projection is defined once:
 
 ```ts
-type G = { deck: Card[]; hands: Record<PlayerID, Card[]>; discard: Card[] };
+type State = { deck: Card[]; hands: Record<PlayerID, Card[]>; discard: Card[] };
 
-const publicView = ({ G }: { G: DeepReadonly<G> }) => ({
-  handSizes: Object.fromEntries(Object.entries(G.hands).map(([id, h]) => [id, h.length])),
-  discard: G.discard,
-  deckSize: G.deck.length,
+// Helper takes the same context shape as views.public — TS infers it.
+const publicView = (ctx: { G: DeepReadonly<State> }) => ({
+  handSizes: Object.fromEntries(Object.entries(ctx.G.hands).map(([id, h]) => [id, h.length])),
+  discard: ctx.G.discard,
+  deckSize: ctx.G.deck.length,
 });
 
 views: {
@@ -38,6 +39,9 @@ views: {
     myHand: ctx.G.hands[id] ?? [],
   }),
 }
+// Note: inside views, G is typed `DeepReadonly<GamekitAuthorState<State>>`. The
+// destructure above narrows it structurally — both calls of `publicView` work
+// because TS accepts narrower parameter shapes.
 ```
 
 ## Pattern: fog of war
@@ -58,14 +62,13 @@ views: {
 `G.bids` is `Record<PlayerID, number | null>`. Public viewers learn *who* has bid, never *what*. Each player learns their own bid.
 
 ```ts
+const publicView = ({ G }: { G: DeepReadonly<{ bids: Record<PlayerID, number | null> }> }) => ({
+  playersWhoBid: Object.entries(G.bids).filter(([, b]) => b !== null).map(([id]) => id),
+});
+
 views: {
-  public: ({ G }) => ({
-    playersWhoBid: Object.entries(G.bids).filter(([, b]) => b !== null).map(([id]) => id),
-  }),
-  player: ({ G }, { id }) => ({
-    playersWhoBid: Object.entries(G.bids).filter(([, b]) => b !== null).map(([pid]) => pid),
-    myBid: G.bids[id] ?? null,
-  }),
+  public: publicView,
+  player: (ctx, { id }) => ({ ...publicView(ctx), myBid: ctx.G.bids[id] ?? null }),
 }
 ```
 
