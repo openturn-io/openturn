@@ -165,8 +165,8 @@ function attach<TGame extends AnyGame>(options: AttachInternalOptions<TGame>): B
   const unsubscribe = host.onChange(() => {
     if (activePromise !== null) {
       // A new snapshot arrived while we were thinking. Cancel the in-flight
-      // decision (the `signal` lets LLM/MCTS bots exit early) and schedule a
-      // fresh decide once the current one settles.
+      // decision (the `signal` lets MCTS or networked bots exit early) and
+      // schedule a fresh decide once the current one settles.
       activeAbort?.abort();
       pending = true;
       return;

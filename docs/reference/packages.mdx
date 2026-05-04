@@ -13,7 +13,7 @@ Openturn is split across eighteen packages. This page is the decision tree: "I w
 | [`@openturn/core`](/reference/core) | worker | The engine. `defineGame`, `definePlayerIDs`, events, states, transitions, `createLocalSession`. |
 | [`@openturn/gamekit`](/reference/gamekit) | worker | Move-first sugar over core: `defineGame`, moves, phases, outcomes. Use this unless you need the core escape hatch. |
 | [`@openturn/json`](/reference/json) | worker | `JsonValue` types, `JsonValueSchema`, and validators. Re-exported by most packages; you will import it directly for explicit JSON validation. |
-| [`@openturn/bot`](/reference/bot) | worker | Plug-and-play AI bots over a game. `defineBot({ decide })`, `attachLocalBot` / `attachLocalBots` / `attachHostedBot`, `simulate`. Same bot shape for random, heuristic, MCTS, and LLM-backed players. |
+| [`@openturn/bot`](/reference/bot) | worker | Plug-and-play AI bots over a game. `defineBot({ decide })`, `attachLocalBot` / `attachLocalBots` / `attachHostedBot`, `simulate`. Same bot shape for random, heuristic, and MCTS players. |
 
 ## Hosting and transport
 

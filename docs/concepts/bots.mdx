@@ -19,20 +19,19 @@ defineBot({
 
 `decide` receives what the seat is allowed to know — the same `getPlayerView` that a human client would render — plus pre-enumerated legal moves and a deterministic RNG. It returns a `LegalAction`. That is the entire bot.
 
-The same shape supports four very different bots without changing:
+The same shape supports three very different bots without changing:
 
 - **Random** — pick uniformly from `legalActions`.
 - **Heuristic** — score each `LegalAction`, return the highest.
 - **Search-based (MCTS / minimax)** — call `simulate(action)` to dry-run candidates, recurse on the resulting snapshot, return the best root move.
-- **LLM-backed** — `await` a model call, parse the response, return a matching `LegalAction`. Pass `signal` into the HTTP client so a superseded thought is cancelled.
 
-If your `decide` body changes shape across these four, you are doing more work than necessary.
+If your `decide` body changes shape across these three, you are doing more work than necessary.
 
 ## Why bots are not plugins
 
 Openturn already has [`@openturn/plugins`](/reference/plugins). Plugins are in-engine state mutators: they declare a slice on `G.plugins`, expose moves, and execute synchronously inside the reducer. They are the right tool for chat, scoreboards, deck ownership, and any cross-cutting state.
 
-Bots are different. A bot runs **outside** the reducer, **after** a snapshot exists, and produces an event to feed back in. It is closer to a player client than to a piece of game logic. Conflating the two would push turn ownership into the plugin layer and break determinism — `decide` may take seconds (an LLM call), and a synchronous reducer cannot await that.
+Bots are different. A bot runs **outside** the reducer, **after** a snapshot exists, and produces an event to feed back in. It is closer to a player client than to a piece of game logic. Conflating the two would push turn ownership into the plugin layer and break determinism — `decide` may take seconds (a deep search), and a synchronous reducer cannot await that.
 
 The bot package therefore sits next to plugins, not inside them. The only thing the engine knows about bots is one optional field on `GameDefinition`: `legalActions?: (context, playerID) => readonly LegalAction[]`. The engine never reads it. The bot runtime does.
 
@@ -61,7 +60,7 @@ Bots inherit the engine's determinism by default:
 - `context.rng` is forked from `snapshot.meta.rng` plus a salt that includes the bot name, the seat, and the turn number. Two bots on the same snapshot get different streams; the same bot on the same snapshot always gets the same stream.
 - `simulate` rehydrates a session from the snapshot, which resumes RNG from `meta.rng`. MCTS rollouts that fork from a fixed seed produce the same trees every time.
 
-A bot whose `decide` is a pure function of `(view, legalActions, rng)` makes a match fully reproducible: rerun with the same seed and the same bots and you get bit-identical replays. LLM bots break this guarantee — pass `temperature: 0` and the same model snapshot if reproducibility matters.
+A bot whose `decide` is a pure function of `(view, legalActions, rng)` makes a match fully reproducible: rerun with the same seed and the same bots and you get bit-identical replays. Bots that consult external services or non-seeded randomness break this guarantee.
 
 ## Cloud deployment
 
@@ -73,7 +72,7 @@ There are three places a cloud bot could live:
 | External WebSocket client (sidecar) | One network hop | Full process boundary | **Yes** |
 | Inside a human's browser tab | Free CPU | Tied to a tab staying open | No |
 
-The recommended topology runs bots as **separate processes that connect to the room as a player**, using exactly the `HostedClient` protocol a human browser uses. Failure modes reduce to "the bot disconnected" — the same recovery path the room already has for humans. Slow LLM calls don't stall the room's event loop. Bots scale independently of room workers.
+The recommended topology runs bots as **separate processes that connect to the room as a player**, using exactly the `HostedClient` protocol a human browser uses. Failure modes reduce to "the bot disconnected" — the same recovery path the room already has for humans. Slow bot decisions don't stall the room's event loop. Bots scale independently of room workers.
 
 A `BotSupervisor` service watches lobbies for matches with a `botSeats` config, spawns a `HostedClient` per (room, seat), and runs `attachHostedBot` against the room URL. The room worker is unaffected; only the lobby data model gains a `botSeats` field.
 

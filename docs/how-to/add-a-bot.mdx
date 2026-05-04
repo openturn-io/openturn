@@ -1,6 +1,6 @@
 ---
 title: Add an AI bot to a game
-description: Drop a computer opponent into any seat — random, heuristic, search-based, or LLM-backed — without changing the engine or the game logic.
+description: Drop a computer opponent into any seat — random, heuristic, or search-based — without changing the engine or the game logic.
 sidebarTitle: Add a bot
 ---
 
@@ -182,33 +182,6 @@ export const minimaxBot = defineBot<typeof ticTacToe>({
 ```
 
 The `enumerate(snapshot, toMove)` helper re-runs the same legal-action logic against a simulated snapshot — define it inline or factor it out. See the [tic-tac-toe bot tutorial](/tutorials/tic-tac-toe-bot) for the complete file.
-
-### LLM-backed bot — async with cancellation
-
-```ts
-import Anthropic from "@anthropic-ai/sdk";
-import { defineBot, type LegalAction } from "@openturn/bot";
-
-const anthropic = new Anthropic();
-
-export const claudeBot = defineBot({
-  name: "claude",
-  thinkingBudgetMs: 10_000,
-  async decide({ view, legalActions, signal }) {
-    const res = await anthropic.messages.create(
-      {
-        model: "claude-sonnet-4-6",
-        max_tokens: 256,
-        messages: [{ role: "user", content: renderBoardForLLM(view, legalActions) }],
-      },
-      { signal },
-    );
-    return parseChoice(res, legalActions);
-  },
-});
-```
-
-Pass `signal` into the SDK call. When the snapshot moves on while the model is thinking — typically because the opponent disconnected and the room re-synced — the runner aborts and a stale call exits early instead of being charged.
 
 ## Verifying
 

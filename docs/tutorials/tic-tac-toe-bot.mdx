@@ -344,11 +344,11 @@ test("1000 matches: every match terminates legally", async () => {
 - A CLI that takes `--bot <seat>=<name>` and drives the same loop for human-vs-human, human-vs-bot, and bot-vs-bot.
 - An integration test that proves the runner terminates 1000 matches legally.
 
-The same `defineBot` shape works for LLM-backed bots — see [How-to: add a bot](/how-to/add-a-bot#llm-backed-bot--async-with-cancellation). Cloud play uses `attachHostedBot` against a `HostedClient`, with the bot living in a separate sidecar process — see [Concepts: bots](/concepts/bots#cloud-deployment).
+Cloud play uses `attachHostedBot` against a `HostedClient`, with the bot living in a separate sidecar process — see [Concepts: bots](/concepts/bots#cloud-deployment).
 
 ## Related
 
 - [Tutorial: tic-tac-toe with gamekit](/tutorials/tic-tac-toe-gamekit) — the base game this builds on.
 - [Concepts: AI bots](/concepts/bots) — design rationale.
 - [Reference: `@openturn/bot`](/reference/bot) — full API.
-- [How-to: add a bot](/how-to/add-a-bot) — practical recipes for heuristic and LLM bots.
+- [How-to: add a bot](/how-to/add-a-bot) — practical recipes for heuristic and search-based bots.

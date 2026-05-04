@@ -9,7 +9,7 @@ This file is for internal planning only. The canonical user-facing architecture 
 - Core transitions are pure reducer branches. There is no side-effect pipeline, no preparer/guard/commit split, and no compatibility layer for older runtime models.
 - `@openturn/gamekit` is the optional worker-safe sugar layer for move-first turn-based authoring. It compiles back to pure `@openturn/core` definitions and can be mixed with raw core authoring in the same game.
 - Hosted, replay, protocol, and devtools packages are aligned around strict-core events, snapshots, transition traces, and replay-safe outputs. There is no intended public dual-track between legacy core and a separate machine runtime.
-- `@openturn/bot` is the optional bot layer. It consumes only public session APIs (`applyEvent`, `getState`, `getPlayerView`) plus one optional author hook (`legalActions` on `GameDefinition`). Bots are out-of-engine: `decide` runs as a Promise outside the reducer, dispatch goes back through the same path a human client uses. Same `defineBot` shape powers random, heuristic, MCTS, and LLM-backed bots; same bot runs on a `LocalGameSession` and on a `HostedClient` over the network.
+- `@openturn/bot` is the optional bot layer. It consumes only public session APIs (`applyEvent`, `getState`, `getPlayerView`) plus one optional author hook (`legalActions` on `GameDefinition`). Bots are out-of-engine: `decide` runs as a Promise outside the reducer, dispatch goes back through the same path a human client uses. Same `defineBot` shape powers random, heuristic, and MCTS bots; same bot runs on a `LocalGameSession` and on a `HostedClient` over the network.
 
 ## Runtime boundaries
 

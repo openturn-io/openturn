@@ -39,7 +39,7 @@ That single value drives a local React app, a CLI, a hosted multiplayer server, 
 - **Two authoring layers.** `@openturn/gamekit` is the shortcut: declare phases, moves, permissions, and outcomes. `@openturn/core` is the lower level — events, states, and transitions — for when you need full control of the state graph.
 - **Deterministic replay and inspection.** Every match produces a JSON log. Re-dispatch it and you get the exact same state, every time. The inspector lets you scrub through frames.
 - **First-class hidden information.** `views.public` and `views.player` decide what each audience sees, at the engine level — opponents never receive secrets they should not see.
-- **Plug-and-play AI bots.** Write a `decide` function (random, heuristic, MCTS, or LLM-backed) and drop it into any seat. The same bot runs locally and over the network.
+- **Plug-and-play AI bots.** Write a `decide` function (random, heuristic, or MCTS) and drop it into any seat. The same bot runs locally and over the network.
 
 ## When to reach for openturn
 

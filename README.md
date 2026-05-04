@@ -1,6 +1,6 @@
 # Openturn
 
-Openturn is a typescript framework for turn-based and board games.
+Openturn is a TypeScript framework for turn-based and board games.
 
 You create a simple game definition with functions to describe game states, player moves and views. And Openturn converts it to a complete playable game that can be hosted with zero infrastructure setup. The same definition powers a local React app, a CLI, a hosted multiplayer server, and a debug inspector — no per-surface rewiring.
 
@@ -10,28 +10,34 @@ Its source code is available at https://github.com/openturn-io/openturn/tree/mai
 
 But we recommend a quick start example below to overview the basic game definition APIs.
 
-## Why openturn
+## Why Openturn
 
-- **Open source.** At your choice of self-host or zero-infra cloud deployment (free for public deployments).
+- **One game definition, every runtime.** Author the rules once with `defineGame(...)`. The same value drives local play, React apps, CLI simulations, hosted multiplayer, replays, bots, and the inspector.
 
-- **One definition, every surface.** `defineGame(...)` runs locally, on a CLI, and as an Openturn Cloud-hosted multiplayer service.
+- **Authoritative state without server plumbing.** Your game owns the plain JSON state `G`; Openturn handles dispatch, validation, realtime sync, room state, and hosted storage around it. Deploy to Openturn Cloud when you want Cloudflare Workers and Durable Objects without provisioning infrastructure.
 
-- **Coding Agent friendly.** Openturn introduces an opinionated model of "pure reducer over state machine" model, which is strict, deterministic, easier to debug.
+- **Pure reducers over declared game flow.** Moves, phases, active players, and transitions are explicit and replay-safe. That makes games easier to debug, easier for coding agents to reason about, and strict enough to validate before and during play.
 
-- **Deterministic replay.** Every match produces a JSON action log; re-dispatch it and you get the exact same state, every time.
+- **Server-authoritative hidden information.** Model hands, fog of war, sealed bids, and private choices inside `G`; `views.public` and `views.player` decide what each audience receives, so opponents never get secrets they should not see.
 
-- **Hidden information at the engine level.** `views.public` and `views.player` decide what each audience sees — opponents never receive secrets they shouldn't.
+- **Game phases and turn control.** Use gamekit phases for planning, bidding, battle, cleanup, or simultaneous action windows. Use round-robin turns for classic games, or drop to core when the state graph needs full custom control.
 
-- **Pluggable bots.** Drop a `decide` function (random, heuristic, MCTS) into any seat; the same bot runs locally and over the network.
+- **Replays, inspector, and prototyping.** Every match can emit a JSON action log. Re-dispatch it to reproduce the exact state, scrub frames in the inspector, or simulate candidate moves before the UI is finished.
+
+- **Bots as first-class players.** Drop a `decide` function into any seat — random, heuristic, minimax, or MCTS. Bots read the same player view as humans and dispatch through the same local or hosted path.
+
+- **Lobby, profiles, and plugins.** Hosted rooms include lobby handoff and bot seat selection. Profiles let games commit replay-safe progression between matches. Plugins can add namespaced state and moves for shared abstractions like chat.
+
+- **Open source with a cloud path.** Run locally, self-host the worker runtime, or publish public games to Openturn Cloud for free. The framework stays plain TypeScript, so the rules are not locked to a view layer or deployment target.
 
 ## Quickstart
 
 Scaffold a new project, then start the dev server with hot reload and the inspector:
 
 ```bash
-npx @openturn/cli create my-game
+bunx @openturn/cli create my-game
 cd my-game
-npx openturn dev
+bunx openturn dev
 ```
 
 Use `--template multiplayer` to scaffold a hosted-multiplayer starter instead of the default local one.

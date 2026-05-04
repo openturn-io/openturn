@@ -4,7 +4,7 @@ description: Plug-and-play AI bots over `@openturn/core`. Author with `defineBot
 sidebarTitle: Bot
 ---
 
-Worker-safe. The bot package lets a developer drop a traditional game AI into any seat of any openturn game without touching the engine. The same `defineBot({ decide })` shape powers a five-line random bot, a heuristic bot, an alpha-beta minimax bot, and an LLM-backed bot.
+Worker-safe. The bot package lets a developer drop a traditional game AI into any seat of any openturn game without touching the engine. The same `defineBot({ decide })` shape powers a five-line random bot, a heuristic bot, and an alpha-beta minimax bot.
 
 ## Install
 
@@ -48,7 +48,7 @@ interface Bot<TGame> {
 
 `actionDelayMs` is presentation pacing only — the runner waits at least this long between picking an action and dispatching it so human clients can see bot turns unfold. It is independent of `thinkingBudgetMs` (which bounds `decide`).
 
-`decide` may be sync (random, heuristic) or async (MCTS with yields, LLM). The runner awaits whatever you return.
+`decide` may be sync (random, heuristic) or async (MCTS with yields, network calls). The runner awaits whatever you return.
 
 ### `DecideContext<TGame>`
 
@@ -69,7 +69,7 @@ interface DecideContext<TGame> {
 - `snapshot` is the full server-side snapshot. It is `null` on hosted (network) hosts because clients only see views.
 - `legalActions` is enumerated for you — see [Legal-action enumeration](#legal-action-enumeration) below.
 - `rng` is reproducible: bots seeded from the same snapshot make the same choices.
-- `signal` aborts when the snapshot moves on while you are thinking. LLM bots should pass it to `fetch` so a stale call exits early.
+- `signal` aborts when the snapshot moves on while you are thinking. Bots that make network calls should pass it to `fetch` so a stale request exits early.
 
 ### `LegalAction`
 
@@ -263,7 +263,7 @@ The session reducer is synchronous; `decide` may be slow. The runner separates t
 3. After `decide` resolves, the runner re-checks `position.turn`. If the turn has advanced (e.g. the opponent reconnected and the room re-synced), the decision is dropped before dispatch.
 4. `host.dispatch(action)` returns the engine's outcome. Invalid moves never mutate state, so `onError` is called and the runner waits for the next change to retry.
 
-LLM bots should plumb `signal` into their HTTP client (`anthropic.messages.create({...}, { signal })`) so a superseded thought is cancelled instead of charged.
+Bots that make network calls should plumb `signal` into their HTTP client (`fetch(url, { signal })`) so a superseded request is cancelled instead of left in flight.
 
 ## Determinism and reproducibility
 
@@ -324,7 +324,7 @@ legalActions?: (
 ) => readonly LegalAction[];
 ```
 
-The engine never reads it. The runtime invokes it to surface candidate moves to the bot. Author it once per game and every bot you write — random, heuristic, search-based, LLM — works without per-bot scaffolding.
+The engine never reads it. The runtime invokes it to surface candidate moves to the bot. Author it once per game and every bot you write — random, heuristic, search-based — works without per-bot scaffolding.
 
 ## Related
 
