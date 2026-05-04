@@ -1,0 +1,55 @@
+---
+title: Authoring with AI agents
+description: Install the Openturn skill so Claude Code, Codex, Cursor, and other agents are calibrated on Openturn's APIs and conventions when building games for you.
+sidebarTitle: AI agents
+---
+
+Openturn ships a [skill](https://skills.sh) that teaches AI coding agents how to author Openturn games — game state, moves, views, phases, turns, hidden info, randomness, simultaneous moves, bots, and testing. With it installed, Claude Code (or any [supported agent](https://github.com/vercel-labs/skills#supported-agents)) loads Openturn-specific guidance automatically when you work in an Openturn project or ask it to build a turn-based game.
+
+## Install
+
+```bash
+npx skills add openturn-io/openturn
+```
+
+Run inside a project to install for that project, or pass `-g` to install globally for all projects:
+
+```bash
+npx skills add openturn-io/openturn -g
+```
+
+To target a specific agent only:
+
+```bash
+npx skills add openturn-io/openturn -a claude-code
+```
+
+## Update
+
+```bash
+npx skills update openturn
+```
+
+## Uninstall
+
+```bash
+npx skills remove openturn
+```
+
+## What the skill knows
+
+- Game definition with `@openturn/gamekit`: `defineGame`, the `move` helper, phases, turns, `MoveRunContext`.
+- Lower-level state graphs with `@openturn/core` (when to drop down).
+- Views: `views.public`, `views.player`, hidden-info patterns.
+- Replay-safe randomness via `ctx.rng`.
+- Simultaneous moves via `activePlayers` filtering.
+- Bots: `defineBot`, `decide`, `simulate`, the `legalActions` enumerator contract.
+- Testing game definitions with `createLocalSession` and `bun:test`.
+
+## Out of scope
+
+The skill stays focused on game definition. For React UI, lobby, multiplayer hosting, deploying to Openturn Cloud, replays-as-product, and the inspector, follow the dedicated guides in this site.
+
+## Source and feedback
+
+The skill lives at [`skills/openturn/`](https://github.com/openturn-io/openturn/tree/main/skills/openturn) in the openturn repo. File issues or improvements at [openturn-io/openturn/issues](https://github.com/openturn-io/openturn/issues).
