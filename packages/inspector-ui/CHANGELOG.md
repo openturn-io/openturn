@@ -1,5 +1,15 @@
 # @openturn/inspector-ui
 
+## 0.7.0
+
+### Patch Changes
+
+- @openturn/inspector@0.7.0
+- @openturn/react@0.7.0
+- @openturn/replay@0.7.0
+- @openturn/bridge@0.7.0
+- @openturn/core@0.7.0
+
 ## 0.6.1
 
 ### Patch Changes

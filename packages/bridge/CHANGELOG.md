@@ -1,5 +1,13 @@
 # @openturn/bridge
 
+## 0.7.0
+
+### Patch Changes
+
+- @openturn/client@0.7.0
+- @openturn/json@0.7.0
+- @openturn/manifest@0.7.0
+
 ## 0.6.1
 
 ### Patch Changes

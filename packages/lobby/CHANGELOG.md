@@ -1,5 +1,15 @@
 # @openturn/lobby
 
+## 0.7.0
+
+### Patch Changes
+
+- @openturn/bot@0.7.0
+- @openturn/server@0.7.0
+- @openturn/client@0.7.0
+- @openturn/core@0.7.0
+- @openturn/protocol@0.7.0
+
 ## 0.6.1
 
 ### Patch Changes
