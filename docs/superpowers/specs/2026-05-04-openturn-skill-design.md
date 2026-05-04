@@ -65,8 +65,8 @@ Sections:
 2. **When to use this skill** — concrete trigger list, plus when NOT to use (realtime/action games, non-turn-based games, infrastructure/hosting questions).
 3. **Core rules-of-thumb** — short, hard rules an LLM author needs upfront:
    - Game state `G` is plain JSON; no class instances, no `Date` / `Map` / `Set`, no functions.
-   - Moves are pure reducers: return next state via `move.endTurn(...)` / `move.finish(...)` / `move.continue(...)`. Never mutate `G`.
-   - All randomness goes through the provided `random` / `rng` API. Never call `Math.random` or `Date.now` from inside a move; replays will diverge.
+   - Moves are pure reducers: return next state via `move.endTurn(...)`, `move.stay(...)`, `move.goto(...)`, `move.finish(...)`, or `move.invalid(...)`. Never mutate `G`.
+   - All randomness goes through `context.rng` (a `DeterministicRng` with `.int`, `.bool`, `.pick`, `.dice`, `.d4`–`.d100`, etc.). Never call `Math.random` or `Date.now` from inside a move; replays will diverge.
    - Hidden info lives inside `G`. `views.public` and `views.player` decide what leaves the server. If a secret can be derived from the public view, it's leaked.
    - Choose gamekit before core. Drop to core only when the state graph genuinely needs custom control.
    - Phases are for distinct rule sets (planning, bidding, battle). Don't model "current step inside a turn" as a phase — use `G` for that.
@@ -83,9 +83,9 @@ Sections:
 Each reference ends with a "see also" pointing at relevant `examples/games/*` and `docs/how-to/*.mdx`.
 
 ### `references/gamekit.md`
-- `defineGame` shape; `move()` helper and the `{G, move, player, random/rng, ...}` argument.
-- `move.endTurn`, `move.finish`, `move.continue` semantics.
-- `phases` and `turn` configs; `setup`, `maxPlayers`, `minPlayers`.
+- `defineGame` shape; `move()` helper and the `{G, args, move, player, rng, profile, ...}` argument (via `MoveRunContext`).
+- `move.endTurn`, `move.stay`, `move.goto`, `move.finish`, `move.invalid` semantics. (Note: there is no `move.continue` — use `move.stay`.)
+- `phases` and `turn` configs (only `turn.roundRobin()` is exported today); `setup`, `playerIDs`, `maxPlayers`, `minPlayers`.
 - Worked snippets: a basic move, a finishing move, a phase transition.
 - Common mistakes (mutating `G`, returning bare `G` instead of a `move.*` outcome, putting non-JSON in `G`).
 - **API names verified by grepping `packages/gamekit` at write time.**
@@ -102,9 +102,9 @@ Each reference ends with a "see also" pointing at relevant `examples/games/*` an
 - Anti-pattern: shaping views inside moves.
 
 ### `references/randomness.md`
-- The actual `random` / `rng` API surface (verify against `packages/gamekit` and `packages/bot`; existing docs reference `random.*` in moves and `rng` in bot `decide`).
+- The `DeterministicRng` API surface (`packages/core/src/runtime.ts`): `.int`, `.bool`, `.pick`, `.dice`, `.d4`, `.d6`, `.d8`, `.d10`, `.d12`, `.d20`, `.d100`, `.advantage`, `.disadvantage`, `.next`, `.getSnapshot`. Accessed via `context.rng` inside a move and via `context.rng` (forked, salted by bot name + seat + turn) inside a bot's `decide`.
 - Why deterministic randomness matters (replays, hosted authoritative state).
-- Forbidden: `Math.random`, `Date.now`, `crypto.*` from inside moves.
+- Forbidden: `Math.random`, `Date.now`, `crypto.*` from inside moves or `decide`.
 
 ### `references/simultaneous-moves.md`
 - When to model players acting at the same time vs forcing turn order.
@@ -165,8 +165,7 @@ Add a short section between **Quickstart** and **Learn more**, titled "Authoring
 
 ## Open questions (deferred to implementation)
 
-- Exact wording of `random` / `rng` surface in `references/randomness.md` — the docs show both `random.*` (moves) and `rng` (bots). Verify the actual exports during implementation rather than guessing here.
-- Whether `views.player` defaulting behavior matches what's described in Section "References → views.md." Verify at write time; correct the reference (not the design intent) if reality differs.
+- Exact testing harness for game definitions: the existing how-to docs cover bot-side testing (`simulate`, hand-built `DecideContext`) but not pure-move unit testing. Verify what helpers exist in `packages/core` and `packages/gamekit` for stepping through moves without spinning up a full session, and base `references/testing.md` on what's actually there. If nothing exists, document the recommended `createLocalSession`-based pattern instead.
 
 ## Out of scope for this spec
 
