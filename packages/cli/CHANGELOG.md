@@ -1,5 +1,24 @@
 # @openturn/cli
 
+## 0.7.0
+
+### Minor Changes
+
+- 2cabc4f: Remove move-level `canPlayer` predicates from gamekit and plugin move definitions. Turn-based gating now relies on the engine's `activePlayers` dispatch gate for standard round-robin turns, and games or plugins with custom rules should reject from `run` with `move.invalid(...)` or a plugin invalid outcome.
+
+  Update `openturn create` starters from the counter demo to a styled tic-tac-toe game, including Tailwind CSS setup and multiplayer room UI.
+
+### Patch Changes
+
+- @openturn/react@0.7.0
+- @openturn/server@0.7.0
+- @openturn/bridge@0.7.0
+- @openturn/core@0.7.0
+- @openturn/deploy@0.7.0
+- @openturn/inspector-ui@0.7.0
+- @openturn/json@0.7.0
+- @openturn/protocol@0.7.0
+
 ## 0.6.1
 
 ### Patch Changes

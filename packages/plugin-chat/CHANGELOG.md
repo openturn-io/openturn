@@ -1,5 +1,14 @@
 # @openturn/plugin-chat
 
+## 0.7.0
+
+### Patch Changes
+
+- Updated dependencies [2cabc4f]
+  - @openturn/gamekit@0.7.0
+  - @openturn/plugins@0.7.0
+  - @openturn/core@0.7.0
+
 ## 0.6.1
 
 ### Patch Changes
