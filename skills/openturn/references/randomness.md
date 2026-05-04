@@ -36,6 +36,25 @@ roll: move({
 
 (The in-tree `examples/games/pig-dice` takes the dice value as `args` so the client can show an animation, but rolling inside the move with `rng.d6()` is equally valid and stays deterministic.)
 
+## Inside `setup`
+
+`GamekitSetupContext` exposes `seed: string`, **not** a ready-made `rng`. Build one yourself with `createRng(seed)` from `@openturn/core` if your initial state needs randomness (shuffled deck, randomized starting positions, etc.):
+
+```ts
+import { createRng } from "@openturn/core";
+import { defineGame } from "@openturn/gamekit";
+
+defineGame({
+  // ...
+  setup: ({ match, seed }) => {
+    const rng = createRng(seed);
+    return { deck: shuffle(buildDeck(), rng), /* ... */ };
+  },
+});
+```
+
+`createRng(seed, snapshot?)` is at `packages/core/src/runtime.ts:25`. Splendor uses this pattern in `examples/games/splendor/game/src/index.ts` (search for `createRng`).
+
 ## Inside a bot
 
 ```ts
