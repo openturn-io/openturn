@@ -40,11 +40,19 @@ These are quoted verbatim from `packages/` recon. Reference files cite from this
   phases?: Record<TPhase, GamekitPhaseConfig>;
   initialPhase?: TPhase;
   turn?: TurnPolicy;                         // turn.roundRobin() is the only built-in
-  legalActions?: (ctx, playerID) => readonly LegalAction[];
+  legalActions?: (ctx: GamekitCoreRuleContext, playerID) => readonly LegalAction[];
   computed?: ComputedMap<TState, TPhase, TPlayers>;
   profile?: GameProfileConfig;
   core?: GamekitCoreDefinition;              // escape hatch into core
 }
+
+// GamekitSetupContext fields:
+{ match: MatchInput<TPlayers>; now: number; profiles; seed: string }
+
+// GamekitCoreRuleContext (used by legalActions, views.player/public on the core escape):
+//   inherits from GameRuleContext: { G, position, derived, match, now }
+//   so legalActions destructure is `({ G, derived }, playerID)` —
+//   `derived.activePlayers` is the standard pattern.
 
 // move() factory:
 move<TArgs = undefined>({
@@ -52,7 +60,7 @@ move<TArgs = undefined>({
   run: (ctx: MoveRunContext) => MoveOutcome,
 })
 
-// MoveRunContext fields (the ones authors use):
+// MoveRunContext fields (the ones authors use). MoveRunContext extends MovePermissionContext:
 {
   G: DeepReadonly<TState>;                   // current state — never mutate
   args: TArgs;                               // payload passed to applyEvent
@@ -60,7 +68,13 @@ move<TArgs = undefined>({
   player: { id: PlayerID };                  // who is playing
   rng: DeterministicRng;                     // forked, replay-safe randomness
   profile: ProfileMutation;                  // for committing replay-safe progression
-  // ...also derived/computed/phase/turn — see source
+  // From MovePermissionContext:
+  C: TComputed;                              // computed values
+  phase: TPhase;                             // current phase
+  turn: TurnContext<PlayerID>;
+  profiles: Readonly<Record<PlayerID, TProfile>>;  // per-player profile snapshot (read-only)
+  // ⚠️ NO `derived` field on MoveRunContext. `derived` only appears on
+  //   rule contexts (legalActions, views via core escape).
 }
 
 // MoveHelpers (the move.* outcome helpers):

@@ -6,7 +6,7 @@ This reference covers `@openturn/gamekit`'s `defineGame` API. Use it when author
 
 - `playerIDs: readonly string[]` — fixed set of seat IDs (e.g. `["0", "1"] as const`). Required for typed `playerID` in moves and views.
 - `maxPlayers?: number`, `minPlayers?: number` — used by lobby; pure metadata for local play.
-- `setup({ match }) => TState` — initial `G`. `match` includes `players`. Use `roster.record(match, defaultValue)` from `@openturn/core` to build a per-player record.
+- `setup({ match, now, profiles, seed }) => TState` — initial `G`. `match` includes `players`. `seed` is the deterministic RNG seed (use it for any setup-time randomness so replays match). `profiles` is the per-player profile snapshot. Use `roster.record(match, defaultValue)` from `@openturn/core` to build a per-player record.
 - `moves: ({ move }) => Record<string, GamekitMoveDefinition>` — factory; receives the `move` helper.
 - `views?: { public?, player? }` — see `views.md`.
 - `phases?: Record<TPhase, GamekitPhaseConfig>`, `initialPhase?: TPhase` — see "Phases" below.
@@ -40,14 +40,14 @@ Fields available inside `run(ctx)`:
 - `player: { id: PlayerID }` — who is dispatching this move.
 - `rng: DeterministicRng` — randomness (see `randomness.md`).
 - `profile: ProfileMutation` — for committing replay-safe progression (advanced).
-- Plus `derived`, `C` (computed), `phase`, `turn` for read-only reference.
+- Plus `C` (computed values), `phase` (current phase), `turn` (turn context), and `profiles` (per-player profile snapshot) for read-only reference. **Note:** there is no `derived` field on `MoveRunContext` — `derived` only exists on rule contexts like `legalActions`.
 
 ## Move outcomes (move.*)
 
 - `move.endTurn(patch?, options?)` — apply `patch` (shallow merge into `G`) and pass turn to next active player per turn policy.
 - `move.stay(patch?, options?)` — apply `patch` and keep the turn on the current player. Use for multi-step moves within a turn (pig-dice "roll again") or to wait for other players in a simultaneous phase.
 - `move.goto(phase, patch?, options?)` — change phase. Pass `options.endTurn: true` to also pass the turn.
-- `move.finish({ winner?, draw? }, patch?, options?)` — terminal outcome. Match ends; `winner` is a `PlayerID` and `draw: true` for draws. Set the result before applying the patch.
+- `move.finish({ winner?, draw? }, patch?, options?)` — terminal outcome. Ends the match: `winner` (a `PlayerID`) and/or `draw: true` set the result; `patch` shallow-merges into `G` for the final state.
 - `move.invalid(reason?, details?)` — reject the dispatch. `applyEvent` returns `{ ok: false, error: "invalid_event", reason, details }`. Use for rule violations like "you can't hold without rolling."
 - **`move.continue` does not exist.** If the user mentions it, they're thinking of `move.stay`.
 
@@ -62,7 +62,7 @@ phases: {
 },
 initialPhase: "plan",
 moves: ({ move }) => ({
-  submitPlan: move<{ plan: Plan }>({
+  submitPlan: move<{ plan: string }>({
     run({ G, args, player, move }) {
       const plans = { ...G.plans, [player.id]: args.plan };
       const remaining = G.pendingPlanners.filter((id) => id !== player.id);
