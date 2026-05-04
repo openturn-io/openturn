@@ -47,7 +47,14 @@ const game = defineGame({
   events: { place: defineEvent<{ row: number; col: number }>() },
   initial: "play",
   setup: () => ({ board: emptyBoard() }),
-  states: { play: { /* activePlayers, control, label, metadata */ }, won: { /* ... */ } },
+  states: {
+    play: {
+      activePlayers: ({ match, position }) => [match.players[(position.turn - 1) % match.players.length]!],
+      control: () => ({ status: "playing" }),
+      label: "Play",
+    },
+    won: { activePlayers: () => [], control: () => ({ status: "won" }), label: "Winner" },
+  },
   transitions: ({ transition }) => [
     transition("place", {
       from: "play",
@@ -63,7 +70,7 @@ const game = defineGame({
 });
 ```
 
-`resolve` returns `null` to skip (the runtime tries the next transition for that event), a `{ G, result?, turn? }` object to accept, or `rejectTransition(reason)` to fail the event. See `examples/using-core/tic-tac-toe-core/game/src/index.ts` for the full pattern.
+`resolve` returns one of: `null`/`false`/`void` (skip — the runtime tries the next transition for that event), a `{ G, result?, turn? }` object (accept), or `rejectTransition(reason)` (fail the event). `turn` accepts `"increment"` or `{ to: PlayerID }`. The `roster`, `defineProfile`, etc. helpers listed above are the same exports referenced from `gamekit.md`. See `examples/using-core/tic-tac-toe-core/game/src/index.ts` for the full pattern.
 
 ## See also
 
