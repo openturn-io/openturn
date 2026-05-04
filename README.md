@@ -38,12 +38,35 @@ But we recommend a quick start example below to overview the basic game definiti
 Scaffold a new project, then start the dev server with hot reload and the inspector:
 
 ```bash
-bunx @openturn/cli create my-game # or npx @openturn/cli create my-game
+bunx @openturn/cli create my-game
 cd my-game
-bunx openturn dev
+bun install
+bun run dev
+```
+
+The CLI writes this project structure:
+
+```text
+my-game/
+├── app/
+│   ├── game.ts
+│   ├── openturn.ts
+│   ├── page.tsx
+│   ├── styles.css
+│   └── css.d.ts
+├── package.json
+└── tsconfig.json
 ```
 
 Use `--template multiplayer` to scaffold a hosted-multiplayer starter instead of the default local one.
+
+- `app/game.ts` — the authoritative game definition: state, moves, and views.
+- `app/page.tsx` — the React UI entry point. The local template uses local bindings; the multiplayer template uses room and lobby bindings.
+- `app/openturn.ts` — CLI and deploy metadata, including `runtime: "local"` or `runtime: "multiplayer"`.
+- `app/styles.css` — the Tailwind entry stylesheet.
+- `app/css.d.ts` — the TypeScript declaration for CSS imports.
+- `package.json` — scripts and Openturn/React dependencies.
+- `tsconfig.json` — TypeScript settings for the scaffolded app.
 
 A game in 20 lines:
 
