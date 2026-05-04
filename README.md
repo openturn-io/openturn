@@ -1,15 +1,28 @@
-# openturn
+# Openturn
 
-A TypeScript framework for turn-based and board games — local prototypes, replays, and cloud-hosted multiplayer all from one game definition.
+Openturn is a typescript framework for turn-based and board games.
 
-You describe a game as a plain value (state, moves, who can act, what each player sees). Openturn runs the rules, validates moves, syncs players, and records replays. The same definition powers a local React app, a CLI, a hosted multiplayer server, and a debug inspector — no per-surface rewiring.
+You create a simple game definition with functions to describe game states, player moves and views. And Openturn converts it to a complete playable game that can be hosted with zero infrastructure setup. The same definition powers a local React app, a CLI, a hosted multiplayer server, and a debug inspector — no per-surface rewiring.
+
+Check out this ready-to-play Splendor board game example: https://openturn.io/games/james/splendor
+
+Its source code is available at https://github.com/openturn-io/openturn/tree/main/examples/games/splendor
+
+But we recommend a quick start example below to overview the basic game definition APIs.
 
 ## Why openturn
 
+- **Open source.** At your choice of self-host or zero-infra cloud deployment (free for public deployments).
+
 - **One definition, every surface.** `defineGame(...)` runs locally, on a CLI, and as an Openturn Cloud-hosted multiplayer service.
+
+- **Coding Agent friendly.** Openturn introduces an opinionated model of "pure reducer over state machine" model, which is strict, deterministic, easier to debug.
+
 - **Deterministic replay.** Every match produces a JSON action log; re-dispatch it and you get the exact same state, every time.
+
 - **Hidden information at the engine level.** `views.public` and `views.player` decide what each audience sees — opponents never receive secrets they shouldn't.
-- **Pluggable bots.** Drop a `decide` function (random, heuristic, MCTS, or LLM-backed) into any seat; the same bot runs locally and over the network.
+
+- **Pluggable bots.** Drop a `decide` function (random, heuristic, MCTS) into any seat; the same bot runs locally and over the network.
 
 ## Quickstart
 
