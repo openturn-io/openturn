@@ -14,6 +14,8 @@ const match = { players: pigDice.playerIDs };
 
 One `match` constant per file. Build a fresh session inside every `test` — never share session state across tests.
 
+> The snippets below target the in-tree `examples/games/pig-dice` (whose `roll` move takes `{ value }` as `args`). If you adopted the SKILL.md inline-`rng.d6()` variant of pig-dice, drop the `{ value }` payloads (`session.applyEvent("0", "roll", undefined)`) and pin a deterministic seed via `createLocalSession(pigDice, { match, seed: "test" })` so the rolls are reproducible.
+
 ## A passing-move test
 
 ```ts

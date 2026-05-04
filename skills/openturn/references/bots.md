@@ -146,7 +146,7 @@ export const minimaxBot = defineBot<typeof ticTacToe>({
 });
 ```
 
-`simulate` is unavailable on hosted clients (returns `{ ok: false, reason: "simulate_unavailable_for_host" }`). Search bots run as local processes — CLI driver, server-side sidecar — where the full snapshot is reachable. See `examples/games/tic-tac-toe/bots/` for random/heuristic/minimax patterns and `examples/games/splendor/bots/` for a `random`/`greedy`/`strategic` tier on a 2–4 player game.
+`simulate` is unavailable on hosted clients (returns `{ ok: false, reason: "simulate_unavailable_for_host" }`). Search bots run as local processes — CLI driver, server-side sidecar — where the full snapshot is reachable. See `examples/games/tic-tac-toe/bots/` for `random` and `minimax`, and `examples/games/splendor/bots/` for a `random`/`greedy`/`strategic` tier on a 2–4 player game (the `greedy` bot there is the canonical heuristic example).
 
 ## Attaching bots
 
