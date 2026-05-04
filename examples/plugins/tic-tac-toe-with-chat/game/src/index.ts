@@ -58,7 +58,11 @@ export const ticTacToeWithChat = withPlugins(
     turn: turn.roundRobin(),
     moves: ({ move }) => ({
       placeMark: move<PlaceMarkArgs>({
-        run({ G, args, move, player }) {
+        run({ G, args, move, player, turn }) {
+          if (player.id !== turn.currentPlayer) {
+            return move.invalid("not_your_turn");
+          }
+
           const board = placeMark(G.board, args.row, args.col, player.id);
 
           if (board === null) {

@@ -1,5 +1,8 @@
 # Openturn
 
+> [!WARNING]
+> Openturn is currently in an early alpha stage. APIs may change quickly, behavior may shift between releases, and the platform should be expected to be unstable while the core framework and hosted services are still evolving.
+
 Openturn is a TypeScript framework for turn-based and board games.
 
 You create a simple game definition with functions to describe game states, player moves and views. And Openturn converts it to a complete playable game that can be hosted with zero infrastructure setup. The same definition powers a local React app, a CLI, a hosted multiplayer server, and a debug inspector — no per-surface rewiring.
@@ -45,14 +48,13 @@ Use `--template multiplayer` to scaffold a hosted-multiplayer starter instead of
 A game in 20 lines:
 
 ```ts
-import { defineGame, move, permissions } from "@openturn/gamekit";
+import { defineGame, move } from "@openturn/gamekit";
 
 export const game = defineGame({
   maxPlayers: 2,
   setup: () => ({ value: 0 }),
   moves: {
     increment: move({
-      canPlayer: permissions.currentPlayer,
       run({ G, move, player }) {
         const value = G.value + 1;
         if (value >= 5) return move.finish({ winner: player.id }, { value });
@@ -68,14 +70,16 @@ export const game = defineGame({
 
 ## Learn more
 
-- [Install and run](docs/get-started/install-and-run.mdx)
-- [Your first game](docs/get-started/your-first-game.mdx)
-- [Tutorial: tic-tac-toe with gamekit](docs/tutorials/tic-tac-toe-gamekit.mdx)
-- [Examples](examples/) — playable tic-tac-toe, battleship, pig-dice, and splendor under [examples/games/](examples/games/)
+Docs are available at https://openturn.io/docs
+
+- [Install and run](https://openturn.io/docs/get-started/install-and-run)
+- [Your first game](https://openturn.io/docs/get-started/your-first-game)
+- [Tutorial: tic-tac-toe with gamekit](https://openturn.io/docs/tutorials/tic-tac-toe-gamekit)
+- [Examples](https://openturn.io/docs/examples) — playable tic-tac-toe, battleship, pig-dice, and splendor under [examples/games/](https://github.com/openturn-io/openturn/tree/main/examples/games)
 
 ## Status
 
-Early — packages are at `0.4.x` and APIs may shift. Issues and feedback welcome at [openturn-io/openturn/issues](https://github.com/openturn-io/openturn/issues).
+Early — packages are at `0.x.x` and APIs may shift. Issues and feedback welcome at [openturn-io/openturn/issues](https://github.com/openturn-io/openturn/issues).
 
 ## License
 

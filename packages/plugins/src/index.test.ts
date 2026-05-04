@@ -90,7 +90,7 @@ describe("withPlugins", () => {
     const session = createLocalSession(game, { match: noopMatch });
 
     // Player "1" is not the active player at turn 0 (round-robin starts at "0").
-    // Plugin moves default to canPlayer = () => true, so this should succeed.
+    // withPlugins widens activePlayers to all seated players, so this succeeds.
     const outcome = (session.dispatch as Record<string, (...args: unknown[]) => { ok: boolean }>)
       .chat__send("1", { text: "hi" });
     expect(outcome.ok).toBe(true);
@@ -155,5 +155,43 @@ describe("withPlugins", () => {
     expect(outcome.ok).toBe(true);
     const snapshot = session.getState();
     expect((snapshot.G as { ticks: number }).ticks).toBe(1);
+  });
+
+  test("host moves with inline turn check stay turn-gated under plugins", () => {
+    const turnGatedBase = {
+      playerIDs: noopMatch.players,
+      setup: (): CounterState => ({ ticks: 0 }),
+      turn: turn.roundRobin(),
+      moves: ({ move }: { move: (def: unknown) => unknown }) => ({
+        gatedTick: move({
+          run({
+            G,
+            move: m,
+            player,
+            turn: t,
+          }: {
+            G: CounterState;
+            move: { endTurn: (patch?: unknown) => unknown; invalid: (reason?: string) => unknown };
+            player: { id: string };
+            turn: { currentPlayer: string };
+          }) {
+            if (player.id !== t.currentPlayer) return m.invalid("not_your_turn");
+            return m.endTurn({ ticks: G.ticks + 1 });
+          },
+        }),
+      }),
+      views: {
+        public: ({ G }: { G: CounterState }) => ({ ticks: G.ticks }),
+        player: ({ G }: { G: CounterState }) => ({ ticks: G.ticks }),
+      },
+    };
+
+    const game = withPlugins(turnGatedBase, [chatPlugin]);
+    const session = createLocalSession(game, { match: noopMatch });
+
+    const offTurn = (session.dispatch as Record<string, (...args: unknown[]) => { ok: boolean; reason?: string }>)
+      .gatedTick("1", undefined);
+    expect(offTurn.ok).toBe(false);
+    expect(offTurn.reason).toBe("not_your_turn");
   });
 });

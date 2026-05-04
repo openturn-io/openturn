@@ -2255,6 +2255,8 @@ export function createOpenturnProject(options: {
   writeFileSync(join(projectDir, "package.json"), `${JSON.stringify(packageJson, null, 2)}\n`);
   writeFileSync(join(projectDir, "tsconfig.json"), createProjectTsconfig());
   writeFileSync(join(projectDir, "app", "game.ts"), createTemplateGameSource());
+  writeFileSync(join(projectDir, "app", "styles.css"), createTemplateStylesCss());
+  writeFileSync(join(projectDir, "app", "css.d.ts"), `declare module "*.css";\n`);
   writeFileSync(join(projectDir, "app", "page.tsx"), createTemplatePageSource(template));
   writeFileSync(join(projectDir, "app", "openturn.ts"), createTemplateMetadataSource({
     gameName,
@@ -2304,8 +2306,10 @@ function createProjectPackageJson(input: {
     },
     devDependencies: {
       "@openturn/cli": input.openturnVersion,
+      "@tailwindcss/vite": "^4.2.2",
       "@types/react": "^19.2.0",
       "@types/react-dom": "^19.2.0",
+      tailwindcss: "^4.2.2",
       typescript: "^6.0.2",
     },
   };
@@ -2329,38 +2333,124 @@ function createProjectTsconfig(): string {
 }
 
 function createTemplateGameSource(): string {
-  return `import { defineGame, move, permissions } from "@openturn/gamekit";
+  return `import { defineGame, turn } from "@openturn/gamekit";
 
-export interface CounterState {
-  value: number;
+export type TicTacToeMark = "X" | "O";
+export type TicTacToeCell = TicTacToeMark | null;
+
+export interface TicTacToeState {
+  board: TicTacToeCell[][];
 }
+
+export interface PlaceMarkArgs {
+  row: number;
+  col: number;
+}
+
+const PLAYER_MARKS: Record<"0" | "1", TicTacToeMark> = {
+  "0": "X",
+  "1": "O",
+};
 
 export const game = defineGame({
   playerIDs: ["0", "1"] as const,
-  setup: (): CounterState => ({
-    value: 0,
+  computed: {
+    boardFull: ({ G }) => isBoardFull(G.board),
+    winner: ({ G }) => getWinner(G.board),
+  },
+  setup: (): TicTacToeState => ({
+    board: [
+      [null, null, null],
+      [null, null, null],
+      [null, null, null],
+    ],
   }),
-  moves: {
-    increment: move({
-      canPlayer: permissions.currentPlayer,
-      run({ G, move, player }) {
-        const value = G.value + 1;
+  turn: turn.roundRobin(),
+  legalActions: ({ G, derived }, playerID) => {
+    if (!derived.activePlayers.includes(playerID)) return [];
+    const actions: { event: string; payload: PlaceMarkArgs; label: string }[] = [];
+    for (let row = 0; row < G.board.length; row += 1) {
+      const cells = G.board[row]!;
+      for (let col = 0; col < cells.length; col += 1) {
+        if (cells[col] === null) {
+          actions.push({ event: "placeMark", payload: { row, col }, label: \`(\${row},\${col})\` });
+        }
+      }
+    }
+    return actions;
+  },
+  moves: ({ move }) => ({
+    placeMark: move<PlaceMarkArgs>({
+      run({ G, args, move, player }) {
+        const board = placeMark(G.board, args.row, args.col, player.id as "0" | "1");
 
-        if (value >= 5) {
-          return move.finish({ winner: player.id }, { value });
+        if (board === null) {
+          return move.invalid("occupied", { col: args.col, row: args.row });
         }
 
-        return move.endTurn({ value });
+        if (getWinner(board) !== null) {
+          return move.finish({ winner: player.id }, { board });
+        }
+
+        if (isBoardFull(board)) {
+          return move.finish({ draw: true }, { board });
+        }
+
+        return move.endTurn({ board });
       },
     }),
-  },
+  }),
   views: {
-    public: ({ G, turn }) => ({
+    player: ({ G, turn }, player) => ({
+      board: G.board,
       currentPlayer: turn.currentPlayer,
-      value: G.value,
+      myMark: PLAYER_MARKS[player.id as "0" | "1"] ?? null,
+    }),
+    public: ({ G, turn }) => ({
+      board: G.board,
+      currentPlayer: turn.currentPlayer,
     }),
   },
 });
+
+function placeMark(
+  board: readonly (readonly TicTacToeCell[])[],
+  row: number,
+  col: number,
+  playerID: "0" | "1",
+): TicTacToeCell[][] | null {
+  if (board[row]?.[col] !== null) return null;
+  const mark = PLAYER_MARKS[playerID];
+  return board.map((cells, r) =>
+    cells.map((cell, c) => (r === row && c === col ? mark : cell)),
+  );
+}
+
+function getWinner(board: readonly (readonly TicTacToeCell[])[]): TicTacToeMark | null {
+  const r0 = board[0]!;
+  const r1 = board[1]!;
+  const r2 = board[2]!;
+  const lines = [
+    [r0[0]!, r0[1]!, r0[2]!],
+    [r1[0]!, r1[1]!, r1[2]!],
+    [r2[0]!, r2[1]!, r2[2]!],
+    [r0[0]!, r1[0]!, r2[0]!],
+    [r0[1]!, r1[1]!, r2[1]!],
+    [r0[2]!, r1[2]!, r2[2]!],
+    [r0[0]!, r1[1]!, r2[2]!],
+    [r0[2]!, r1[1]!, r2[0]!],
+  ] as const;
+
+  for (const [a, b, c] of lines) {
+    if (a !== null && a === b && b === c) return a;
+  }
+
+  return null;
+}
+
+function isBoardFull(board: readonly (readonly TicTacToeCell[])[]): boolean {
+  return board.every((row) => row.every((cell) => cell !== null));
+}
 `;
 }
 
@@ -2370,246 +2460,215 @@ function createTemplatePageSource(template: CreateTemplate): string {
 
 function createLocalTemplatePageSource(): string {
   return `import { createOpenturnBindings } from "@openturn/react";
+
 import { game } from "./game";
+import "./styles.css";
 
 const { OpenturnProvider, useMatch } = createOpenturnBindings(game, {
   runtime: "local",
   match: { players: game.playerIDs },
 });
 
+const PLAYER_MARK = { "0": "X", "1": "O" } as const;
+
+type Result = { winner?: string; draw?: boolean } | null;
+
 export default function Page() {
   return (
-    <>
-      <style>{styles}</style>
-      <OpenturnProvider>
-        <CounterGame />
-      </OpenturnProvider>
-    </>
+    <OpenturnProvider>
+      <Board />
+    </OpenturnProvider>
   );
 }
 
-function CounterGame() {
+function Board() {
   const view = useMatch();
-  if (view.mode !== "local") throw new Error("CounterGame requires a local match.");
+  if (view.mode !== "local") throw new Error("Local match required.");
   const { dispatch, reset, snapshot } = view.state;
-  const activePlayer = snapshot.derived.activePlayers[0] ?? game.playerIDs[0];
-  const result = snapshot.meta.result;
+  const board = snapshot.G.board;
+  const result = snapshot.meta.result as Result;
+  const activePlayer = (snapshot.derived.activePlayers[0] ?? "0") as "0" | "1";
 
   return (
-    <main className="shell">
-      <section className="panel" aria-labelledby="game-title">
-        <p className="eyebrow">Openturn local game</p>
-        <h1 id="game-title">Counter Duel</h1>
-        <p className="value">{snapshot.G.value}</p>
-        <p className="status">
-          {result === null ? \`Player \${activePlayer} to move\` : \`Player \${result.winner ?? "?"} wins\`}
-        </p>
-        <div className="actions">
-          <button disabled={result !== null} onClick={() => dispatch.increment(activePlayer)} type="button">
-            Increment
-          </button>
-          <button onClick={reset} type="button">
-            Reset
-          </button>
+    <main className="grid min-h-screen place-items-center bg-slate-50 p-6 font-sans text-slate-950">
+      <section className="flex flex-col items-center gap-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <header className="text-center">
+          <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
+            Openturn · local hot-seat
+          </p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight">Tic-tac-toe</h1>
+          <p className="mt-1 min-h-5 text-sm text-slate-600">{describeStatus(result, activePlayer)}</p>
+        </header>
+        <div role="grid" aria-label="Tic-tac-toe board" className="grid aspect-square w-[320px] grid-cols-3 gap-2">
+          {board.map((row, r) =>
+            row.map((cell, c) => (
+              <button
+                key={\`\${r}-\${c}\`}
+                role="gridcell"
+                aria-label={\`Row \${r + 1} Column \${c + 1}\`}
+                disabled={cell !== null || result !== null}
+                onClick={() => dispatch.placeMark(activePlayer, { row: r, col: c })}
+                className="flex aspect-square items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-4xl font-semibold text-slate-900 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                type="button"
+              >
+                {cell ?? ""}
+              </button>
+            ))
+          )}
         </div>
+        <button
+          type="button"
+          onClick={reset}
+          className="rounded-full border border-slate-300 bg-slate-950 px-5 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+        >
+          New game
+        </button>
       </section>
     </main>
   );
 }
 
-${createTemplateStyles()}
+function describeStatus(result: Result, activePlayer: "0" | "1"): string {
+  if (result === null) return \`Player \${PLAYER_MARK[activePlayer]} to move\`;
+  if (result.draw) return "Draw";
+  if (result.winner === "0" || result.winner === "1") {
+    return \`Player \${PLAYER_MARK[result.winner]} wins\`;
+  }
+  return "Game over";
+}
 `;
 }
 
 function createMultiplayerTemplatePageSource(): string {
-  return `import { useState } from "react";
+  return `import { useState, type ReactNode } from "react";
 
-import { createOpenturnBindings } from "@openturn/react";
+import {
+  createOpenturnBindings,
+  formatDispatchError,
+  HostedRoom,
+  Lobby,
+  type HostedRoomState,
+} from "@openturn/react";
+
 import { game } from "./game";
+import "./styles.css";
 
 const { OpenturnProvider, useRoom } = createOpenturnBindings(game, {
   runtime: "multiplayer",
 });
 
+const PLAYER_MARK = { "0": "X", "1": "O" } as const;
+
+const EMPTY_BOARD: ("X" | "O" | null)[][] = [
+  [null, null, null],
+  [null, null, null],
+  [null, null, null],
+];
+
+type Result = { winner?: string; draw?: boolean } | null;
+
 export default function Page() {
   return (
-    <>
-      <style>{styles}</style>
-      <OpenturnProvider>
-        <CounterGame />
-      </OpenturnProvider>
-    </>
+    <OpenturnProvider>
+      <Room />
+    </OpenturnProvider>
   );
 }
 
-function CounterGame() {
+function Room() {
   const room = useRoom();
-  const [message, setMessage] = useState("Waiting for the hosted room.");
-
-  if (room.game === null) {
-    if (room.phase === "missing_backend") {
-      return (
-        <main className="shell">
-          <section className="panel" aria-labelledby="missing-backend-title">
-            <p className="eyebrow">Openturn multiplayer game</p>
-            <h1 id="missing-backend-title">No host connection</h1>
-            <p className="status">
-              This page must be embedded by an Openturn play shell to host a multiplayer match.
-            </p>
-            <ul className="hints">
-              <li>Local dev: open the <strong>Play URL</strong> printed by <code>openturn dev</code> (typically <code>/play/dev</code>).</li>
-              <li>Cloud: navigate to <code>/play/&lt;deploymentID&gt;</code> on your Openturn deployment.</li>
-            </ul>
-          </section>
-        </main>
-      );
-    }
-
-    return (
-      <main className="shell">
-        <section className="panel">
-          <p className="status">{\`\${room.phase}…\`}</p>
-        </section>
-      </main>
-    );
-  }
-
-  const hostedMatch = room.game;
-  const value = hostedMatch.snapshot?.G.value ?? 0;
-  const winner = hostedMatch.result?.winner ?? null;
-
-  async function increment() {
-    setMessage("Move sent.");
-    const outcome = await hostedMatch.dispatch.increment();
-
-    if (!outcome.ok) {
-      setMessage(outcome.error);
-    }
-  }
-
   return (
-    <main className="shell">
-      <section className="panel" aria-labelledby="game-title">
-        <p className="eyebrow">Openturn multiplayer game</p>
-        <h1 id="game-title">Counter Duel</h1>
-        <p className="value">{value}</p>
-        <p className="status">
-          {winner === null
-            ? \`\${hostedMatch.status} · player \${hostedMatch.playerID ?? "?"}\`
-            : \`Player \${winner} wins\`}
-        </p>
-        <div className="actions">
-          <button disabled={!hostedMatch.canDispatch.increment || winner !== null} onClick={() => { void increment(); }} type="button">
-            Increment
-          </button>
-        </div>
-        <p className="message" aria-live="polite">{message}</p>
-      </section>
+    <main className="grid min-h-screen place-items-center bg-slate-50 p-6 font-sans text-slate-950">
+      <HostedRoom
+        room={room}
+        missingBackend={
+          <Centered>
+            Open this deployment via the Openturn play shell — locally that's <code>/play/dev</code>,
+            or in the cloud <code>/play/&lt;deploymentID&gt;</code>.
+          </Centered>
+        }
+        connecting={<Centered>Connecting to the room…</Centered>}
+        closed={<Centered>This room is closed.</Centered>}
+        error={(msg) => <Centered>{\`Error: \${msg}\`}</Centered>}
+        fallback={<Centered>Loading…</Centered>}
+        lobby={(lobby) => <Lobby lobby={lobby} title="Tic-tac-toe multiplayer" />}
+        game={(match) => <HostedBoard match={match} />}
+      />
     </main>
   );
 }
 
-${createTemplateStyles()}
+function HostedBoard({
+  match,
+}: {
+  match: NonNullable<HostedRoomState<typeof game>["game"]>;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const board = (match.snapshot?.G.board ?? EMPTY_BOARD) as ("X" | "O" | null)[][];
+  const result = match.result as Result;
+  const playerID = match.playerID;
+  const isMyTurn = match.canDispatch.placeMark;
+
+  async function play(row: number, col: number) {
+    setError(null);
+    const outcome = await match.dispatch.placeMark({ row, col });
+    if (!outcome.ok) {
+      setError(formatDispatchError(outcome, {
+        byReason: { occupied: "That square is already taken." },
+      }));
+    }
+  }
+
+  return (
+    <section className="flex flex-col items-center gap-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <header className="text-center">
+        <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
+          Openturn · multiplayer
+        </p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">{describeTitle(result, isMyTurn)}</h1>
+        <p className="mt-1 min-h-5 text-sm text-slate-600">
+          {playerID === "0" || playerID === "1" ? \`You are Player \${PLAYER_MARK[playerID]}\` : "Spectating"}
+          {error === null ? "" : \` · \${error}\`}
+        </p>
+      </header>
+      <div role="grid" aria-label="Tic-tac-toe board" className="grid aspect-square w-[320px] grid-cols-3 gap-2">
+        {board.map((row, r) =>
+          row.map((cell, c) => (
+            <button
+              key={\`\${r}-\${c}\`}
+              role="gridcell"
+              aria-label={\`Row \${r + 1} Column \${c + 1}\`}
+              disabled={!isMyTurn || cell !== null || result !== null}
+              onClick={() => { void play(r, c); }}
+              className="flex aspect-square items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-4xl font-semibold text-slate-900 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+              type="button"
+            >
+              {cell ?? ""}
+            </button>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function Centered({ children }: { children: ReactNode }) {
+  return <p className="max-w-[40ch] text-center text-sm text-slate-500">{children}</p>;
+}
+
+function describeTitle(result: Result, isMyTurn: boolean): string {
+  if (result === null) return isMyTurn ? "Your turn" : "Opponent's turn";
+  if (result.draw) return "Draw";
+  if (result.winner === "0" || result.winner === "1") {
+    return \`Player \${PLAYER_MARK[result.winner]} wins\`;
+  }
+  return "Game over";
+}
 `;
 }
 
-function createTemplateStyles(): string {
-  return `const styles = \`
-  * {
-    box-sizing: border-box;
-  }
-
-  body {
-    margin: 0;
-  }
-
-  button {
-    font: inherit;
-  }
-
-  .shell {
-    min-height: 100vh;
-    display: grid;
-    place-items: center;
-    padding: 24px;
-    color: #14213d;
-    background: #f5f7fb;
-    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  }
-
-  .panel {
-    width: min(520px, 100%);
-    border: 1px solid #d7deea;
-    border-radius: 8px;
-    padding: 28px;
-    background: #ffffff;
-    box-shadow: 0 18px 48px rgba(20, 33, 61, 0.10);
-  }
-
-  .eyebrow {
-    margin: 0 0 8px;
-    color: #4f6f52;
-    font-size: 0.78rem;
-    font-weight: 700;
-    text-transform: uppercase;
-  }
-
-  h1 {
-    margin: 0;
-    font-size: 2rem;
-  }
-
-  .value {
-    margin: 26px 0 8px;
-    font-size: 5rem;
-    font-weight: 800;
-    line-height: 1;
-  }
-
-  .status,
-  .message {
-    min-height: 1.5rem;
-    color: #536179;
-  }
-
-  .actions {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-
-  .actions button {
-    min-width: 120px;
-    border: 1px solid #14213d;
-    border-radius: 6px;
-    padding: 10px 14px;
-    color: #ffffff;
-    background: #14213d;
-    cursor: pointer;
-  }
-
-  .actions button:disabled {
-    border-color: #aab4c5;
-    background: #aab4c5;
-    cursor: not-allowed;
-  }
-
-  .hints {
-    margin: 12px 0 0;
-    padding-left: 18px;
-    color: #536179;
-    font-size: 0.9rem;
-    line-height: 1.5;
-  }
-
-  .hints code {
-    background: #eef1f7;
-    border-radius: 4px;
-    padding: 1px 5px;
-    font-size: 0.85em;
-  }
-\`;
-`;
+function createTemplateStylesCss(): string {
+  return `@import "tailwindcss";\n`;
 }
 
 function createTemplateMetadataSource(input: {

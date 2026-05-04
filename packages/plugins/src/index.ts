@@ -20,9 +20,10 @@ import type { JsonValue } from "@openturn/json";
  * and plugin views are merged into the host game's player/public views so the
  * slices ride along on every snapshot the server hands to clients.
  *
- * Plugin moves default to `canPlayer: () => true` so any seated player may
- * dispatch them regardless of whose turn it is — chat, votes, etc. should not
- * be turn-gated. Override `canPlayer` on a move to restrict.
+ * Plugin moves are dispatchable by any seated player regardless of whose turn
+ * it is — chat, votes, etc. should not be turn-gated. A plugin move that wants
+ * turn-gating performs the check inline in `run` and returns `move.invalid(...)`,
+ * the same convention host games use.
  */
 
 // ---------------------------------------------------------------------------
@@ -57,7 +58,6 @@ export interface PluginMoveDefinition<
   TPlayerID extends string = string,
 > {
   args?: TArgs;
-  canPlayer?: (context: PluginMovePermissionContext<TPlayerID>) => boolean;
   run: (context: PluginMoveRunContext<TSlice, TArgs, TPlayerID>) => PluginMoveOutcome<TSlice>;
 }
 
@@ -240,15 +240,12 @@ export function withPlugins<
       ? (base.moves as (h: unknown) => Record<string, unknown>)(helpers)
       : (base.moves as Record<string, unknown>);
 
-    // Wrap each base move with a `canPlayer` shim that enforces "current player
-    // only" — this preserves the original turn semantics now that
-    // `activePlayers` has been expanded to include every seated player (so
-    // plugin moves are dispatchable off-turn). If the base move already
-    // declares its own `canPlayer`, we leave it alone.
-    const merged: Record<string, unknown> = {};
-    for (const [moveName, baseMove] of Object.entries(baseMoves)) {
-      merged[moveName] = wrapBaseMove(baseMove, helpers.move);
-    }
+    // Pass host moves through untouched. With `activePlayers` widened below to
+    // every seated player (so plugin moves are dispatchable off-turn), host
+    // moves remain responsible for their own turn semantics — they enforce
+    // "current player only" inline via `move.invalid("not_your_turn")`, which
+    // is the same convention they use without plugins.
+    const merged: Record<string, unknown> = { ...baseMoves };
 
     for (const plugin of plugins) {
       const pluginMoves = plugin.moves as Record<string, AnyPluginMoveDefinition>;
@@ -268,9 +265,9 @@ export function withPlugins<
 
   // Expand `activePlayers` for every known phase to include every seated
   // player. This is what unlocks off-turn plugin dispatch (chat, votes, ...) —
-  // the core dispatch gate is `activePlayers.includes(playerID)`. We pair this
-  // with the per-base-move `canPlayer = currentPlayer` shim above so the host
-  // game's turn semantics still hold for its own moves.
+  // the core dispatch gate is `activePlayers.includes(playerID)`. Host moves
+  // remain turn-gated by their own inline `move.invalid("not_your_turn")`
+  // checks (the same pattern they use without plugins).
   //
   // Phase names are derived the same way gamekit does: union of `initialPhase`,
   // explicit `phases` keys, and any move-level `phases` declarations. If we
@@ -366,23 +363,6 @@ function collectPhaseNames(base: {
   return [...names];
 }
 
-function wrapBaseMove(baseMove: unknown, moveFactory: (def: unknown) => unknown): unknown {
-  if (typeof baseMove !== "object" || baseMove === null) {
-    return baseMove;
-  }
-  const original = baseMove as { canPlayer?: unknown; run?: unknown };
-  // If the host game already declared an explicit `canPlayer`, leave it
-  // untouched — the author opted into custom permission logic.
-  if (original.canPlayer !== undefined) {
-    return baseMove;
-  }
-  return moveFactory({
-    ...original,
-    canPlayer: ({ player, turn }: { player: { id: string }; turn: { currentPlayer: string } }) =>
-      player.id === turn.currentPlayer,
-  });
-}
-
 function mergePluginsIntoView(
   projected: Record<string, unknown>,
   G: Record<string, unknown>,
@@ -406,9 +386,6 @@ function wrapPluginMove(
 ): unknown {
   const wrapped = {
     args: definition.args,
-    canPlayer: definition.canPlayer === undefined
-      ? () => true
-      : (context: PluginMovePermissionContext) => definition.canPlayer!({ player: context.player }),
     run(context: GamekitMoveRunContext) {
       const sliceFromState = readPluginSlice(context.G, pluginID);
       const outcome = definition.run({

@@ -25,9 +25,9 @@ export interface ChatSendArgs {
  * Server-authoritative chat plugin. State lives at `G.plugins.chat` once
  * composed via `withPlugins(baseDef, [chatPlugin])`. The `send` move is
  * dispatchable by every seated player regardless of whose turn it is — the
- * plugin runtime expands `activePlayers` and adds a per-base-move
- * `canPlayer = currentPlayer` shim so the host game's turn semantics still
- * hold for its own moves.
+ * plugin runtime expands `activePlayers` to all seated players, and host
+ * moves remain turn-gated by their own inline `move.invalid("not_your_turn")`
+ * checks.
  */
 export const chatPlugin = definePlugin({
   id: CHAT_PLUGIN_ID,

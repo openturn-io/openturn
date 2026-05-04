@@ -11,8 +11,9 @@ describe("ticTacToeWithChat composed game", () => {
     const session = createLocalSession(ticTacToeWithChat, { match: ticTacToeWithChatMatch });
 
     const dispatch = session.dispatch as Record<string, (...args: unknown[]) => { ok: boolean }>;
-    // Player "1" tries to place when it's player "0"'s turn — must be rejected
-    // by the wrapped `canPlayer = currentPlayer` shim that `withPlugins` adds.
+    // Player "1" tries to place when it's player "0"'s turn — rejected by the
+    // host move's inline turn check (withPlugins widens activePlayers, so the
+    // host move is responsible for its own turn semantics).
     const offTurn = dispatch.placeMark!("1", { row: 0, col: 0 });
     expect(offTurn.ok).toBe(false);
 

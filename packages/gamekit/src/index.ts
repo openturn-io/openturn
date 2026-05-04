@@ -248,7 +248,6 @@ export interface GamekitMoveDefinition<
   TProfile extends ReplayValue = ReplayValue,
 > {
   args?: TArgs;
-  canPlayer?: (context: MovePermissionContext<TState, TComputed, TPhase, TPlayers, TProfile>) => boolean;
   phases?: readonly NoInfer<TPhase>[];
   run: (
     context: MoveRunContext<TState, TComputed, TArgs, TPhase, TPlayers, TQueuedEvent, TProfile>,
@@ -524,14 +523,6 @@ export type CoreGameDefinitionFor<
 export const modifiers = {
   evaluateNumber,
   evaluateValue,
-};
-
-export const permissions = {
-  currentPlayer<TState extends object, TComputed extends Record<string, ReplayValue>, TPhase extends string, TPlayers extends readonly PlayerID[]>(
-    context: MovePermissionContext<TState, TComputed, TPhase, TPlayers>,
-  ): boolean {
-    return context.player.id === context.turn.currentPlayer;
-  },
 };
 
 export const turn = {
@@ -816,10 +807,6 @@ export function defineGame<
         rng: context.rng,
         turn: turnContext,
       };
-
-      if (moveDefinition.canPlayer !== undefined && !moveDefinition.canPlayer(permissionContext as never)) {
-        return null;
-      }
 
       const args = (context.event.payload === null ? undefined : context.event.payload) as MoveArgs<typeof moveDefinition>;
       const outcome = moveDefinition.run({

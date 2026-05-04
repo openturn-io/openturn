@@ -52,7 +52,6 @@ A move definition:
 ```ts
 interface GamekitMoveDefinition {
   args?: TArgs;
-  canPlayer?: (context) => boolean;
   phases?: readonly TPhase[];
   run: (context) => MoveOutcome;
 }
@@ -104,12 +103,6 @@ Every non-invalid outcome accepts a final options bag with `{ enqueue?, profile?
 
 - `enqueue?: readonly QueuedEvent[]` — internal follow-up events to chain.
 - `profile?: ProfileCommitDeltaMap` — per-player profile deltas applied atomically with the move. Build them with `profile.bind(...).inc/push/set/remove` or `profile.update(...)`. Apply failures reject the move. See [persistent profiles](/concepts/persistent-profiles).
-
-## Permissions
-
-### `permissions.currentPlayer`
-
-Built-in predicate: returns `true` when `player.id === turn.currentPlayer`. Use as `canPlayer`.
 
 ## Turn policies
 
@@ -249,7 +242,7 @@ defineGame({
 - **`GamekitInternalState`** — the private compartment gamekit owns inside a game's `G`. Exposed at runtime as `G.__gamekit`. Carries the optional `result: GamekitResultState | null` plus arbitrary JSON-shaped slots gamekit reserves for future internal state. You should not write to it directly; use `move.finish` / `move.invalid` instead.
 - **`GamekitResultState`** — `Record<string, JsonValue | undefined> & { draw?: true; winner?: PlayerID }`.
 - **`GamekitViews<...>`** — the shape of the optional `views` field on a `GamekitDefinition`.
-- **`MovePlayerContext`, `MovePermissionContext`, `MoveRunContext`** — the contexts passed to `canPlayer` and `run`.
+- **`MovePlayerContext`, `MovePermissionContext`, `MoveRunContext`** — the context passed to `run` (and the slice of it that's also available on phase resolvers).
 - **`MoveOutcome`, `MoveHelpers`** — outcome and helper types.
 - **`TurnContext`, `TurnPolicy`** — turn types.
 

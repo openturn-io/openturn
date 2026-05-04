@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { compileGameGraph, createLocalSession } from "@openturn/core";
 
-import { defineGame, modifiers, permissions, turn, view } from "./index";
+import { defineGame, modifiers, turn, view } from "./index";
 
 const reviewGame = defineGame({
   maxPlayers: 2,
@@ -12,7 +12,6 @@ const reviewGame = defineGame({
   initialPhase: "play",
   moves: ({ move }) => ({
     advance: move<{ step: number }>({
-      canPlayer: permissions.currentPlayer,
       phases: ["play"],
       run({ G, args, move }) {
         if (!Number.isInteger(args.step) || args.step <= 0) {
@@ -40,7 +39,6 @@ const reviewGame = defineGame({
       },
     }),
     finish: move({
-      canPlayer: permissions.currentPlayer,
       phases: ["review"],
       run({ G, move, player }) {
         return move.finish({ winner: player.id }, {
@@ -225,6 +223,37 @@ describe("@openturn/gamekit", () => {
         turn: "increment",
       }),
     ]));
+  });
+
+  test("inline move.invalid surfaces a custom reason when a move self-rejects off-turn", () => {
+    const inlineGuardGame = defineGame({
+      maxPlayers: 3,
+      initialPhase: "play",
+      moves: ({ move }) => ({
+        act: move({
+          run({ move: m, player, turn: t }) {
+            if (player.id !== t.currentPlayer) return m.invalid("not_your_turn");
+            return m.endTurn();
+          },
+        }),
+      }),
+      phases: {
+        play: {
+          activePlayers: () => ["0", "1", "2"],
+        },
+      },
+      setup: () => ({}),
+    });
+
+    const session = createLocalSession(inlineGuardGame, {
+      match: { players: ["0", "1", "2"] as const },
+    });
+
+    expect(session.applyEvent("1", "act", undefined)).toEqual({
+      error: "invalid_event",
+      ok: false,
+      reason: "not_your_turn",
+    });
   });
 
   test("re-exports modifier evaluation helpers for gamekit auth flows", () => {

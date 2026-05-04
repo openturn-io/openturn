@@ -16,9 +16,9 @@ bun add @openturn/plugins
 
 - Declare a state slice that lives at `G.plugins.<id>` and rides along on every snapshot the server sends to clients.
 - Expose moves namespaced as `${pluginID}__${moveName}` on the host game's dispatch surface.
-- Default to off-turn dispatch (`canPlayer: () => true`) so any seated player may send chat / votes / pings regardless of whose turn it is.
+- Dispatchable by any seated player regardless of whose turn it is, so chat / votes / pings work off-turn.
 
-The host game's own moves keep their original turn semantics: `withPlugins` shims an unspecified `canPlayer` on each base move to "current player only" while expanding `activePlayers` to the full seated roster.
+`withPlugins` widens `activePlayers` to the full seated roster on every phase. Host moves remain turn-gated by their own inline `move.invalid("not_your_turn")` checks (the same pattern they use without plugins).
 
 ## Authoring
 
@@ -65,14 +65,16 @@ Plugin moves return one of two outcomes:
 
 Plugin moves never end the host match, change phase, or advance the turn — those concerns belong to the host game. If you need that behavior, write a host move.
 
-### Permissions
+### Restricting dispatch
 
-By default any seated player may dispatch any plugin move. Override `canPlayer` per move to restrict:
+Any seated player may dispatch any plugin move. To restrict, perform the check inline in `run` and return an invalid outcome:
 
 ```ts
 definePluginMove<VoteSlice, { target: string }>({
-  canPlayer: ({ player }) => player.id !== "spectator",
-  run({ G, args, player }) { /* ... */ },
+  run({ G, args, player }) {
+    if (player.id === "spectator") return { kind: "invalid", reason: "spectator_cannot_vote" };
+    /* ... */
+  },
 })
 ```
 
@@ -140,10 +142,9 @@ These errors surface during authoring, not at first dispatch.
 ## Key types
 
 - **`PluginDefinition<TID, TSlice, TMoves>`** — full plugin shape: `{ id, setup, moves }`.
-- **`PluginMoveDefinition<TSlice, TArgs, TPlayerID>`** — `{ args?, canPlayer?, run }` for a single plugin move.
+- **`PluginMoveDefinition<TSlice, TArgs, TPlayerID>`** — `{ args?, run }` for a single plugin move.
 - **`PluginMoveOutcome<TSlice>`** — `{ kind: "stay", patch? } | { kind: "invalid", reason?, details? }`.
 - **`PluginMoveRunContext<TSlice, TArgs, TPlayerID>`** — the `run` context: `{ G, args, player, rng }`.
-- **`PluginMovePermissionContext<TPlayerID>`** — the `canPlayer` context: `{ player }`.
 - **`PluginsState<TPlugins>`** — `{ plugins: { [id]: TSlice } }`. Intersected with the base `TPublic` / `TPlayer` on the result of `withPlugins`.
 - **`PluginsSliceMap<TPlugins>`** — the `{ [id]: TSlice }` map alone.
 - **`PluginMoveName<TID, TMoveName>`** — `${TID}__${TMoveName}` template literal.

@@ -165,6 +165,10 @@
   "navbar": {
     "links": [
       {
+        "type": "github",
+        "href": "https://github.com/openturn-io/openturn"
+      },
+      {
         "label": "Examples",
         "href": "/examples"
       },

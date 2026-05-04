@@ -1,42 +1,40 @@
 ---
-title: Gamekit permissions and turns
-description: canPlayer, active players, and when to write custom turn logic.
-sidebarTitle: Permissions
+title: Gamekit turn gating
+description: How gamekit decides which seat may dispatch a move.
+sidebarTitle: Turn gating
 ---
 
-Permissions decide who is *allowed* to dispatch a move. Turn policy decides *whose turn it is*. They look similar but are different layers.
+Two layers decide whether a dispatched move is allowed to run: the engine's `activePlayers` set, and your move's own `run` body.
 
-## `canPlayer`
+## `activePlayers` (engine layer)
 
-Each move can declare `canPlayer`. It runs before `run`, and if it returns `false`, the engine rejects the dispatch with `inactive_player`.
+Each phase derives an `activePlayers` list. Core's dispatch gate rejects any event whose `playerID` is not in that list with the reason `inactive_player`. This is automatic — you don't write it.
 
-```ts
-import { permissions } from "@openturn/gamekit";
-
-moves: {
-  placeMark: move({
-    canPlayer: permissions.currentPlayer,
-    run({ G, args, move, player }) { /* ... */ },
-  }),
-},
-```
-
-`permissions.currentPlayer` is the built-in predicate: it returns `true` only when `player.id === turn.currentPlayer`. That is what most turn-based games want.
-
-Write your own for anything else:
+By default, with a round-robin `turn` policy, `activePlayers` is `[currentPlayer]`. That alone is enough turn-gating for a standard alternating game; no per-move check is required.
 
 ```ts
-move({
-  canPlayer: ({ player, G }) => G.hasAlreadyVoted[player.id] === false,
-  run: /* ... */,
-}),
+import { defineGame, move, turn } from "@openturn/gamekit";
+
+defineGame({
+  maxPlayers: 2,
+  setup: () => ({ value: 0 }),
+  turn: turn.roundRobin(),
+  moves: {
+    increment: move({
+      run({ G, move }) {
+        return move.endTurn({ value: G.value + 1 });
+      },
+    }),
+  },
+  // ...
+});
 ```
 
-`canPlayer` reads the same context as `run`: `G`, `C` (computed), `phase`, `player`, `turn`, `rng`. It must be pure.
+If a player whose turn it isn't tries to dispatch `increment`, core rejects with `inactive_player` before `run` is called.
 
 ## `phases` on a move
 
-A move that is only valid in some phases can list them:
+If a move is only valid in some phases, list them:
 
 ```ts
 moves: ({ move }) => ({
@@ -51,13 +49,27 @@ moves: ({ move }) => ({
 }),
 ```
 
-If a move omits `phases`, it is valid in every phase. The engine still rejects it if `canPlayer` returns `false` or if the current phase does not include the move.
+If a move omits `phases`, it is valid in every phase.
+
+## Custom rules in `run` (game layer)
+
+When the engine layer is too coarse — phases that allow multiple seats, custom validity rules, "the player must own this card" — your `run` decides and returns `move.invalid(reason)`.
+
+```ts
+move({
+  run({ G, args, move: m, player, turn: t }) {
+    if (player.id !== t.currentPlayer) return m.invalid("not_your_turn");
+    if (G.hasVoted[player.id]) return m.invalid("already_voted");
+    return m.endTurn({ /* ... */ });
+  },
+})
+```
+
+The `reason` string surfaces to the client in the dispatch result, so the UI can render a specific message rather than a generic rejection.
 
 ## Active players (per phase)
 
-A phase's `activePlayers` governs which seats the engine will even consider during that phase. If you omit it, the turn policy picks (round-robin by default: one seat per turn).
-
-Override it for simultaneous phases:
+Override `activePlayers` for a phase when more than one seat may act in it — typically simultaneous phases:
 
 ```ts
 phases: {
@@ -72,11 +84,11 @@ phases: {
 },
 ```
 
-When `activePlayers` returns a list, every seat on that list can dispatch moves; `canPlayer` still runs per dispatch.
+When `activePlayers` returns a list, every seat on that list can dispatch moves. The move's `run` decides what's actually valid for the dispatching seat.
 
 ## Custom turn policies
 
-Today gamekit ships one turn policy: `turn.roundRobin()`. If your game is strictly alternating, use it. If not, rely on `activePlayers` and the move's own `canPlayer` to enforce ordering, and leave `turn` off.
+Today gamekit ships one turn policy: `turn.roundRobin()`. If your game is strictly alternating, use it. If not, rely on `activePlayers` and inline `move.invalid(...)` checks to enforce ordering, and leave `turn` off.
 
 For fully custom progression (skip turns, reversed order, elimination), author the game with `@openturn/core` directly. See [how-to: author with core](/how-to/author-with-core).
 

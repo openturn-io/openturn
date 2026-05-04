@@ -61,22 +61,25 @@ moves: ({ move }) => ({
 
 See [gamekit moves and outcomes](/concepts/gamekit-moves-and-outcomes) for the full outcome set (`stay`, `endTurn`, `goto`, `finish`, `invalid`).
 
-## Permissions and turns
+## Turn gating
 
-Permissions gate who can dispatch a move. `permissions.currentPlayer` is the most common: only the current round-robin player may act. Write your own for anything else:
+With a round-robin `turn` policy, only the current player is in the engine's `activePlayers` set, and core's dispatch gate handles "wrong seat" rejections automatically. When more than one seat is allowed in a phase (simultaneous play, plugins) or you need a state-dependent rule, enforce it inline in `run` and reject with a reason:
 
 ```ts
 move({
-  canPlayer: ({ player, turn, G }) => player.id === turn.currentPlayer && G.cards[player.id].length > 0,
-  run: /* ... */,
+  run({ G, move: m, player, turn: t }) {
+    if (player.id !== t.currentPlayer) return m.invalid("not_your_turn");
+    if (G.cards[player.id].length === 0) return m.invalid("no_cards");
+    // ...
+  },
 }),
 ```
 
-See [gamekit permissions and turns](/concepts/gamekit-permissions-and-turns).
+See [gamekit turn gating](/concepts/gamekit-permissions-and-turns).
 
 ## Views and computed
 
-Computed values are selectors under a friendlier name. You read them as `C` inside permissions, moves, and views. Use them to avoid recomputing derived facts in every code path.
+Computed values are selectors under a friendlier name. You read them as `C` inside moves and views. Use them to avoid recomputing derived facts in every code path.
 
 See [gamekit views and computed](/concepts/gamekit-views-and-computed).
 
@@ -105,5 +108,5 @@ Every move context has `rng: DeterministicRng` from `@openturn/core`. Use it for
 ## What to read next
 
 - [Gamekit moves and outcomes](/concepts/gamekit-moves-and-outcomes) is the outcome cheatsheet.
-- [Gamekit permissions and turns](/concepts/gamekit-permissions-and-turns) covers `canPlayer` patterns.
+- [Gamekit turn gating](/concepts/gamekit-permissions-and-turns) covers turn-gating patterns.
 - [Gamekit views and computed](/concepts/gamekit-views-and-computed) covers projection and derivation.

@@ -38,7 +38,6 @@ export const game = defineGame({
 ```ts
 moves: ({ move, queue }) => ({
   attack: move<{ target: PlayerID }>({
-    canPlayer: permissions.currentPlayer,
     phases: ["combat"],            // only valid in this phase
     run({ G, C, args, move, player, rng }) {
       if (G.players[args.target].hp <= 0) return move.invalid("already_defeated");
@@ -54,21 +53,26 @@ moves: ({ move, queue }) => ({
 Each move declares:
 
 - **`args?`** — the payload type. Use `move<T>` to type it explicitly.
-- **`canPlayer?`** — predicate gating the dispatch.
 - **`phases?`** — restrict the move to specific phases.
 - **`run`** — the pure state transition. Must return an outcome from `move.stay | endTurn | goto | finish | invalid`.
 
 `queue(kind, payload?)` is a helper for building internal events to enqueue from `run`.
 
-## Permissions
+## Turn gating
 
-`permissions.currentPlayer` is the built-in for "only the round-robin current player can act." Write your own for anything else:
+With a round-robin `turn` policy, only the current player is in `activePlayers`, and core's dispatch gate handles "wrong seat" rejections automatically — no per-move predicate required.
+
+When more than one seat is allowed in a phase (simultaneous play, plugin moves), enforce game-specific rules inline in `run` and reject with a reason:
 
 ```ts
-canPlayer: ({ player, G }) => G.hasPaid[player.id] === true,
+run({ G, move: m, player, turn: t }) {
+  if (player.id !== t.currentPlayer) return m.invalid("not_your_turn");
+  if (!G.hasPaid[player.id]) return m.invalid("must_pay_first");
+  // ...
+},
 ```
 
-See [gamekit permissions and turns](/concepts/gamekit-permissions-and-turns) for the full pattern.
+See [gamekit turn gating](/concepts/gamekit-permissions-and-turns) for the full pattern.
 
 ## Phases
 

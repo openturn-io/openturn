@@ -27,7 +27,7 @@ The generator scaffolds a small project. The three openturn-specific files are:
 Open `app/game.ts`. The template ships a two-player increment counter:
 
 ```ts
-import { defineGame, move, permissions } from "@openturn/gamekit";
+import { defineGame, move } from "@openturn/gamekit";
 
 export interface CounterState {
   value: number;
@@ -38,7 +38,6 @@ export const game = defineGame({
   setup: (): CounterState => ({ value: 0 }),
   moves: {
     increment: move({
-      canPlayer: permissions.currentPlayer,
       run({ G, move, player }) {
         const value = G.value + 1;
         if (value >= 5) return move.finish({ winner: player.id }, { value });
@@ -78,7 +77,6 @@ Give each player a way to zero the counter at the cost of skipping their turn.
 ```ts
 moves: {
   increment: move({
-    canPlayer: permissions.currentPlayer,
     run({ G, move, player }) {
       const value = G.value + 1;
       if (value >= 3) return move.finish({ winner: player.id }, { value });
@@ -86,7 +84,6 @@ moves: {
     },
   }),
   resetBoard: move({
-    canPlayer: permissions.currentPlayer,
     run({ move }) {
       return move.endTurn({ value: 0 });
     },

@@ -51,7 +51,7 @@ defineGame({
 });
 ```
 
-`rng` is in scope for `canPlayer`, `run`, and every core resolver context. Any draw you make is recorded in the match's RNG trace; the replay materializer reruns the same draws and arrives at the same state.
+`rng` is in scope for `run` and every core resolver context. Any draw you make is recorded in the match's RNG trace; the replay materializer reruns the same draws and arrives at the same state.
 
 ## Dice helpers
 

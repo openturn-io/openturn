@@ -140,14 +140,22 @@ describe("createOpenturnProject", () => {
       expect(packageJson.dependencies["@openturn/gamekit"]).toBe("workspace:*");
       expect(packageJson.dependencies["@openturn/react"]).toBe("workspace:*");
       expect(packageJson.devDependencies["@openturn/cli"]).toBe("workspace:*");
+      expect(packageJson.devDependencies.tailwindcss).toBeDefined();
+      expect(packageJson.devDependencies["@tailwindcss/vite"]).toBeDefined();
       expect(packageJson.scripts).toMatchObject({
         dev: "openturn dev .",
         build: "openturn build .",
         deploy: "openturn deploy .",
       });
       expect(readFileSync(join(projectDir, "app", "openturn.ts"), "utf8")).toContain('runtime: "local"');
-      expect(readFileSync(join(projectDir, "app", "page.tsx"), "utf8")).toContain('runtime: "local"');
-      expect(readFileSync(join(projectDir, "app", "game.ts"), "utf8")).toContain("defineGame");
+      const page = readFileSync(join(projectDir, "app", "page.tsx"), "utf8");
+      expect(page).toContain('runtime: "local"');
+      expect(page).toContain("placeMark");
+      expect(page).not.toContain("<style>");
+      const gameSource = readFileSync(join(projectDir, "app", "game.ts"), "utf8");
+      expect(gameSource).toContain("defineGame");
+      expect(gameSource).toContain("placeMark");
+      expect(readFileSync(join(projectDir, "app", "styles.css"), "utf8")).toContain('@import "tailwindcss"');
     } finally {
       rmSync(projectDir, { force: true, recursive: true });
     }
@@ -160,14 +168,23 @@ describe("createOpenturnProject", () => {
       createOpenturnProject({ projectDir, template: "multiplayer" });
       const metadata = readFileSync(join(projectDir, "app", "openturn.ts"), "utf8");
       const page = readFileSync(join(projectDir, "app", "page.tsx"), "utf8");
+      const packageJson = JSON.parse(readFileSync(join(projectDir, "package.json"), "utf8")) as {
+        devDependencies: Record<string, string>;
+      };
 
       expect(metadata).toContain('runtime: "multiplayer"');
       expect(metadata).toContain(`gameKey: ${JSON.stringify(basename(projectDir))}`);
       expect(metadata).toContain('schemaVersion: "1"');
       expect(page).toContain("OpenturnProvider");
       expect(page).toContain("useRoom");
+      expect(page).toContain("HostedRoom");
+      expect(page).toContain("placeMark");
+      expect(page).not.toContain("<style>");
       expect(page).not.toContain("createLocalMatch");
       expect(page).not.toContain("useHostedMatch");
+      expect(packageJson.devDependencies.tailwindcss).toBeDefined();
+      expect(packageJson.devDependencies["@tailwindcss/vite"]).toBeDefined();
+      expect(readFileSync(join(projectDir, "app", "styles.css"), "utf8")).toContain('@import "tailwindcss"');
     } finally {
       rmSync(projectDir, { force: true, recursive: true });
     }
