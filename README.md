@@ -68,6 +68,16 @@ export const game = defineGame({
 });
 ```
 
+## Authoring with AI agents
+
+If you build games with Claude Code, Codex, Cursor, or another supported agent, install the Openturn skill so the agent gets calibrated on Openturn's APIs, hidden-info model, randomness rules, and testing patterns:
+
+```bash
+npx skills add openturn-io/openturn
+```
+
+See the [skill docs](https://openturn.io/docs/agent-skills) for what's covered and how to update.
+
 ## Learn more
 
 Docs are available at https://openturn.io/docs
