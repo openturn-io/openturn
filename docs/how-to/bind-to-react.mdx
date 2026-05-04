@@ -167,6 +167,10 @@ function renderWithFixture() {
 
 Each call to `createLocalMatch` produces a fresh in-process store, so tests stay isolated.
 
+## A flagship reference app
+
+[`examples/games/splendor/app`](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/splendor/app) is the production-polish reference for `<OpenturnProvider>` + `useRoom` against hosted multiplayer — 2–4 player variable seating, hidden per-player state through `views.player`, lobby with three difficulty-tiered bots, framer-motion animations, and a Tailwind v4 tabletop UI. It also ships a single-tab `?preview=local` mode that mounts a no-lobby `LocalPreview` (both seats local, camera toggle in the header) so you can iterate on UI without a full lobby + websocket round-trip.
+
 ## Related
 
 - [Tutorial: tic-tac-toe with gamekit](/tutorials/tic-tac-toe-gamekit) walks through the local binding.

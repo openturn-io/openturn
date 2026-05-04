@@ -167,6 +167,10 @@ const view = buildLobbyView({ channel, userID: "local-host" });
 
 See [How-to: play against bots](/how-to/play-against-bots) for the full local + bot wiring.
 
+## A complete reference implementation
+
+[`examples/games/splendor/app`](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/splendor/app) is the canonical end-to-end lobby: a 2–4 player variable-capacity game wiring `<OpenturnProvider>` + `useRoom` + `<LobbyWithBots>` against hosted multiplayer, with the host's capacity picker (because `minPlayers=2, maxPlayers=4`) and per-seat dropdowns for the three bots from [`splendor/bots`](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/splendor/bots). Run `bun --filter @openturn/example-splendor-app dev` and open the printed URL in 2–4 tabs to exercise every lobby affordance — seat claim, ready/start, capacity narrowing, bot picking — under a real WebSocket round-trip.
+
 ## Related
 
 - [Tutorial: tic-tac-toe multiplayer](/tutorials/tic-tac-toe-multiplayer) uses `useRoom()` end to end.

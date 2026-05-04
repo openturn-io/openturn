@@ -220,6 +220,8 @@ A few moments worth running before you ship:
 
 The repo's `examples/games/tic-tac-toe/bots` package has both unit and integration test suites you can crib from.
 
+For a richer reference, [`examples/games/splendor/bots`](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/splendor/bots) ships three bot tiers (`random`, `greedy`, `strategic`) for a full-scale 2–4 player game. The `strategic` bot plans around nobles, engine balance, reserves, and opponent threats — useful as a template for your own heuristic bots that need to weigh multiple objectives in a non-trivial state space.
+
 ## Cloud play
 
 In cloud `/play`, run bots as separate processes that connect to the room over WebSocket using the same protocol as a human:

@@ -77,6 +77,10 @@ views: {
 - **Use `computed` for counts.** Show "opponent has 3 cards" via a computed value (`opponentHandSize`), not the hand itself.
 - **Beware of array references.** Passing `G.players[id].fleet` into the public view exposes it. Destructure first.
 
+## Another worked example: Splendor reserved cards
+
+[`examples/games/splendor`](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/splendor) applies the same pattern at production polish. Each merchant's reserved cards live in `G.players[id].reserved` (full card IDs the server needs to validate `buyCard`). `views.player` projects opponents' reserved arrays down to a count — `opponentReservedCount` — so the table UI can render face-down placeholders without the IDs ever leaving the worker. The game-package test suite asserts this invariant: opponent reserved IDs never appear in any player's view, regardless of game state. Use it as the reference implementation when designing your own per-player projections.
+
 ## Local testing
 
 Because local sessions run the same reducer, you can unit-test the player view:

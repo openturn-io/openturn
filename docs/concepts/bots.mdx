@@ -90,6 +90,8 @@ Before a match starts, players can pick which bot fills which empty seat — Ran
 
 The registry is engine-inert metadata: `defineGame({ bots })` (or `attachBots(game, registry)`) carries it through, but the engine never reads it. Only the lobby runtime, the deploy step, and the supervisor do. See [How-to: play against bots](/how-to/play-against-bots) for the registration + UI wiring.
 
+The canonical multi-bot example ships in [`examples/games/splendor/bots`](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/splendor/bots): three difficulty-tiered bots (`random`, `greedy`, `strategic`) declared via `defineBotRegistry` and bound to the game with `attachBots(splendor, splendorBotRegistry)`. The Splendor app ships them in the per-seat lobby dropdown for hosted 2–4 player matches.
+
 ## Limitations
 
 - **`simulate` is local-only.** Hosted hosts do not see the full server-side snapshot. A bot connecting over the network must rely on `view`, `legalActions`, and pure-view heuristics. Search-based bots run server-side or as in-process bots in the CLI.

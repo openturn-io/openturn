@@ -78,7 +78,7 @@ export const ticTacToe = defineGame({
     placeMark: move<PlaceMarkArgs>({
       run({ G, args, move, player }) {
         const board = placeMark(G.board, args.row, args.col, player.id);
-        if (board === null) return move.invalid("occupied", args);
+        if (board === null) return move.invalid("occupied", { col: args.col, row: args.row });
         if (getWinner(board) !== null) return move.finish({ winner: player.id }, { board });
         if (isBoardFull(board)) return move.finish({ draw: true }, { board });
         return move.endTurn({ board });

@@ -231,6 +231,10 @@ Smoke test in three modes:
 
 3. **Cloud:** deploy a build with `attachBots(game, registry)` set and play a public room. The cloud Durable Object reads the manifest's `availableBots` and instantiates the in-DO `BotDriver` automatically.
 
+## A larger worked example: Splendor
+
+[`examples/games/splendor`](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/splendor) ships the same pattern at production polish — a 2–4 player hosted game with three difficulty-tiered bots in the lobby. See [`splendor/bots/src/index.ts`](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/splendor/bots) for `defineBotRegistry` declaring `random`, `greedy`, and `strategic`, and `splendor/app/` for the `<LobbyWithBots>` wiring against hosted multiplayer. Run it with `bun --filter @openturn/example-splendor-app dev` and open the printed URL in 2–4 tabs to see the per-seat dropdowns under load.
+
 ## Common rejections
 
 - `seat_has_human` — you tried to `assignBot` to a seat someone is sitting in. Use `clearSeat` first or pick a different seat.

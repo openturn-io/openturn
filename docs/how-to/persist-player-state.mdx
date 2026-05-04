@@ -141,7 +141,7 @@ When you deploy with `openturn deploy`, the cloud takes over hydration and commi
 - Commit: when the match terminates, the DO runs your `profile.commit` and POSTs the delta to `/api/profiles/commit`. The cloud re-validates against the current profile and writes it.
 - Auth: both calls are signed with HMAC-SHA256 using the room-token secret that's already shared between cloud and every game-worker. No new env vars, no per-deploy configuration.
 
-The only operator step is making sure the `profile` / `profile_commit` tables exist. They're part of the normal Drizzle migrations under [`openturn-cloud/drizzle/`](https://github.com/anthropic-claude/openturn/tree/main/openturn-cloud/drizzle). Run your usual migration command.
+The only operator step is making sure the `profile` / `profile_commit` tables exist. They're part of the normal Drizzle migrations under [`openturn-cloud/drizzle/`](https://github.com/openturn-io/openturn/tree/main/openturn-cloud/drizzle). Run your usual migration command.
 
 Check progress from the client:
 
