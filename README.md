@@ -35,7 +35,7 @@ But we recommend a quick start example below to overview the basic game definiti
 Scaffold a new project, then start the dev server with hot reload and the inspector:
 
 ```bash
-bunx @openturn/cli create my-game
+bunx @openturn/cli create my-game # or npx @openturn/cli create my-game
 cd my-game
 bunx openturn dev
 ```
