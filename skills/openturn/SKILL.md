@@ -23,7 +23,7 @@ Do NOT use this skill for:
 
 - **Game state `G` is plain JSON.** No class instances, no `Date`, `Map`, `Set`, `RegExp`, or functions in `G`. If you need a map, use a record. If you need a set, use a record-of-booleans or a sorted array.
 - **Moves are pure reducers.** Return next state via one of: `move.endTurn(patch)`, `move.stay(patch)`, `move.goto(phase, patch)`, `move.finish({ winner }, patch)`, `move.invalid(reason, details)`. **Never mutate `G`.** There is no `move.continue` — use `move.stay`.
-- **All randomness goes through `ctx.rng`** (a `DeterministicRng`). Methods: `rng.int(maxExclusive)`, `rng.bool()`, `rng.pick(arr)`, `rng.dice(count, sides)`, `rng.d4()` … `rng.d100()`, `rng.advantage()`, `rng.disadvantage()`, `rng.next()`. Never call `Math.random`, `Date.now`, or `crypto.*` inside a move or a bot's `decide` — replays will diverge.
+- **All randomness goes through the move context's `rng` field** (a `DeterministicRng`). Methods: `rng.int(maxExclusive)`, `rng.bool()`, `rng.pick(arr)`, `rng.dice(count, sides)`, `rng.d4()` … `rng.d100()`, `rng.advantage()`, `rng.disadvantage()`, `rng.next()`. Never call `Math.random`, `Date.now`, or `crypto.*` inside a move or a bot's `decide` — replays will diverge.
 - **Hidden info lives inside `G`.** `views.public` and `views.player` decide what leaves the server. If a secret can be derived from the public view, it's leaked. Default behavior: omitted `views.public` returns full `G`; omitted `views.player` returns the public view. Always set both for any game with hidden state.
 - **Choose `@openturn/gamekit` before `@openturn/core`.** Drop to core only when the state graph genuinely needs custom transitions (rare).
 - **Phases are for distinct rule sets** (planning, bidding, battle), not for "current step inside a turn." Use `G` to track intra-turn state. The only built-in turn policy is `turn.roundRobin()`.
@@ -31,7 +31,7 @@ Do NOT use this skill for:
 
 ## Canonical example — pig-dice
 
-A complete two-player game with hidden-from-yourself randomness (the next roll), a clear win condition, and per-turn state. Distilled from `examples/games/pig-dice/game/src/index.ts`.
+A complete two-player game with hidden-from-yourself randomness (the next roll), a clear win condition, and per-turn state. Adapted from `examples/games/pig-dice/game/src/index.ts` — the live example takes the rolled value as an argument; this version uses `rng.d6()` inline to demonstrate replay-safe randomness in a single snippet.
 
 ```ts
 import { roster, type PlayerRecord } from "@openturn/core";
