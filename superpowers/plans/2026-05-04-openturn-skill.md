@@ -8,7 +8,7 @@
 
 **Tech Stack:** Markdown, Mintlify (`.mdx`), `@changesets/cli` for the changeset, `npx skills` for verification.
 
-**Spec:** `docs/superpowers/specs/2026-05-04-openturn-skill-design.md`
+**Spec:** `superpowers/specs/2026-05-04-openturn-skill-design.md`
 
 ---
 
@@ -1415,7 +1415,7 @@ say "HEY YOUR TASK IS DONE"
 
 ## Execution Handoff
 
-Plan complete and saved to `docs/superpowers/plans/2026-05-04-openturn-skill.md`. Two execution options:
+Plan complete and saved to `superpowers/plans/2026-05-04-openturn-skill.md`. Two execution options:
 
 **1. Subagent-Driven (recommended)** — I dispatch a fresh subagent per task, review between tasks, fast iteration.
 
