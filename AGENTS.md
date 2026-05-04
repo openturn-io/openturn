@@ -22,4 +22,10 @@ Enforcement expectations:
 
 When reading or updating `design.md`, explicitly determine the intended runtime for each package and preserve these boundaries.
 
+Superpowers workflow artifacts:
+
+- Specs go under `superpowers/specs/` at the repo root.
+- Plans go under `superpowers/plans/` at the repo root.
+- Never write Superpowers workflow artifacts under `docs/`; that directory is reserved for the Mintlify documentation site.
+
 When you finally finish running each time, run the mac cli `say "HEY YOUR TASK IS DONE"`
