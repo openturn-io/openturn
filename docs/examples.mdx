@@ -10,15 +10,55 @@ Every example lives under `examples/<purpose>/<name>` in the monorepo. Most have
   Looking up a specific package name, path, or `bun --filter` command? See the [Examples index](/reference/examples) — every shipped package with its path and run command in one table.
 </Note>
 
+## Featured: Splendor
+
+[Splendor](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/splendor) is the flagship end-to-end example — a Splendor-faithful 2–4 player tabletop with hosted multiplayer, hidden per-player state, three difficulty-tiered AI bots, a polished React 19 + Tailwind v4 + framer-motion table, and a deploy-ready `app/` package. Use it to see what a fully realized openturn game looks like and as the canonical thing to play and stress-test against.
+
+```bash
+# Local hosted multiplayer (open the printed URL in 2–4 tabs)
+bun --filter @openturn/example-splendor-app dev
+
+# Game-logic test suite (setup, hidden-state secrecy, end-of-round trigger, …)
+bun --filter @openturn/example-splendor-game test
+
+# One-tab visual preview (no lobby, both seats local) — great for UI work
+# Append ?preview=local to the dev URL
+```
+
+What it demonstrates:
+
+- **Hidden information** — opponents' reserved cards stay on the worker; `views.player` projects them down to a count.
+- **Variable seating** — `MatchInput.minPlayers` lets 2, 3, or 4 players seat through `<Lobby>`.
+- **End-of-round triggers** — first to 15 points flips a flag; the round completes before the winner is declared.
+- **Bots in the lobby** — per-seat dropdown picks `Random`, `Greedy`, or `Strategic` from the [`bots/`](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/splendor/bots) package.
+- **Cloud deploy** — `bun run deploy` from the app dir builds the bundle, uploads the multiplayer Worker, and prints the openturn-cloud play URL.
+
+## Get started: Tic-tac-toe
+
+[Tic-tac-toe](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/tic-tac-toe) is the smallest end-to-end gamekit example and the one every tutorial walks through. Start here when learning openturn — it's reused across the React UI, CLI, multiplayer, replay viewer, chat-plugin, and bot examples, so the same `game/` package shows up in every recipe.
+
+```bash
+# Local React UI
+bun --filter @openturn/example-tic-tac-toe-app dev --port 3000
+
+# Terminal, with optional bot opponent and replay capture
+bun --filter @openturn/example-tic-tac-toe-cli demo
+bun --filter @openturn/example-tic-tac-toe-cli demo -- --bot 1=minimax
+bun --filter @openturn/example-tic-tac-toe-cli demo -- --save-replay out.json
+```
+
+Walk it end-to-end in the [Tic-tac-toe with gamekit](/tutorials/tic-tac-toe-gamekit) tutorial.
+
 ## End-to-end games
 
-Complete, polished demos under `examples/games/`.
+Complete, runnable games under `examples/games/`.
 
-| Example | Authoring | Local UI | Hosted | Replay | Hidden info | Notes |
-| --- | --- | --- | --- | --- | --- | --- |
-| [tic-tac-toe](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/tic-tac-toe) | gamekit | React + CLI | — | capture | no | The main onboarding example. Reused across multiplayer and replay viewer. |
-| [pig-dice](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/pig-dice) | gamekit | CLI | — | — | no | Simple 2-player dice push-your-luck CLI. |
-| [battleship](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/battleship) | gamekit | React | hosted | — | yes | Hidden fleets, multi-phase (planning → battle → gameOver), hosted multiplayer. |
+| Example | Authoring | Local UI | Hosted | Bots | Replay | Hidden info | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| [splendor](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/splendor) | gamekit | React | hosted | 3 (random / greedy / strategic) | — | yes | Flagship demo. 2–4 players, polished tabletop UI, deploy-ready. |
+| [tic-tac-toe](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/tic-tac-toe) | gamekit | React + CLI | — | 2 (random / minimax) | capture | no | Get-started example. Reused across multiplayer, replay viewer, chat plugin. |
+| [pig-dice](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/pig-dice) | gamekit | CLI | — | — | — | no | Simple 2-player dice push-your-luck CLI. |
+| [battleship](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/battleship) | gamekit | React | hosted | — | — | yes | Hidden fleets, multi-phase (planning → battle → gameOver), hosted multiplayer. |
 
 ## Authoring with raw `@openturn/core`
 
@@ -45,17 +85,21 @@ Each example is the canonical demo for one openturn concept.
 
 | Concept | Example | Notes |
 | --- | --- | --- |
+| Featured / hosted multiplayer | [splendor](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/splendor) | 2–4 player Splendor with `<OpenturnProvider>` + `useRoom` + lobby bots. The flagship end-to-end demo. |
 | Simultaneous moves | [paper-scissors-rock](https://github.com/openturn-io/openturn/tree/main/openturn/examples/simultaneous-moves/paper-scissors-rock) | Hidden submissions until everyone has played. 3 players. Also available in [raw core](https://github.com/openturn-io/openturn/tree/main/openturn/examples/using-core/paper-scissors-rock-core). |
-| Hosted multiplayer | [tic-tac-toe-multiplayer](https://github.com/openturn-io/openturn/tree/main/openturn/examples/hosted-multiplayer/tic-tac-toe-multiplayer) | `<OpenturnProvider>` + `useRoom`. Runs against `openturn dev` locally and openturn-cloud in production. |
+| Hosted multiplayer (minimal) | [tic-tac-toe-multiplayer](https://github.com/openturn-io/openturn/tree/main/openturn/examples/hosted-multiplayer/tic-tac-toe-multiplayer) | `<OpenturnProvider>` + `useRoom`. Runs against `openturn dev` locally and openturn-cloud in production. |
 | Replay capture & playback | [tic-tac-toe-replay-viewer](https://github.com/openturn-io/openturn/tree/main/openturn/examples/replays/tic-tac-toe-replay-viewer) | Load a saved replay JSON and scrub through it. |
 | Plugin integration | [tic-tac-toe-with-chat](https://github.com/openturn-io/openturn/tree/main/openturn/examples/plugins/tic-tac-toe-with-chat) | Tic-tac-toe with the chat plugin wired in. |
-| AI bots | [tic-tac-toe/bots](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/tic-tac-toe/bots) | Sibling package to `tic-tac-toe/game`. Random bot + alpha-beta minimax. Wired into the CLI via `--bot 1=random` / `--bot 1=minimax`. |
+| AI bots | [tic-tac-toe/bots](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/tic-tac-toe/bots) and [splendor/bots](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/splendor/bots) | Tic-tac-toe ships random + alpha-beta minimax wired into the CLI; Splendor ships random/greedy/strategic wired into the lobby. |
 
 ## Run them
 
 From the monorepo root. For the complete list of packages and commands (including library packages with no `dev` script), see the [Examples index](/reference/examples).
 
 ```bash
+# Splendor (featured) — hosted multiplayer with bots, 2–4 players
+bun --filter @openturn/example-splendor-app dev
+
 # Local tic-tac-toe (React)
 bun --filter @openturn/example-tic-tac-toe-app dev --port 3000
 
@@ -88,7 +132,7 @@ bun --filter @openturn/example-battleship-app dev
 
 ## By tutorial
 
-- [Tic-tac-toe with gamekit](/tutorials/tic-tac-toe-gamekit) walks the `tic-tac-toe` example end to end.
+- [Tic-tac-toe with gamekit](/tutorials/tic-tac-toe-gamekit) walks the `tic-tac-toe` example end to end. **Start here.**
 - [Tic-tac-toe multiplayer](/tutorials/tic-tac-toe-multiplayer) walks `tic-tac-toe-multiplayer`.
 - [Tic-tac-toe replay](/tutorials/tic-tac-toe-replay) walks `tic-tac-toe-replay-viewer`.
 - [Tic-tac-toe with core](/tutorials/tic-tac-toe-core) walks `tic-tac-toe-core`.
