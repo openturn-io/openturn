@@ -5,3 +5,7 @@
 # Draft content
 drafts/
 *.draft.mdx
+
+# Workflow artifacts belong outside the Mintlify docs root.
+superpowers/
+**/superpowers/

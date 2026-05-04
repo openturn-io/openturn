@@ -18,6 +18,7 @@
             "pages": [
               "index",
               "get-started/install-and-run",
+              "agent-skills",
               "get-started/your-first-game"
             ]
           },
