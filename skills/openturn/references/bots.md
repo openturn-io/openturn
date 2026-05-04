@@ -62,12 +62,14 @@ interface DecideContext<TGame> {
   readonly rng: BotRng;                              // forked, salted by name+seat+turn
   readonly deadline: DeadlineToken;                  // remainingMs(), expired()
   readonly signal: AbortSignal;                      // aborts when decision is stale
-  readonly simulate: SimulateFn<TGame>;              // local hosts only
+  readonly simulate: SimulateFn<TGame>;              // (action) => SimulateResult, sugar for the
+                                                     //   imported simulate(); local hosts only
 }
 ```
 
 Notes:
 - `snapshot` is `null` on hosted (network) clients. Search bots that need the full state must run as local processes.
+- `ctx.simulate(action)` is sugar — game/snapshot/playerID are pre-bound. The standalone `simulate(game, snapshot, playerID, action)` exported from `@openturn/bot` is the same thing without the binding (use it from non-`decide` code, e.g. recursive `search` helpers).
 - `rng` is forked from `snapshot.meta.rng` and salted by `(bot.name, playerID, turn)`. Two bots on the same snapshot get different but reproducible streams. Only the methods on `DeterministicRng` are valid (`int`, `bool`, `pick`, `dice`, `d4`–`d100`, `advantage`, `disadvantage`, `next`).
 - `signal` aborts when a new snapshot arrives mid-think. Long search loops should poll `signal.aborted` (or `deadline.expired()`) and bail.
 
@@ -112,7 +114,7 @@ const OTHER: Record<string, string> = { "0": "1", "1": "0" };
 function search(snap, toMove, me, depth, alpha, beta) {
   const r = snap.meta.result;
   if (r?.draw) return 0;
-  if (r?.winner) return r.winner === me ? 10 - depth : depth - 10;
+  if (r?.winner) return r.winner === me ? 10 - depth : depth - 10;  // closer wins score higher
   const moves = ticTacToe.legalActions({ G: snap.G, derived: snap.derived }, toMove);
   if (moves.length === 0) return 0;
   const maxing = toMove === me;
@@ -190,9 +192,11 @@ import { attachHostedBot } from "@openturn/bot";
 const client = createHostedClient({ /* roomID, playerID, getRoomToken */ });
 await client.connect();
 const runner = attachHostedBot({ client, playerID: "1", bot: randomBot, game });
+//   game?: optional. Omit only if your bot ships its own `enumerate` —
+//          without `game`, the runner cannot resolve game.legalActions.
 ```
 
-`simulate` is not available on hosted hosts (`snapshot === null`, calls return `ok: false`). Search-based bots stay in-process on a CLI or sidecar host where the full snapshot is reachable. See https://openturn.io/docs/concepts/bots#cloud-deployment for the supervisor pattern.
+`simulate` is not available on hosted clients (`snapshot === null`, calls return `{ ok: false, reason: "simulate_unavailable_for_host" }` — see `packages/bot/src/runner.ts:114`). Search-based bots stay in-process on a CLI or sidecar host where the full snapshot is reachable. See https://openturn.io/docs/concepts/bots#cloud-deployment for the supervisor pattern.
 
 ## See also
 
