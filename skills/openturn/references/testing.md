@@ -25,7 +25,7 @@ test("rolling above one keeps the turn", () => {
 });
 ```
 
-`applyEvent(playerID, eventName, payload)` returns `{ ok: true, ... }` on success. Always assert `.ok === true` before reading `getState()`, or the test will pass silently when the move is rejected.
+`applyEvent(playerID, eventName, payload)` returns `{ ok: true, ... }` on success. Always assert `.ok === true` before reading `getState()` — otherwise a rejected event leaves `G` unchanged and your downstream assertions read pre-move state, producing confusing "expected 5, got 0" failures with no hint that the dispatch was the culprit.
 
 ## A rejected-move test
 
@@ -71,14 +71,42 @@ test("reaching target score sets the winner", () => {
 
 Sessions are deterministic given the same seed. If the game uses `ctx.rng`, fix the seed via `createLocalSession(game, { match, seed: "test-seed" })`. The same seed plus the same action sequence always produces the same `G`. Default seed is `"default"` (see `packages/core/src/session.ts:116`).
 
+`LocalGameSessionOptions` also accepts `now: number` (default `0`). `now` is the recorded wall time for the initial snapshot — only matters if your game reads `ctx.now` (e.g. for deadline scoring). Pin it explicitly for any test that exercises time-dependent logic.
+
 ## Bot tests
 
-Two complementary patterns:
+Use the integration pattern that the in-tree examples use — `attachLocalBots` plus a `playToCompletion` helper that loops `whenIdle` until `meta.result` is set. Hand-constructing a `DecideContext` to unit-test `decide` directly is possible but rarely worth it: the context has 8 fields including a forked `BotRng`, a `DeadlineToken`, an `AbortSignal`, and a pre-bound `simulate`. Stubbing all of them realistically is more work than just running the bot in a real session.
 
-- **Unit-test `decide`** by passing a hand-built `DecideContext` (`{ G, playerID, legalActions, rng, ... }`) and asserting the chosen action is one of `legalActions`. This catches "bot returns a stale or illegal action" regressions cheaply.
-- **Integration-test** by playing many random-vs-random matches in a loop and asserting every match terminates with `getState().meta.result` set (no infinite games, no deadlocks).
+```ts
+import { attachLocalBots, type Bot } from "@openturn/bot";
+import { createLocalSession } from "@openturn/core";
 
-See `examples/games/tic-tac-toe/bots/src/index.test.ts` and `examples/games/splendor/bots/src/index.test.ts`.
+async function playToCompletion(
+  rawSession: ReturnType<typeof createLocalSession<typeof game, typeof match>>,
+  bots: Record<string, Bot<typeof game>>,
+) {
+  const { session, isBot, whenIdle, detachAll } = attachLocalBots({ session: rawSession, game, bots });
+  for (let i = 0; i < 100; i++) {
+    const snap = session.getState();
+    if (snap.meta.result) break;
+    const active = snap.derived.activePlayers[0]!;
+    if (isBot(active)) await whenIdle(active);
+  }
+  const final = session.getState().meta.result;
+  detachAll();
+  return final;
+}
+
+test("1000 random-vs-random matches terminate", async () => {
+  for (let i = 0; i < 1000; i++) {
+    const session = createLocalSession(game, { match, seed: `match-${i}` });
+    const result = await playToCompletion(session, { "0": randomBot, "1": randomBot });
+    expect(result).not.toBeNull();
+  }
+}, 30_000);
+```
+
+This catches infinite-loop bugs, illegal-action regressions, and deadlock conditions in one suite. See `examples/games/tic-tac-toe/bots/src/index.test.ts` and `examples/games/splendor/bots/src/index.test.ts` for the canonical implementations.
 
 ## See also
 
