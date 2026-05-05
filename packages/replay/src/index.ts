@@ -491,6 +491,12 @@ function parseMatchInput(
     }
   }
 
+  if (match.hostPlayerID !== null && match.hostPlayerID !== undefined) {
+    if (!players.includes(match.hostPlayerID)) {
+      throw new Error(`${label}.hostPlayerID "${match.hostPlayerID}" must appear in ${label}.players.`);
+    }
+  }
+
   return match;
 }
 
