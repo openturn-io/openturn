@@ -654,6 +654,129 @@ describe("@openturn/core", () => {
     });
     expect(session.getState().derived.activePlayers).toEqual(["1"]);
   });
+
+  test("normalizeMatchInput rejects match.config when game declares no schema", () => {
+    expect(() => {
+      createLocalSession(
+        defineGame({
+          playerIDs: ["0", "1"],
+          events: { noop: undefined },
+          initial: "play",
+          setup: () => ({}),
+          states: { play: { activePlayers: () => ["0"] } },
+          transitions: [],
+        }),
+        {
+          match: {
+            players: ["0", "1"] as const,
+            config: { foo: 1 },
+          },
+        },
+      );
+    }).toThrow(InvalidGameDefinitionError);
+  });
+
+  test("normalizeMatchInput fills missing config keys with schema defaults", () => {
+    const session = createLocalSession(
+      defineGame({
+        playerIDs: ["0", "1"],
+        events: { noop: undefined },
+        initial: "play",
+        setup: () => ({}),
+        states: { play: { activePlayers: () => ["0"] } },
+        transitions: [],
+        config: {
+          turnTimeoutMs: { type: "number", default: 30_000, label: "Turn time" },
+          variant: {
+            type: "enum",
+            options: ["a", "b"] as const,
+            default: "a",
+            label: "Variant",
+          },
+        },
+      }),
+      { match: { players: ["0", "1"] as const } },
+    );
+    expect(session.getState().meta.match.config).toEqual({
+      turnTimeoutMs: 30_000,
+      variant: "a",
+    });
+  });
+
+  test("normalizeMatchInput rejects out-of-bounds number", () => {
+    expect(() => {
+      createLocalSession(
+        defineGame({
+          playerIDs: ["0", "1"],
+          events: { noop: undefined },
+          initial: "play",
+          setup: () => ({}),
+          states: { play: { activePlayers: () => ["0"] } },
+          transitions: [],
+          config: {
+            n: { type: "number", default: 5, min: 0, max: 10, label: "N" },
+          },
+        }),
+        { match: { players: ["0", "1"] as const, config: { n: 999 } } },
+      );
+    }).toThrow(InvalidGameDefinitionError);
+  });
+
+  test("normalizeMatchInput rejects unknown enum value", () => {
+    expect(() => {
+      createLocalSession(
+        defineGame({
+          playerIDs: ["0", "1"],
+          events: { noop: undefined },
+          initial: "play",
+          setup: () => ({}),
+          states: { play: { activePlayers: () => ["0"] } },
+          transitions: [],
+          config: {
+            v: { type: "enum", options: ["a", "b"] as const, default: "a", label: "V" },
+          },
+        }),
+        { match: { players: ["0", "1"] as const, config: { v: "c" as never } } },
+      );
+    }).toThrow(InvalidGameDefinitionError);
+  });
+
+  test("normalizeMatchInput rejects unknown config key", () => {
+    expect(() => {
+      createLocalSession(
+        defineGame({
+          playerIDs: ["0", "1"],
+          events: { noop: undefined },
+          initial: "play",
+          setup: () => ({}),
+          states: { play: { activePlayers: () => ["0"] } },
+          transitions: [],
+          config: {
+            n: { type: "number", default: 1, label: "N" },
+          },
+        }),
+        { match: { players: ["0", "1"] as const, config: { n: 1, mystery: 42 } } },
+      );
+    }).toThrow(InvalidGameDefinitionError);
+  });
+
+  test("normalizeMatchInput passes valid config and types flow through", () => {
+    const session = createLocalSession(
+      defineGame({
+        playerIDs: ["0", "1"],
+        events: { noop: undefined },
+        initial: "play",
+        setup: () => ({}),
+        states: { play: { activePlayers: () => ["0"] } },
+        transitions: [],
+        config: {
+          b: { type: "boolean", default: false, label: "B" },
+        },
+      }),
+      { match: { players: ["0", "1"] as const, config: { b: true } } },
+    );
+    expect(session.getState().meta.match.config).toEqual({ b: true });
+  });
 });
 
 describe("DeterministicRng dice helpers", () => {

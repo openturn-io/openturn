@@ -118,6 +118,7 @@ export function createLocalSession<
   const match = hydrateMatchProfiles(
     machine,
     normalizeMatchInput(
+      machine,
       cloneJsonValue(parseJsonValue(options.match, "match")) as unknown as TMatch,
     ),
   );
@@ -163,6 +164,7 @@ export function createLocalSessionFromSnapshot<
   const match = hydrateMatchProfiles(
     machine,
     normalizeMatchInput(
+      machine,
       cloneJsonValue(parseJsonValue(options.match, "match")) as unknown as TMatch,
     ),
   );
