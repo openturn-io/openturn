@@ -48,7 +48,7 @@ import type {
   ProfileDelta,
   ReplayValue,
 } from "./types";
-import { validateGameDefinition } from "./validation";
+import { normalizeMatchInput, validateGameDefinition } from "./validation";
 
 type SnapshotFor<
   TMachine extends AnyGame,
@@ -117,7 +117,9 @@ export function createLocalSession<
   const initialNow = options.now ?? 0;
   const match = hydrateMatchProfiles(
     machine,
-    cloneJsonValue(parseJsonValue(options.match, "match")) as unknown as TMatch,
+    normalizeMatchInput(
+      cloneJsonValue(parseJsonValue(options.match, "match")) as unknown as TMatch,
+    ),
   );
   validateGameDefinition(machine, {
     match,
@@ -160,7 +162,9 @@ export function createLocalSessionFromSnapshot<
   const topology = createGameTopology(machine);
   const match = hydrateMatchProfiles(
     machine,
-    cloneJsonValue(parseJsonValue(options.match, "match")) as unknown as TMatch,
+    normalizeMatchInput(
+      cloneJsonValue(parseJsonValue(options.match, "match")) as unknown as TMatch,
+    ),
   );
   if (options.skipValidation !== true) {
     validateGameDefinition(machine, {

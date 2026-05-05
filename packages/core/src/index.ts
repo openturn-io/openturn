@@ -61,6 +61,7 @@ export {
 export {
   getGameValidationReport,
   InvalidGameDefinitionError,
+  normalizeMatchInput,
   validateGameDefinition,
   type GameValidationCode,
   type GameValidationDiagnostic,

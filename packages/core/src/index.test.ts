@@ -286,7 +286,7 @@ describe("@openturn/core", () => {
     expect(session.getReplayData()).toEqual({
       actions: session.getState().meta.log,
       initialNow: 12,
-      match,
+      match: { ...match, hostPlayerID: null },
       seed: "beta",
     });
     expect(resolveRoundRobinTurn(match.players, 2).currentPlayer).toBe("1");
@@ -620,5 +620,67 @@ describe("DeterministicRng dice helpers", () => {
     expect(a.dice(3, 8)).toBe(b.dice(3, 8));
     expect(a.advantage()).toBe(b.advantage());
     expect(a.disadvantage()).toBe(b.disadvantage());
+  });
+
+  test("rejects MatchInput.hostPlayerID not in players", () => {
+    expect(() => {
+      createLocalSession(
+        defineGame({
+          playerIDs: ["0", "1"],
+          events: { noop: undefined },
+          initial: "play",
+          setup: () => ({}),
+          states: { play: { activePlayers: () => ["0"] } },
+          transitions: [],
+        }),
+        { match: { players: ["0", "1"] as const, hostPlayerID: "carol" as never } },
+      );
+    }).toThrow(InvalidGameDefinitionError);
+  });
+
+  test("rejects single-player MatchInput with non-null hostPlayerID", () => {
+    expect(() => {
+      createLocalSession(
+        defineGame({
+          playerIDs: ["0"],
+          events: { noop: undefined },
+          initial: "play",
+          setup: () => ({}),
+          states: { play: { activePlayers: () => ["0"] } },
+          transitions: [],
+        }),
+        { match: { players: ["0"] as const, hostPlayerID: "0" } },
+      );
+    }).toThrow(InvalidGameDefinitionError);
+  });
+
+  test("normalizes missing MatchInput.hostPlayerID to null", () => {
+    const session = createLocalSession(
+      defineGame({
+        playerIDs: ["0", "1"],
+        events: { noop: undefined },
+        initial: "play",
+        setup: () => ({}),
+        states: { play: { activePlayers: () => ["0"] } },
+        transitions: [],
+      }),
+      { match: { players: ["0", "1"] as const } },
+    );
+    expect(session.getState().meta.match.hostPlayerID).toBe(null);
+  });
+
+  test("preserves valid MatchInput.hostPlayerID", () => {
+    const session = createLocalSession(
+      defineGame({
+        playerIDs: ["0", "1"],
+        events: { noop: undefined },
+        initial: "play",
+        setup: () => ({}),
+        states: { play: { activePlayers: () => ["0"] } },
+        transitions: [],
+      }),
+      { match: { players: ["0", "1"] as const, hostPlayerID: "0" } },
+    );
+    expect(session.getState().meta.match.hostPlayerID).toBe("0");
   });
 });

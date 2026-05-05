@@ -27,6 +27,7 @@ export type GameValidationCode =
   | "initial_non_leaf"
   | "invalid_deadline"
   | "invalid_hierarchy"
+  | "invalid_host_player"
   | "invalid_label"
   | "invalid_metadata"
   | "invalid_player_view"
@@ -37,6 +38,7 @@ export type GameValidationCode =
   | "missing_state"
   | "missing_transition_event"
   | "no_states"
+  | "single_player_host_set"
   | "state_derivation_failed"
   | "structurally_ambiguous_family"
   | "suspicious_initial_activity"
@@ -82,6 +84,36 @@ export class InvalidGameDefinitionError extends Error {
     super(message);
     this.name = "InvalidGameDefinitionError";
   }
+}
+
+/**
+ * Validate and normalize a MatchInput before it enters the runtime.
+ *
+ * - Coerces `hostPlayerID: undefined` to `null` so consumers see a 2-state field.
+ * - Rejects `hostPlayerID` that is not in `match.players`.
+ * - Rejects non-null `hostPlayerID` for single-player matches.
+ *
+ * Throws `InvalidGameDefinitionError` on validation failure. Returns the
+ * normalized match (a shallow copy when normalization changed anything).
+ */
+export function normalizeMatchInput<TMatch extends MatchInput>(match: TMatch): TMatch {
+  const hostPlayerID = match.hostPlayerID ?? null;
+
+  if (hostPlayerID !== null) {
+    if (!(match.players as readonly string[]).includes(hostPlayerID as string)) {
+      throw new InvalidGameDefinitionError(
+        `match.hostPlayerID "${String(hostPlayerID)}" is not in match.players (invalid_host_player)`,
+      );
+    }
+    if (match.players.length === 1) {
+      throw new InvalidGameDefinitionError(
+        `match.hostPlayerID must be null for single-player matches (single_player_host_set)`,
+      );
+    }
+  }
+
+  if (match.hostPlayerID === hostPlayerID) return match;
+  return { ...match, hostPlayerID } as TMatch;
 }
 
 export function getGameValidationReport(
