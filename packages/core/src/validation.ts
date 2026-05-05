@@ -158,13 +158,11 @@ export function normalizeMatchInput<TMatch extends MatchInput>(
   const normalizedHost = match.hostPlayerID === hostPlayerID;
   const sameConfig = match.config === normalizedConfig;
   if (normalizedHost && sameConfig) return match;
-  const next = { ...match, hostPlayerID } as unknown as Record<string, unknown>;
-  if (normalizedConfig === undefined) {
-    delete next.config;
-  } else {
-    next.config = normalizedConfig;
-  }
-  return next as unknown as TMatch;
+  return {
+    ...match,
+    hostPlayerID,
+    ...(normalizedConfig === undefined ? {} : { config: normalizedConfig }),
+  } as TMatch;
 }
 
 function validateConfigValue(key: string, field: ConfigFieldSchema, value: unknown): void {
