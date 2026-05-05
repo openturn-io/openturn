@@ -146,6 +146,19 @@ export const deadline = {
   },
 };
 
+/**
+ * Returns true when `playerID` is the match's host. Returns false when
+ * `match.hostPlayerID` is null (single-player, spectating host, etc.) for
+ * any caller, so it's safe to use as a permission gate.
+ */
+export function isHost(
+  match: { hostPlayerID?: string | null },
+  playerID: string,
+): boolean {
+  const hostPlayerID = match.hostPlayerID ?? null;
+  return hostPlayerID !== null && hostPlayerID === playerID;
+}
+
 export type TurnPlayers<TPlayerID extends string = string> = readonly [TPlayerID, ...TPlayerID[]];
 
 export interface TurnContext<TPlayerID extends string = string> {

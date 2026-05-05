@@ -893,6 +893,7 @@ const MatchInputSchema = z.object({
   data: JsonValueSchema.optional(),
   players: z.array(z.string()).nonempty(),
   profiles: z.record(z.string(), JsonValueSchema).optional(),
+  hostPlayerID: z.string().nullable().optional(),
 });
 
 const RoomPersistenceRecordSchema = z.object({

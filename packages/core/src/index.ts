@@ -48,6 +48,7 @@ export { type DeepReadonly } from "./readonly";
 export {
   createRng,
   deadline,
+  isHost,
   resolveRoundRobinTurn,
   resolveTimeValue,
   roundRobin,
@@ -61,6 +62,7 @@ export {
 export {
   getGameValidationReport,
   InvalidGameDefinitionError,
+  normalizeMatchInput,
   validateGameDefinition,
   type GameValidationCode,
   type GameValidationDiagnostic,

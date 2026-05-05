@@ -64,6 +64,12 @@ export interface UseLocalLobbyChannelOptions<TGame extends AnyGame> {
   onTransitionToGame?: (input: {
     roomID: string;
     assignments: ReadonlyArray<LobbyStartAssignment>;
+    /**
+     * Host's playerID at start (per LobbyRuntime's resolution rule). Null for
+     * single-player, spectating host, or absent host. Consumers writing
+     * MatchInput should pass this through to `match.hostPlayerID`.
+     */
+    hostPlayerID: string | null;
   }) => void;
 }
 
@@ -209,6 +215,7 @@ export function useLocalLobbyChannel<TGame extends AnyGame>(
         onTransitionRef.current?.({
           roomID: LOCAL_ROOM_ID,
           assignments: result.assignments,
+          hostPlayerID: result.hostPlayerID,
         });
       },
       close: () => handleResult(runtime.close(hostUserID), "lobby:close"),

@@ -481,6 +481,22 @@ function parseMatchInput(
     match.data = cloneJsonValue(object.data);
   }
 
+  if (object.hostPlayerID !== undefined) {
+    if (object.hostPlayerID === null) {
+      match.hostPlayerID = null;
+    } else if (typeof object.hostPlayerID === "string") {
+      match.hostPlayerID = object.hostPlayerID;
+    } else {
+      throw new Error(`${label}.hostPlayerID must be a string or null.`);
+    }
+  }
+
+  if (match.hostPlayerID !== null && match.hostPlayerID !== undefined) {
+    if (!players.includes(match.hostPlayerID)) {
+      throw new Error(`${label}.hostPlayerID "${match.hostPlayerID}" must appear in ${label}.players.`);
+    }
+  }
+
   return match;
 }
 

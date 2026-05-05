@@ -84,7 +84,7 @@ export interface LobbyStartAssignment {
 }
 
 export type LobbyStartResult =
-  | { ok: true; assignments: readonly LobbyStartAssignment[] }
+  | { ok: true; assignments: readonly LobbyStartAssignment[]; hostPlayerID: string | null }
   | { ok: false; reason: LobbyRejectionReason };
 
 export interface LobbyDropUserResult {
@@ -426,7 +426,13 @@ export class LobbyRuntime {
         .filter((a): a is LobbyStartAssignment & { userID: string } => a.userID !== null)
         .map((a) => [a.userID, a.playerID]),
     );
-    return { ok: true, assignments };
+
+    const hostPlayerID =
+      assignments.length === 1
+        ? null
+        : (this.#userToPlayer.get(this.env.hostUserID) ?? null);
+
+    return { ok: true, assignments, hostPlayerID };
   }
 
   close(hostUserID: string): LobbyApplyResult {

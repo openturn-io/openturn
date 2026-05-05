@@ -97,6 +97,12 @@ interface InitMeta {
    * Null while the room is still in lobby phase.
    */
   activePlayerIDs: readonly string[] | null;
+  /**
+   * Resolved at `lobby:start` per LobbyRuntime's rule (see lobby-runtime.ts).
+   * Threaded into `match.hostPlayerID` when the room runtime is constructed.
+   * Null pre-start; set permanently at start.
+   */
+  hostPlayerID: string | null;
   websocketURLBase: string | null;
   /**
    * Origin of the openturn-cloud control plane (e.g. "https://openturn.app").
@@ -552,6 +558,7 @@ export function createGameWorker<TGame extends AnyGame>(
         initialTargetCapacity: deploymentMaxPlayers,
         playerIDs: deploymentPlayers,
         activePlayerIDs: null,
+        hostPlayerID: null,
         websocketURLBase: input.websocketURLBase ?? null,
         cloudAPIBase: input.cloudAPIBase ?? null,
       };
@@ -694,7 +701,7 @@ export function createGameWorker<TGame extends AnyGame>(
         .slice()
         .sort((a, b) => a.seatIndex - b.seatIndex)
         .map((a) => a.playerID);
-      meta = { ...meta, activePlayerIDs };
+      meta = { ...meta, activePlayerIDs, hostPlayerID: startResult.hostPlayerID };
       await this.ctx.storage.put(META_KEY, meta);
 
       const issuedAt = Math.floor(Date.now() / 1_000);
@@ -1200,13 +1207,17 @@ export function createGameWorker<TGame extends AnyGame>(
         // yet — e.g. cold-start of the runtime for a room mid-lobby), fall
         // back to the maximal roster.
         const activeDeployment =
-          meta.activePlayerIDs === null || meta.activePlayerIDs.length === meta.maxPlayers
+          meta.activePlayerIDs === null
             ? hydratedDeployment
             : {
                 ...hydratedDeployment,
                 match: {
                   ...(hydratedDeployment.match ?? { players: hydratedDeployment.game.playerIDs }),
-                  players: meta.activePlayerIDs,
+                  players:
+                    meta.activePlayerIDs.length === meta.maxPlayers
+                      ? (hydratedDeployment.match?.players ?? hydratedDeployment.game.playerIDs)
+                      : meta.activePlayerIDs,
+                  hostPlayerID: meta.hostPlayerID,
                 } as NonNullable<typeof hydratedDeployment.match>,
               };
 

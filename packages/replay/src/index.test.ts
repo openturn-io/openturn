@@ -190,5 +190,17 @@ describe("@openturn/replay", () => {
       seed: "seed-1",
       version: 1,
     }))).toThrow('saved replay.actions[0].type must be "event".');
+
+    expect(() => parseSavedReplay(JSON.stringify({
+      actions: [],
+      gameID: "tests/replay-game",
+      initialNow: 0,
+      match: {
+        players: ["0", "1"],
+        hostPlayerID: "99",
+      },
+      seed: "seed-1",
+      version: 1,
+    }))).toThrow('saved replay.match.hostPlayerID "99" must appear in saved replay.match.players.');
   });
 });
