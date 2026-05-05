@@ -48,6 +48,7 @@ export { type DeepReadonly } from "./readonly";
 export {
   createRng,
   deadline,
+  isHost,
   resolveRoundRobinTurn,
   resolveTimeValue,
   roundRobin,

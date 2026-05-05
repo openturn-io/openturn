@@ -8,6 +8,7 @@ import {
   getGameValidationReport,
   getGameControlSummary,
   InvalidGameDefinitionError,
+  isHost,
   rejectTransition,
   resolveRoundRobinTurn,
   roundRobin,
@@ -589,6 +590,33 @@ describe("@openturn/core", () => {
       { match: { players: ["0", "1"] as const, hostPlayerID: "0" } },
     );
     expect(session.getState().meta.match.hostPlayerID).toBe("0");
+  });
+
+  test("isHost returns true only for matching, non-null hostPlayerID", () => {
+    expect(isHost({ players: ["0", "1"] as const, hostPlayerID: "0" }, "0")).toBe(true);
+    expect(isHost({ players: ["0", "1"] as const, hostPlayerID: "0" }, "1")).toBe(false);
+    expect(isHost({ players: ["0", "1"] as const, hostPlayerID: null }, "0")).toBe(false);
+    expect(isHost({ players: ["0", "1"] as const }, "0")).toBe(false);
+  });
+
+  test("state config reads ctx.match.hostPlayerID", () => {
+    const game = defineGame({
+      playerIDs: ["0", "1"],
+      events: { noop: undefined },
+      initial: "play",
+      setup: () => ({}),
+      states: {
+        play: {
+          activePlayers: ({ match: m }) =>
+            m.hostPlayerID !== null ? [m.hostPlayerID] : [],
+        },
+      },
+      transitions: [],
+    });
+    const session = createLocalSession(game, {
+      match: { players: ["0", "1"] as const, hostPlayerID: "1" },
+    });
+    expect(session.getState().derived.activePlayers).toEqual(["1"]);
   });
 });
 
