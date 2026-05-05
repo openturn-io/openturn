@@ -99,6 +99,13 @@ export interface MatchInput<TPlayers extends PlayerList = PlayerList, TMatchData
    * Keys are the seated subset; absent entries use the game's profile default.
    */
   profiles?: Partial<Readonly<PlayerRecord<TPlayers, ReplayValue>>>;
+  /**
+   * The seated player who acted as host of the lobby that started this match.
+   * `null` for single-player matches, when the lobby host was spectating, or
+   * when no host was present at start. Locked at game-start and replayed
+   * verbatim. Game logic accesses via `ctx.match.hostPlayerID`.
+   */
+  hostPlayerID?: TPlayers[number] | null;
 }
 
 /**
