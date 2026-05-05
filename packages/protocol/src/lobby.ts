@@ -58,6 +58,7 @@ export type LobbyRejectionReason =
   | "target_below_min"
   | "target_above_max"
   | "bad_target"
+  | "invalid_config_value"
   | "unknown";
 
 export type LobbyCloseReason = "host_left" | "host_close" | "room_closed";
@@ -107,6 +108,17 @@ export interface LobbySetTargetCapacity {
   targetCapacity: number;
 }
 
+/**
+ * Host-only: change a single config value during the lobby phase. Server
+ * validates against the game's declared schema. Successful sets un-ready all
+ * human seats so players must re-confirm before the host can start.
+ */
+export interface LobbySetConfig {
+  type: "host:set_config";
+  key: string;
+  value: unknown; // JsonValue at runtime; protocol-layer is permissive
+}
+
 export type LobbyClientMessage =
   | LobbyTakeSeat
   | LobbyLeaveSeat
@@ -115,7 +127,8 @@ export type LobbyClientMessage =
   | LobbyClose
   | LobbyAssignBot
   | LobbyClearSeat
-  | LobbySetTargetCapacity;
+  | LobbySetTargetCapacity
+  | LobbySetConfig;
 
 export interface LobbyStateMessage {
   type: "lobby:state";
@@ -136,6 +149,15 @@ export interface LobbyStateMessage {
   canStart: boolean;
   /** Catalog of bots available for assignment in this room. May be empty. */
   availableBots: readonly LobbyAvailableBot[];
+  /**
+   * Current host-mutable config values. Present only when the game declares a
+   * config schema; absent otherwise. Locked into `match.config` at lobby:start.
+   * Schema is part of the deployment manifest the client already loads — only
+   * values flow on this wire.
+   */
+  config?: {
+    values: Readonly<Record<string, unknown>>;
+  };
 }
 
 export interface LobbyRejectedMessage {
@@ -143,6 +165,13 @@ export interface LobbyRejectedMessage {
   reason: LobbyRejectionReason;
   echoType?: LobbyClientMessage["type"];
   message?: string;
+  /** Present when reason === "invalid_config_value". The field key the client tried to set. */
+  configKey?: string;
+  /**
+   * Present when reason === "invalid_config_value". Human-readable detail —
+   * e.g. "below_min: 5000", "expected_number", "not_in_options: foo".
+   */
+  configDetail?: string;
 }
 
 /**
@@ -249,6 +278,11 @@ export const LobbyClientMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("lobby:set_target_capacity"),
     targetCapacity: z.number().int().positive(),
   }),
+  z.object({
+    type: z.literal("host:set_config"),
+    key: z.string().min(1),
+    value: z.unknown(),
+  }),
 ]);
 
 export const LobbyStateMessageSchema = z.object({
@@ -262,6 +296,11 @@ export const LobbyStateMessageSchema = z.object({
   targetCapacity: z.number().int().nonnegative(),
   canStart: z.boolean(),
   availableBots: z.array(LobbyAvailableBotSchema).default([]),
+  config: z
+    .object({
+      values: z.record(z.string(), z.unknown()),
+    })
+    .optional(),
 });
 
 export const LobbyRejectedMessageSchema = z.object({
@@ -283,6 +322,7 @@ export const LobbyRejectedMessageSchema = z.object({
     "target_below_min",
     "target_above_max",
     "bad_target",
+    "invalid_config_value",
     "unknown",
   ] satisfies readonly LobbyRejectionReason[]),
   echoType: z
@@ -295,9 +335,12 @@ export const LobbyRejectedMessageSchema = z.object({
       "lobby:assign_bot",
       "lobby:clear_seat",
       "lobby:set_target_capacity",
+      "host:set_config",
     ])
     .optional(),
   message: z.string().optional(),
+  configKey: z.string().optional(),
+  configDetail: z.string().optional(),
 });
 
 export const LobbyPlayerAssignmentSchema = z.object({
