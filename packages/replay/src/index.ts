@@ -481,6 +481,16 @@ function parseMatchInput(
     match.data = cloneJsonValue(object.data);
   }
 
+  if (object.hostPlayerID !== undefined) {
+    if (object.hostPlayerID === null) {
+      match.hostPlayerID = null;
+    } else if (typeof object.hostPlayerID === "string") {
+      match.hostPlayerID = object.hostPlayerID;
+    } else {
+      throw new Error(`${label}.hostPlayerID must be a string or null.`);
+    }
+  }
+
   return match;
 }
 
