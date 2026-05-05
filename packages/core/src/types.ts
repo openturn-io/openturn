@@ -42,6 +42,58 @@ export type ProfilePathSegment = string | number;
 export type ProfilePath = readonly ProfilePathSegment[];
 export type ProfilePathInput = ProfilePath | ProfilePathSegment;
 
+// ---- Config schema (match-shape settings agreed in the lobby) ----
+
+export interface NumberFieldSchema {
+  type: "number";
+  default: number;
+  min?: number;
+  max?: number;
+  /** UI hint only; not validated server-side. */
+  step?: number;
+  label: string;
+  description?: string;
+}
+
+export interface BooleanFieldSchema {
+  type: "boolean";
+  default: boolean;
+  label: string;
+  description?: string;
+}
+
+export interface EnumFieldSchema<TOption extends string = string> {
+  type: "enum";
+  options: readonly [TOption, ...TOption[]];
+  default: TOption;
+  /** Per-option display labels. Keys default to the option string when omitted. */
+  labels?: Partial<Record<TOption, string>>;
+  label: string;
+  description?: string;
+}
+
+export type ConfigFieldSchema =
+  | NumberFieldSchema
+  | BooleanFieldSchema
+  | EnumFieldSchema;
+
+export type ConfigSchema = Record<string, ConfigFieldSchema>;
+
+/**
+ * Inferred values shape from a config schema. Each field's value type is
+ * derived from its declared `type` discriminator.
+ */
+export type ConfigValuesOf<TConfig extends ConfigSchema | undefined> =
+  TConfig extends ConfigSchema
+    ? {
+        [K in keyof TConfig]:
+          TConfig[K] extends NumberFieldSchema ? number :
+          TConfig[K] extends BooleanFieldSchema ? boolean :
+          TConfig[K] extends EnumFieldSchema<infer TOption> ? TOption :
+          never;
+      }
+    : Record<string, ReplayValue>;
+
 export type ProfileOp =
   | { op: "set"; path: ProfilePath; value: ReplayValue }
   | { op: "inc"; path: ProfilePath; value: number }
