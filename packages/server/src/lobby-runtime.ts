@@ -669,17 +669,7 @@ function computeInitialConfigValues(
 }
 
 function isValueValidForField(value: unknown, field: ConfigFieldSchema): boolean {
-  if (field.type === "number") {
-    if (typeof value !== "number" || !Number.isFinite(value)) return false;
-    if (field.min !== undefined && value < field.min) return false;
-    if (field.max !== undefined && value > field.max) return false;
-    return true;
-  }
-  if (field.type === "boolean") return typeof value === "boolean";
-  if (field.type === "enum") {
-    return typeof value === "string" && (field.options as readonly string[]).includes(value);
-  }
-  return false;
+  return validationDetail(field, value) === null;
 }
 
 function validationDetail(field: ConfigFieldSchema, value: unknown): string | null {
