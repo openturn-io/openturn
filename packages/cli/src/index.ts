@@ -1480,47 +1480,45 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
         return;
       }
 
-      // For variable-capacity games, filter the running game's `match.players`
-      // down to the seated subset. Without this, an N-of-M lobby would still
-      // run the game with M players — leaving M-N never-going turns and
-      // never-rendered tableaus. Mirrors the cloud worker's behavior in
-      // `packages/server/src/worker.ts` (search for `activePlayerIDs`).
+      // Always recreate the runtime at lobby:start so the running game reflects
+      // the seated subset and the resolved hostPlayerID. This mirrors the cloud
+      // worker's lazy-recreate-on-first-ws pattern (see worker.ts). Previously
+      // recreation only happened for variable-capacity matches; now it's
+      // unconditional so full-capacity matches also pick up hostPlayerID.
       const activePlayerIDs = startResult.assignments
         .slice()
         .sort((a, b) => a.seatIndex - b.seatIndex)
         .map((a) => a.playerID);
-      const gamePlayerIDs = (currentDeployment.game as { playerIDs: readonly [string, ...string[]] }).playerIDs;
-      const maxPlayers = gamePlayerIDs.length;
-      if (activePlayerIDs.length < maxPlayers) {
-        const filteredMatch = {
-          players: activePlayerIDs as unknown as readonly [string, ...string[]],
-        };
-        const startNow = Date.now();
-        const startSeed = `${ws.data.roomID}:seed`;
-        const filteredRuntime = await createRoomRuntime({
-          deployment: deploymentWithMatch(filteredMatch as GameDeployment["match"]),
-          initialNow: startNow,
-          onSaveRequest: saveHandler,
-          persistence: roomPersistence,
-          // Skip restoring the prior persisted snapshot — it was made with the
-          // maximal player roster from room creation, which no longer matches.
-          restorePersistedState: false,
-          roomID: ws.data.roomID,
-          seed: startSeed,
-        });
-        roomRuntimes.set(ws.data.roomID, Promise.resolve(filteredRuntime));
-        const filteredState = filteredRuntime.getState();
-        await roomPersistence.save({
-          branch: filteredState.branch,
-          checkpoint: filteredState.snapshot,
-          deploymentVersion: currentDeployment.deploymentVersion,
-          initialNow: startNow,
-          log: filteredState.snapshot.log,
-          match: filteredMatch,
-          roomID: ws.data.roomID,
-          seed: startSeed,
-        });
-      }
+      const startMatch = {
+        players: activePlayerIDs as unknown as readonly [string, ...string[]],
+        hostPlayerID: startResult.hostPlayerID,
+      };
+      const startNow = Date.now();
+      const startSeed = `${ws.data.roomID}:seed`;
+      const startedRuntime = await createRoomRuntime({
+        deployment: deploymentWithMatch(startMatch as GameDeployment["match"]),
+        initialNow: startNow,
+        onSaveRequest: saveHandler,
+        persistence: roomPersistence,
+        // Skip restoring the prior persisted snapshot — it was made at room
+        // creation before the lobby resolved seats and the host. After start,
+        // the runtime must reflect the seated subset and resolved hostPlayerID.
+        restorePersistedState: false,
+        roomID: ws.data.roomID,
+        seed: startSeed,
+      });
+      roomRuntimes.set(ws.data.roomID, Promise.resolve(startedRuntime));
+      const startedState = startedRuntime.getState();
+      await roomPersistence.save({
+        branch: startedState.branch,
+        checkpoint: startedState.snapshot,
+        deploymentVersion: currentDeployment.deploymentVersion,
+        initialNow: startNow,
+        log: startedState.snapshot.log,
+        match: startMatch,
+        roomID: ws.data.roomID,
+        seed: startSeed,
+      });
 
       const issuedAt = Math.floor(Date.now() / 1_000);
       const baseWsURL = `${url.replace(/^http/, "ws")}/rooms/${ws.data.roomID}/connect`;
