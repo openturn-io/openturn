@@ -1,3 +1,4 @@
+import type { ConfigFieldSchema, ConfigSchema } from "@openturn/core";
 import type {
   LobbyAvailableBot,
   LobbyClientMessage,
@@ -38,6 +39,12 @@ export interface LobbyEnv {
    * bot-vs-bot matches.
    */
   requireHumanSeat?: boolean;
+  /**
+   * Optional config schema declared by the game. When present, the lobby
+   * initializes `#configValues` with each field's default and accepts
+   * `setConfig` mutations. When absent, `setConfig` rejects everything.
+   */
+  configSchema?: ConfigSchema;
 }
 
 export interface LobbyAvailableBotInfo {
@@ -67,6 +74,13 @@ export interface LobbyPersistedState {
   userToPlayer: Readonly<Record<string, string>>;
   /** Effective capacity at persistence time. Restored on rehydrate. */
   targetCapacity?: number;
+  /**
+   * Config values at persistence time. Present only when the env declared a
+   * `configSchema`; absent otherwise. On rehydrate, each persisted value is
+   * re-validated against the field schema and falls back to the field default
+   * if the schema has changed shape since the room was last persisted.
+   */
+  configValues?: Readonly<Record<string, unknown>>;
 }
 
 export type LobbyApplyResult =
@@ -107,6 +121,7 @@ export class LobbyRuntime {
   #seats: Map<number, SeatRecord>;
   #userToPlayer: Map<string, string>;
   #targetCapacity: number;
+  #configValues: Record<string, unknown>;
 
   constructor(env: LobbyEnv, persisted?: LobbyPersistedState) {
     this.env = env;
@@ -116,6 +131,10 @@ export class LobbyRuntime {
       env.maxPlayers,
     );
     this.#targetCapacity = initialTarget;
+    this.#configValues = computeInitialConfigValues(
+      env.configSchema,
+      persisted?.configValues,
+    );
     if (persisted === undefined) {
       this.#mode = "lobby";
       this.#seats = new Map();
@@ -156,6 +175,9 @@ export class LobbyRuntime {
       seats: [...this.#seats.values()].sort((a, b) => a.seatIndex - b.seatIndex),
       userToPlayer: Object.fromEntries(this.#userToPlayer),
       targetCapacity: this.#targetCapacity,
+      ...(this.env.configSchema === undefined
+        ? {}
+        : { configValues: { ...this.#configValues } }),
     };
   }
 
@@ -492,6 +514,9 @@ export class LobbyRuntime {
       targetCapacity: this.#targetCapacity,
       canStart,
       availableBots: buildAvailableBots(this.env.knownBots),
+      ...(this.env.configSchema === undefined
+        ? {}
+        : { config: { values: { ...this.#configValues } } }),
     };
   }
 }
@@ -548,4 +573,35 @@ function buildAvailableBots(
     });
   }
   return out;
+}
+
+function computeInitialConfigValues(
+  schema: ConfigSchema | undefined,
+  persisted: Readonly<Record<string, unknown>> | undefined,
+): Record<string, unknown> {
+  if (schema === undefined) return {};
+  const result: Record<string, unknown> = {};
+  for (const [key, field] of Object.entries(schema)) {
+    const fromPersisted = persisted?.[key];
+    if (fromPersisted !== undefined && isValueValidForField(fromPersisted, field)) {
+      result[key] = fromPersisted;
+    } else {
+      result[key] = field.default;
+    }
+  }
+  return result;
+}
+
+function isValueValidForField(value: unknown, field: ConfigFieldSchema): boolean {
+  if (field.type === "number") {
+    if (typeof value !== "number" || !Number.isFinite(value)) return false;
+    if (field.min !== undefined && value < field.min) return false;
+    if (field.max !== undefined && value > field.max) return false;
+    return true;
+  }
+  if (field.type === "boolean") return typeof value === "boolean";
+  if (field.type === "enum") {
+    return typeof value === "string" && (field.options as readonly string[]).includes(value);
+  }
+  return false;
 }
