@@ -91,6 +91,8 @@ export {
   type GameBatch,
   type GameControlMeta,
   type GameControlMetadataEntry,
+  type GameConfigSchemaOf,
+  type GameConfigValuesOf,
   type GameControlState,
   type GameControlSummary,
   type GameDefinition,

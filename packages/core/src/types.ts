@@ -150,7 +150,11 @@ export type GameEventArgsTuple<TEvents extends GameEventMap, TKind extends keyof
  * (`minPlayers`, full pool) lives on `GameDefinition`, not here. `players` is
  * a non-empty subset of the game's declared pool, validated at session start.
  */
-export interface MatchInput<TPlayers extends PlayerList = PlayerList, TMatchData = ReplayValue> {
+export interface MatchInput<
+  TPlayers extends PlayerList = PlayerList,
+  TMatchData = ReplayValue,
+  TConfigValues = Record<string, ReplayValue>,
+> {
   data?: TMatchData;
   /** Seated players for this match, a non-empty subset of the game's `playerIDs`. */
   players: readonly [TPlayers[number], ...TPlayers[number][]];
@@ -168,6 +172,12 @@ export interface MatchInput<TPlayers extends PlayerList = PlayerList, TMatchData
    * verbatim. Game logic accesses via `ctx.match.hostPlayerID`.
    */
   hostPlayerID?: TPlayers[number] | null;
+  /**
+   * Match-shape settings agreed in the lobby and locked at game-start. Game
+   * code reads via `ctx.match.config` and may use or override per-state.
+   * Shape is inferred from the game's `config` schema declaration.
+   */
+  config?: TConfigValues;
 }
 
 /**
@@ -479,6 +489,7 @@ export interface GameDefinition<
   TControl extends ReplayValue = ReplayValue,
   TTransitions extends readonly GameTransitionConfig<TState, TEvents, TResult, TNode, TPlayers, TControl>[] =
     readonly GameTransitionConfig<TState, TEvents, TResult, TNode, TPlayers, TControl>[],
+  TConfig extends ConfigSchema | undefined = ConfigSchema | undefined,
 > {
   events: { readonly [TKind in keyof TEvents & string]: TEvents[TKind] };
   initial: TNode;
@@ -525,6 +536,12 @@ export interface GameDefinition<
    * context's `result` type without a cast.
    */
   profile?: GameProfileInput<TPlayers, TResult>;
+  /**
+   * Optional declarative config schema. Lobby renders a host-mutable settings
+   * form from this; values are locked into `match.config` at game-start. See
+   * `superpowers/specs/2026-05-06-lobby-config-system-design.md`.
+   */
+  config?: TConfig;
   selectors?: GameSelectorMap<TState, TNode, TPlayers, TControl>;
   setup: (context: SetupContext<TPlayers>) => TState;
   states: Record<TNode, GameStateConfig<TState, TNode, TPlayers, TControl>>;
@@ -532,44 +549,49 @@ export interface GameDefinition<
   views?: GameViews<TState, TPublic, TPlayer, TNode, TPlayers, TControl>;
 }
 
-export type AnyGame = GameDefinition<any, any, any, any, any, any, any, any, any>;
+export type AnyGame = GameDefinition<any, any, any, any, any, any, any, any, any, any>;
 
 export type GameStateOf<TMachine extends AnyGame> = ReturnType<TMachine["setup"]>;
 
 export type GamePlayers<TMachine extends AnyGame> =
-  TMachine extends GameDefinition<any, any, any, infer TPlayers, any, any, any, any, any> ? TPlayers : PlayerList;
+  TMachine extends GameDefinition<any, any, any, infer TPlayers, any, any, any, any, any, any> ? TPlayers : PlayerList;
 
 /** Union of player IDs the game can seat. Equivalent to `GamePlayers<TGame>[number]`. */
 export type PlayerIDOf<TMachine extends AnyGame> = GamePlayers<TMachine>[number];
 
 export type GameNodes<TMachine extends AnyGame> =
-  TMachine extends GameDefinition<any, any, any, any, infer TNode, any, any, any, any> ? TNode : string;
+  TMachine extends GameDefinition<any, any, any, any, infer TNode, any, any, any, any, any> ? TNode : string;
 
 export type GameControlState<TMachine extends AnyGame> =
-  TMachine extends GameDefinition<any, any, any, any, any, any, any, infer TControl, any> ? TControl : unknown;
+  TMachine extends GameDefinition<any, any, any, any, any, any, any, infer TControl, any, any> ? TControl : unknown;
 
 export type GameResultState<TMachine extends AnyGame> =
-  TMachine extends GameDefinition<any, any, infer TResult, any, any, any, any, any, any> ? TResult | null : never;
+  TMachine extends GameDefinition<any, any, infer TResult, any, any, any, any, any, any, any> ? TResult | null : never;
 
 export type GameSnapshotOf<TMachine extends AnyGame> =
-  TMachine extends GameDefinition<any, any, any, infer TPlayers, infer TNode, any, any, infer TControl, any>
+  TMachine extends GameDefinition<any, any, any, infer TPlayers, infer TNode, any, any, infer TControl, any, any>
     ? GameSnapshot<GameStateOf<TMachine>, GameResultState<TMachine>, TNode, MatchInput<TPlayers>, TControl>
     : never;
 
 export type GameRuleContextOf<TMachine extends AnyGame> =
-  TMachine extends GameDefinition<any, any, any, infer TPlayers, infer TNode, any, any, infer TControl, any>
+  TMachine extends GameDefinition<any, any, any, infer TPlayers, infer TNode, any, any, infer TControl, any, any>
     ? GameRuleContext<GameStateOf<TMachine>, TNode, TPlayers, TControl>
     : never;
 
 export type GamePlayerView<TMachine extends AnyGame> =
-  TMachine extends GameDefinition<any, any, any, infer TPlayers, infer TNode, any, infer TPlayer, infer TControl, any>
+  TMachine extends GameDefinition<any, any, any, infer TPlayers, infer TNode, any, infer TPlayer, infer TControl, any, any>
     ? TPlayer extends never ? GameSnapshot<any, any, TNode, MatchInput<TPlayers>, TControl>["G"] : TPlayer
     : never;
 
 export type GamePublicView<TMachine extends AnyGame> =
-  TMachine extends GameDefinition<any, any, any, infer TPlayers, infer TNode, infer TPublic, any, infer TControl, any>
+  TMachine extends GameDefinition<any, any, any, infer TPlayers, infer TNode, infer TPublic, any, infer TControl, any, any>
     ? TPublic extends never ? GameSnapshot<any, any, TNode, MatchInput<TPlayers>, TControl>["G"] : TPublic
     : never;
+
+export type GameConfigSchemaOf<TMachine extends AnyGame> =
+  TMachine extends GameDefinition<any, any, any, any, any, any, any, any, any, infer TConfig> ? TConfig : undefined;
+
+export type GameConfigValuesOf<TMachine extends AnyGame> = ConfigValuesOf<GameConfigSchemaOf<TMachine>>;
 
 export type GameTransitionTargets<TMachine extends AnyGame> = TransitionNames<TMachine["transitions"]>;
 
