@@ -497,6 +497,13 @@ function parseMatchInput(
     }
   }
 
+  if (object.config !== undefined) {
+    if (typeof object.config !== "object" || object.config === null || Array.isArray(object.config)) {
+      throw new Error(`${label}.config must be an object.`);
+    }
+    match.config = cloneJsonValue(object.config) as Record<string, ReplayValue>;
+  }
+
   return match;
 }
 
