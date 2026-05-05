@@ -384,3 +384,54 @@ describe("LobbyRuntime — buildStateMessage availableBots", () => {
     ]);
   });
 });
+
+describe("LobbyRuntime.start() — hostPlayerID resolution", () => {
+  test("multiplayer with seated host returns host's playerID", () => {
+    const runtime = new LobbyRuntime(env());
+    runtime.takeSeat(HOST, "Host", 0);
+    runtime.takeSeat(BOB, "Bob", 1);
+    runtime.setReady(HOST, true);
+    runtime.setReady(BOB, true);
+    const result = runtime.start(HOST);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.hostPlayerID).toBe("0");
+  });
+
+  test("multiplayer with spectating host returns null", () => {
+    const runtime = new LobbyRuntime(env());
+    // Host does not take a seat — only ALICE and BOB.
+    runtime.takeSeat(ALICE, "Alice", 0);
+    runtime.takeSeat(BOB, "Bob", 1);
+    runtime.setReady(ALICE, true);
+    runtime.setReady(BOB, true);
+    const result = runtime.start(HOST);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.hostPlayerID).toBe(null);
+  });
+
+  test("single-player session returns null even when host is seated", () => {
+    const runtime = new LobbyRuntime(env({ minPlayers: 1, maxPlayers: 1, playerIDs: ["0"] }));
+    runtime.takeSeat(HOST, "Host", 0);
+    runtime.setReady(HOST, true);
+    const result = runtime.start(HOST);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.hostPlayerID).toBe(null);
+  });
+
+  test("host had a seat but freed it before start returns null", () => {
+    const runtime = new LobbyRuntime(env());
+    runtime.takeSeat(HOST, "Host", 0);
+    runtime.takeSeat(BOB, "Bob", 1);
+    runtime.leaveSeat(HOST);
+    runtime.takeSeat(ALICE, "Alice", 0);
+    runtime.setReady(ALICE, true);
+    runtime.setReady(BOB, true);
+    const result = runtime.start(HOST);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.hostPlayerID).toBe(null);
+  });
+});
