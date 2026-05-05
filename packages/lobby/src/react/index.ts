@@ -24,3 +24,11 @@ export type { UseLocalLobbyChannelOptions } from "./use-local-lobby";
 
 export { useBotAttachOnTransition } from "./use-bot-attach";
 export type { UseBotAttachOnTransitionOptions } from "./use-bot-attach";
+
+export {
+  ConfigForm,
+  type ConfigFieldRenderer,
+  type ConfigFieldRendererProps,
+  type ConfigFormProps,
+  type ConfigRenderers,
+} from "./config-form";
