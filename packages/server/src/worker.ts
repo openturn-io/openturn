@@ -6,7 +6,7 @@ import {
   resolveBotMapFromSeats,
   type BotRegistryShape,
 } from "./bot-driver";
-import type { AnyGame, PlayerID } from "@openturn/core";
+import type { AnyGame, ConfigSchema, PlayerID } from "@openturn/core";
 import {
   isLobbyClientMessageText,
   parseLobbyClientMessageText,
@@ -103,6 +103,12 @@ interface InitMeta {
    * Null pre-start; set permanently at start.
    */
   hostPlayerID: string | null;
+  /**
+   * Resolved at `lobby:start` from `LobbyRuntime.start()`. Threaded into
+   * `match.config` when the room runtime is constructed. `null` pre-start or
+   * when the game declares no config schema.
+   */
+  config: Readonly<Record<string, unknown>> | null;
   websocketURLBase: string | null;
   /**
    * Origin of the openturn-cloud control plane (e.g. "https://openturn.app").
@@ -559,6 +565,7 @@ export function createGameWorker<TGame extends AnyGame>(
         playerIDs: deploymentPlayers,
         activePlayerIDs: null,
         hostPlayerID: null,
+        config: null,
         websocketURLBase: input.websocketURLBase ?? null,
         cloudAPIBase: input.cloudAPIBase ?? null,
       };
@@ -571,6 +578,7 @@ export function createGameWorker<TGame extends AnyGame>(
       if (this.#lobby !== null) return this.#lobby;
 
       const persisted = await this.ctx.storage.get<LobbyPersistedState>(LOBBY_KEY);
+      const gameConfigSchema = (erasedDeployment.game as { config?: ConfigSchema }).config;
       const env = {
         hostUserID: meta.hostUserID,
         minPlayers: meta.minPlayers,
@@ -579,6 +587,7 @@ export function createGameWorker<TGame extends AnyGame>(
         playerIDs: meta.playerIDs,
         ...(deploymentKnownBots === null ? {} : { knownBots: deploymentKnownBots }),
         requireHumanSeat: true,
+        ...(gameConfigSchema === undefined ? {} : { configSchema: gameConfigSchema }),
       };
       const runtime = new LobbyRuntime(env, persisted);
       // Enforce "disconnect frees seat": any user without a live lobby WS
@@ -701,7 +710,12 @@ export function createGameWorker<TGame extends AnyGame>(
         .slice()
         .sort((a, b) => a.seatIndex - b.seatIndex)
         .map((a) => a.playerID);
-      meta = { ...meta, activePlayerIDs, hostPlayerID: startResult.hostPlayerID };
+      meta = {
+        ...meta,
+        activePlayerIDs,
+        hostPlayerID: startResult.hostPlayerID,
+        config: startResult.config?.values ?? null,
+      };
       await this.ctx.storage.put(META_KEY, meta);
 
       const issuedAt = Math.floor(Date.now() / 1_000);
@@ -1218,6 +1232,7 @@ export function createGameWorker<TGame extends AnyGame>(
                       ? (hydratedDeployment.match?.players ?? hydratedDeployment.game.playerIDs)
                       : meta.activePlayerIDs,
                   hostPlayerID: meta.hostPlayerID,
+                  ...(meta.config === null ? {} : { config: meta.config }),
                 } as NonNullable<typeof hydratedDeployment.match>,
               };
 
