@@ -318,19 +318,31 @@ export interface LobbyProps {
    *   when `lobby.configValues` is non-null. Disabled inputs for non-host
    *   viewers; host inputs dispatch `setConfig` on change.
    * - `"none"`: never render the settings section. The host has no in-lobby
-   *   way to mutate config; defaults from the schema apply.
-   * - `"manual"`: reserved for future external rendering. Currently behaves
-   *   the same as `"none"`.
+   *   way to mutate config; defaults from the schema apply. Embedders that
+   *   want to render their own settings UI can use `"none"` and mount the
+   *   exported `<ConfigForm>` (or a custom equivalent) themselves.
    */
-  configUI?: "auto" | "manual" | "none";
+  configUI?: "auto" | "none";
   /**
    * Game's declared config schema. Required for `configUI === "auto"` to
    * render anything.
    */
   configSchema?: ConfigSchema;
   /**
-   * Per-key custom field renderers. Falls back to `<ConfigForm>`'s built-in
-   * default renderers when a key is not present here.
+   * Per-field React render overrides. Type-safe construction via:
+   *
+   *     import type { ConfigRenderers } from "@openturn/lobby/react";
+   *     const renderers: ConfigRenderers<typeof myGame.config> = {
+   *       turnTimeoutMs: (props) => <CustomTimer {...props} />,
+   *     };
+   *     <LobbyWithBots configRenderers={renderers} ... />
+   *
+   * Constructing the map with `ConfigRenderers<TSchema>` gives compile-time
+   * checks that each renderer's `value` type matches its field's declared
+   * type. The prop here accepts the wider `Record<string,
+   * ConfigFieldRenderer<any, any>>` to avoid making the Lobby component
+   * itself generic over the schema. Falls back to `<ConfigForm>`'s built-in
+   * default renderers when a key is not present.
    */
   configRenderers?: Record<string, ConfigFieldRenderer<any, any>>;
 }
