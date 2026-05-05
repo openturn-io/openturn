@@ -19,6 +19,9 @@ import {
   type LobbyStateMessage,
   type LobbyTransitionToGameMessage,
 } from "@openturn/protocol";
+import type { ConfigSchema } from "@openturn/core";
+
+import { ConfigForm, type ConfigFieldRenderer } from "./config-form";
 
 export type LobbyChannelStatus =
   | "idle"
@@ -49,6 +52,12 @@ export interface LobbyChannelHandle {
    * maxPlayers]`. Lowering evicts seats whose `seatIndex >= targetCapacity`.
    */
   setTargetCapacity: (targetCapacity: number) => void;
+  /**
+   * Host-only: set a single config value during the lobby phase. The server
+   * validates the value against the game's declared schema and un-readies all
+   * human seats on success.
+   */
+  setConfig: (key: string, value: unknown) => void;
   disconnect: () => void;
 }
 
@@ -189,6 +198,7 @@ export function useLobbyChannel(
       clearSeat: (seatIndex) => send({ type: "lobby:clear_seat", seatIndex }),
       setTargetCapacity: (targetCapacity) =>
         send({ type: "lobby:set_target_capacity", targetCapacity }),
+      setConfig: (key, value) => send({ type: "host:set_config", key, value }),
       disconnect,
     }),
     [closedReason, disconnect, error, lastRejection, send, state, status, transition],
@@ -222,6 +232,12 @@ export interface LobbyView {
   assignBot: (seatIndex: number, botID: string) => void;
   clearSeat: (seatIndex: number) => void;
   setTargetCapacity: (targetCapacity: number) => void;
+  /**
+   * Current host-mutable config values. `null` when the game declares no
+   * config schema. Locked into `match.config` at lobby:start.
+   */
+  configValues: Readonly<Record<string, unknown>> | null;
+  setConfig: (key: string, value: unknown) => void;
 }
 
 export function buildLobbyView(input: {
@@ -278,6 +294,8 @@ export function buildLobbyView(input: {
     assignBot: input.channel.assignBot,
     clearSeat: input.channel.clearSeat,
     setTargetCapacity: input.channel.setTargetCapacity,
+    configValues: state?.config?.values ?? null,
+    setConfig: input.channel.setConfig,
   };
 }
 
@@ -292,6 +310,29 @@ function emptySeats(capacity: number): readonly LobbySeat[] {
 export interface LobbyProps {
   lobby: LobbyView;
   title?: string;
+  /**
+   * How (and whether) to render the host-mutable config UI above the seat
+   * list. Defaults to `"none"` for back-compat — apps must opt in.
+   *
+   * - `"auto"`: render the built-in `<ConfigForm>` driven by `configSchema`
+   *   when `lobby.configValues` is non-null. Disabled inputs for non-host
+   *   viewers; host inputs dispatch `setConfig` on change.
+   * - `"none"`: never render the settings section. The host has no in-lobby
+   *   way to mutate config; defaults from the schema apply.
+   * - `"manual"`: reserved for future external rendering. Currently behaves
+   *   the same as `"none"`.
+   */
+  configUI?: "auto" | "manual" | "none";
+  /**
+   * Game's declared config schema. Required for `configUI === "auto"` to
+   * render anything.
+   */
+  configSchema?: ConfigSchema;
+  /**
+   * Per-key custom field renderers. Falls back to `<ConfigForm>`'s built-in
+   * default renderers when a key is not present here.
+   */
+  configRenderers?: Record<string, ConfigFieldRenderer<any, any>>;
 }
 
 export interface LobbySeatButtonProps {
@@ -467,6 +508,28 @@ export function LobbyShell(props: LobbyProps & {
           {describeLobbyStatus(lobby)}
         </p>
       </header>
+
+      {props.configUI === "auto"
+      && props.configSchema !== undefined
+      && lobby.configValues !== null ? (
+        <details
+          className="openturn-lobby__config rounded border border-slate-200 p-3 dark:border-slate-800"
+          open={lobby.isHost}
+        >
+          <summary className="cursor-pointer text-sm font-medium">Settings</summary>
+          <div className="pt-2">
+            <ConfigForm
+              schema={props.configSchema}
+              values={lobby.configValues}
+              disabled={!lobby.isHost}
+              onChange={lobby.setConfig}
+              {...(props.configRenderers === undefined
+                ? {}
+                : { renderers: props.configRenderers })}
+            />
+          </div>
+        </details>
+      ) : null}
 
       <RoundTable
         lobby={lobby}
@@ -721,6 +784,12 @@ function describeRejection(rejection: LobbyRejectedMessage): string {
       return "Capacity can't exceed the game's maximum players.";
     case "bad_target":
       return "That capacity isn't valid.";
+    case "invalid_config_value":
+      return rejection.configKey !== undefined && rejection.configDetail !== undefined
+        ? `Invalid config for "${rejection.configKey}": ${rejection.configDetail}`
+        : rejection.configKey !== undefined
+          ? `Invalid config for "${rejection.configKey}".`
+          : "Invalid config value.";
     case "unknown":
       return rejection.message ?? "The lobby rejected your request.";
   }

@@ -237,6 +237,8 @@ export function useLocalLobbyChannel<TGame extends AnyGame>(
           runtime.setTargetCapacity(hostUserID, targetCapacity),
           "lobby:set_target_capacity",
         ),
+      setConfig: (key, value) =>
+        handleResult(runtime.setConfig(hostUserID, key, value), "host:set_config"),
       disconnect: () => {
         setStatus("closed");
       },

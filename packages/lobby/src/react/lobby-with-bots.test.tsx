@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { cleanup, fireEvent, render, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 
 afterEach(() => {
   cleanup();
@@ -44,6 +44,8 @@ function makeView(overrides: Partial<LobbyView> = {}): LobbyView {
     assignBot: vi.fn(),
     clearSeat: vi.fn(),
     setTargetCapacity: vi.fn(),
+    configValues: null,
+    setConfig: vi.fn(),
     ...overrides,
   };
 }
@@ -169,5 +171,54 @@ describe("<LobbyWithBots />", () => {
     const slot = document.querySelector('[data-seat-index="0"][data-seat-kind="open"]') as HTMLElement;
     const takeBtn = within(slot).getByRole("button", { name: /take seat/i });
     expect((takeBtn as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test("configUI=auto renders settings section when schema and values present", () => {
+    const view = makeView({
+      configValues: { n: 5 },
+      setConfig: vi.fn(),
+    });
+    render(
+      <LobbyWithBots
+        lobby={view}
+        configUI="auto"
+        configSchema={{ n: { type: "number", default: 1, label: "N" } }}
+      />,
+    );
+    expect(screen.getByText("Settings")).toBeTruthy();
+    expect(screen.getByLabelText("N")).toBeTruthy();
+  });
+
+  test("configUI=none does not render settings section even with schema", () => {
+    const view = makeView({
+      configValues: { n: 5 },
+      setConfig: vi.fn(),
+    });
+    render(
+      <LobbyWithBots
+        lobby={view}
+        configUI="none"
+        configSchema={{ n: { type: "number", default: 1, label: "N" } }}
+      />,
+    );
+    expect(screen.queryByText("Settings")).toBeNull();
+  });
+
+  test("non-host viewer sees disabled inputs in auto mode", () => {
+    const view = makeView({
+      isHost: false,
+      configValues: { n: 5 },
+      setConfig: vi.fn(),
+    });
+    render(
+      <LobbyWithBots
+        lobby={view}
+        configUI="auto"
+        configSchema={{ n: { type: "number", default: 1, label: "N" } }}
+      />,
+    );
+    // The <details> is collapsed by default for non-hosts; expand it to assert.
+    fireEvent.click(screen.getByText("Settings"));
+    expect((screen.getByLabelText("N") as HTMLInputElement).disabled).toBe(true);
   });
 });
