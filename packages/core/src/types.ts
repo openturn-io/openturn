@@ -1044,6 +1044,7 @@ export function defineGame<
     TControl
   > | undefined,
   TPlayers extends PlayerList = DefaultPlayerIDsBound<TMaxPlayers>,
+  const TConfig extends ConfigSchema | undefined = undefined,
 >(
   machine: {
     maxPlayers: TMaxPlayers;
@@ -1060,6 +1061,7 @@ export function defineGame<
       transition: AuthoredTransitionDefinitionFactory<TState, TEvents, keyof TStates & string, TPlayers, any>;
     }) => TTransitions;
     views?: TViews;
+    config?: TConfig;
   } & JsonCompatibilityChecks<TState, PublicViewFrom<TViews, TState>, PlayerViewFrom<TViews, TState>, AuthoredTransitionsResult<TTransitions>>,
 ): GameDefinition<
   TState,
@@ -1077,7 +1079,8 @@ export function defineGame<
     keyof TStates & string,
     TPlayers,
     TControl
-  >[]
+  >[],
+  TConfig
 >;
 export function defineGame<
   const TMaxPlayers extends number,
@@ -1102,6 +1105,7 @@ export function defineGame<
     TControl
   > | undefined,
   TPlayers extends PlayerList = DefaultPlayerIDsBound<TMaxPlayers>,
+  const TConfig extends ConfigSchema | undefined = undefined,
 >(
   machine: {
     maxPlayers: TMaxPlayers;
@@ -1116,6 +1120,7 @@ export function defineGame<
     };
     transitions: TTransitions;
     views?: TViews;
+    config?: TConfig;
   } & JsonCompatibilityChecks<TState, PublicViewFrom<TViews, TState>, PlayerViewFrom<TViews, TState>, TransitionResultFrom<TTransitions>>,
 ): GameDefinition<
   TState,
@@ -1126,7 +1131,8 @@ export function defineGame<
   PublicViewFrom<TViews, TState>,
   PlayerViewFrom<TViews, TState>,
   TControl,
-  TTransitions
+  TTransitions,
+  TConfig
 >;
 // ---- playerIDs form (named seats; opt-in) ----
 export function defineGame<
@@ -1144,6 +1150,7 @@ export function defineGame<
     TPlayers,
     TControl
   > | undefined,
+  const TConfig extends ConfigSchema | undefined = undefined,
 >(
   machine: {
     playerIDs: TPlayers;
@@ -1161,6 +1168,7 @@ export function defineGame<
       transition: AuthoredTransitionDefinitionFactory<TState, TEvents, keyof TStates & string, TPlayers, any>;
     }) => TTransitions;
     views?: TViews;
+    config?: TConfig;
   } & JsonCompatibilityChecks<TState, PublicViewFrom<TViews, TState>, PlayerViewFrom<TViews, TState>, AuthoredTransitionsResult<TTransitions>>,
 ): GameDefinition<
   TState,
@@ -1178,7 +1186,8 @@ export function defineGame<
     keyof TStates & string,
     TPlayers,
     TControl
-  >[]
+  >[],
+  TConfig
 >;
 export function defineGame<
   const TPlayers extends PlayerList,
@@ -1202,6 +1211,7 @@ export function defineGame<
     TPlayers,
     TControl
   > | undefined,
+  const TConfig extends ConfigSchema | undefined = undefined,
 >(
   machine: {
     playerIDs: TPlayers;
@@ -1217,6 +1227,7 @@ export function defineGame<
     };
     transitions: TTransitions;
     views?: TViews;
+    config?: TConfig;
   } & JsonCompatibilityChecks<TState, PublicViewFrom<TViews, TState>, PlayerViewFrom<TViews, TState>, TransitionResultFrom<TTransitions>>,
 ): GameDefinition<
   TState,
@@ -1227,7 +1238,8 @@ export function defineGame<
   PublicViewFrom<TViews, TState>,
   PlayerViewFrom<TViews, TState>,
   TControl,
-  TTransitions
+  TTransitions,
+  TConfig
 >;
 export function defineGame<
   TState,
@@ -1246,6 +1258,7 @@ export function defineGame<
     TPlayers,
     TControl
   >[] = readonly GameTransitionConfig<TState, TEvents, TResult, TNode, TPlayers, TControl>[],
+  const TConfig extends ConfigSchema | undefined = undefined,
 >(
   machine: Omit<GameDefinition<
     TState,
@@ -1256,7 +1269,8 @@ export function defineGame<
     TPublic,
     TPlayer,
     TControl,
-    TTransitions
+    TTransitions,
+    TConfig
   >, "minPlayers"> & { minPlayers?: number } & JsonCompatibilityChecks<TState, TPublic, TPlayer, TResult>,
 ): GameDefinition<
   TState,
@@ -1267,7 +1281,8 @@ export function defineGame<
   TPublic,
   TPlayer,
   TControl,
-  TTransitions
+  TTransitions,
+  TConfig
 >;
 export function defineGame(
   machine: Record<string, any>,

@@ -2,9 +2,11 @@ import { describe, expect, test } from "bun:test";
 
 import {
   compileGameGraph,
+  type ConfigSchema,
   createLocalSession,
   createRng,
   defineGame,
+  type GameConfigValuesOf,
   getGameValidationReport,
   getGameControlSummary,
   InvalidGameDefinitionError,
@@ -13,6 +15,40 @@ import {
   resolveRoundRobinTurn,
   roundRobin,
 } from "./index";
+
+// ---- Type-level smoke test: defineGame must thread TConfig through so that
+// GameConfigValuesOf<typeof game> reflects the literal field types of the
+// declared config schema (rather than collapsing to Record<string, ReplayValue>).
+{
+  const _game = defineGame({
+    playerIDs: ["0", "1"] as const,
+    events: { noop: undefined },
+    initial: "play",
+    setup: () => ({}),
+    states: { play: { activePlayers: () => ["0"] } },
+    transitions: [],
+    config: {
+      x: { type: "number", default: 5, label: "X" },
+      v: { type: "enum", options: ["a", "b"] as const, default: "a", label: "V" },
+    } as const satisfies ConfigSchema,
+  });
+
+  type V = GameConfigValuesOf<typeof _game>;
+
+  // These assignments must compile cleanly. If TConfig widens, the rhs types
+  // collapse and these will fail.
+  const _x: V["x"] = 1 as number;
+  const _v: V["v"] = "a" as "a" | "b";
+  // Negative check: a generic `string` must NOT be assignable to V["v"] when
+  // TConfig is correctly threaded through (the field should narrow to the
+  // literal union "a" | "b"). If TConfig widens, V["v"] becomes string and
+  // this @ts-expect-error stops firing — failing the typecheck.
+  // @ts-expect-error - V["v"] must be narrowed to "a" | "b", not string.
+  const _vBad: V["v"] = "wrong" as string;
+  void _x;
+  void _v;
+  void _vBad;
+}
 
 const match = {
   players: ["0", "1"] as const,
