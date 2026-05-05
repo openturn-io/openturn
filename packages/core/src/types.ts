@@ -82,6 +82,16 @@ export type ConfigSchema = Record<string, ConfigFieldSchema>;
 /**
  * Inferred values shape from a config schema. Each field's value type is
  * derived from its declared `type` discriminator.
+ *
+ * Authors should write the schema with `as const satisfies ConfigSchema` so
+ * enum option literals stay narrow:
+ *
+ *     defineGame({ config: {
+ *       variant: { type: "enum", options: ["a", "b"] as const, default: "a", label: "V" },
+ *     } });
+ *
+ * Without `as const` on the options tuple, `variant` would infer as `string`
+ * instead of `"a" | "b"` and the Custom-render override types would break.
  */
 export type ConfigValuesOf<TConfig extends ConfigSchema | undefined> =
   TConfig extends ConfigSchema
