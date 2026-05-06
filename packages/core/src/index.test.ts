@@ -1023,4 +1023,99 @@ describe("turn-timer enforcement (core)", () => {
     session.fireTimeout(2_000);
     expect(session.getState().position.name).toBe("done");
   });
+
+  test("validation rejects transition with both event and kind", () => {
+    expect(() => {
+      createLocalSession(
+        defineGame({
+          playerIDs: ["0", "1"],
+          events: { foo: undefined },
+          initial: "play",
+          setup: () => ({}),
+          states: { play: { activePlayers: () => ["0"] } },
+          transitions: [
+            { event: "foo", kind: "timeout" as const, from: "play", to: "play" } as never,
+          ],
+        } as never),
+        { match: { players: ["0", "1"] as const } },
+      );
+    }).toThrow(InvalidGameDefinitionError);
+  });
+
+  test("validation rejects timeout transition with from referencing unknown state", () => {
+    expect(() => {
+      createLocalSession(
+        defineGame({
+          playerIDs: ["0", "1"],
+          events: { noop: undefined },
+          initial: "play",
+          setup: () => ({}),
+          states: { play: { activePlayers: () => ["0"] } },
+          transitions: [
+            { kind: "timeout" as const, from: "ghost", to: "play" } as never,
+          ],
+        } as never),
+        { match: { players: ["0", "1"] as const } },
+      );
+    }).toThrow(InvalidGameDefinitionError);
+  });
+
+  test("validation rejects timeout transition with to referencing unknown state", () => {
+    expect(() => {
+      createLocalSession(
+        defineGame({
+          playerIDs: ["0", "1"],
+          events: { noop: undefined },
+          initial: "play",
+          setup: () => ({}),
+          states: { play: { activePlayers: () => ["0"] } },
+          transitions: [
+            { kind: "timeout" as const, from: "play", to: "ghost" } as never,
+          ],
+        } as never),
+        { match: { players: ["0", "1"] as const } },
+      );
+    }).toThrow(InvalidGameDefinitionError);
+  });
+
+  test("validation rejects ambiguous timeout transitions at definition time", () => {
+    expect(() => {
+      createLocalSession(
+        defineGame({
+          playerIDs: ["0", "1"],
+          events: { noop: undefined },
+          initial: "play",
+          setup: () => ({}),
+          states: { play: { activePlayers: () => ["0"] } },
+          transitions: [
+            { kind: "timeout" as const, from: "play", to: "play", resolve: () => null },
+            { kind: "timeout" as const, from: "play", to: "play", resolve: () => null },
+          ],
+        }),
+        { match: { players: ["0", "1"] as const } },
+      );
+    }).toThrow(InvalidGameDefinitionError);
+  });
+
+  test("validation accepts a well-formed timeout transition", () => {
+    // Should not throw.
+    createLocalSession(
+      defineGame({
+        playerIDs: ["0", "1"],
+        events: { noop: undefined },
+        initial: "play",
+        setup: () => ({}),
+        states: {
+          play: {
+            activePlayers: () => ["0"],
+            deadline: 1_000,
+          },
+        },
+        transitions: [
+          { kind: "timeout" as const, from: "play", to: "play", resolve: () => null },
+        ],
+      }),
+      { match: { players: ["0", "1"] as const } },
+    );
+  });
 });

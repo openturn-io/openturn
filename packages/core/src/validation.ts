@@ -39,6 +39,7 @@ export type GameValidationCode =
   | "invalid_selector"
   | "invalid_setup_state"
   | "invalid_state_control"
+  | "invalid_transition_shape"
   | "missing_state"
   | "missing_transition_event"
   | "no_states"
@@ -263,6 +264,7 @@ export function getGameValidationReport(
 
   const outgoingByState = new Map<string, number>();
   const familyIndex = new Map<string, AnyGame["transitions"][number][]>();
+  const timeoutByFrom = new Map<string, number>();
 
   for (const transition of machine.transitions) {
     // Discriminated union: a `kind: "timeout"` transition has no `event` field
@@ -272,6 +274,45 @@ export function getGameValidationReport(
     // them.
     const isTimeoutTransition =
       "kind" in transition && (transition as { kind?: unknown }).kind === "timeout";
+    const hasEvent =
+      "event" in transition && typeof (transition as { event?: unknown }).event === "string";
+
+    if (isTimeoutTransition && hasEvent) {
+      pushDiagnostic({
+        code: "invalid_transition_shape",
+        hint: "A timeout transition is dispatched by the timeout firing path, not by a named event. Drop one of the two fields.",
+        message: `Transition from "${transition.from}" to "${transition.to}" has both "event" and "kind: 'timeout'". Use one or the other.`,
+        severity: "error",
+        from: transition.from,
+        to: transition.to,
+      });
+    }
+
+    if (isTimeoutTransition && !stateNames.has(transition.from)) {
+      pushDiagnostic({
+        code: "invalid_transition_shape",
+        hint: "Timeout transitions must reference a state declared on the machine.",
+        message: `Timeout transition "from" references unknown state "${transition.from}" (target "${transition.to}").`,
+        severity: "error",
+        from: transition.from,
+        to: transition.to,
+      });
+    }
+
+    if (isTimeoutTransition && !stateNames.has(transition.to)) {
+      pushDiagnostic({
+        code: "invalid_transition_shape",
+        hint: "Timeout transitions must reference a state declared on the machine.",
+        message: `Timeout transition "to" references unknown state "${transition.to}" (source "${transition.from}").`,
+        severity: "error",
+        from: transition.from,
+        to: transition.to,
+      });
+    }
+
+    if (isTimeoutTransition) {
+      timeoutByFrom.set(transition.from, (timeoutByFrom.get(transition.from) ?? 0) + 1);
+    }
 
     if (!stateNames.has(transition.from)) {
       pushDiagnostic({
@@ -332,6 +373,18 @@ export function getGameValidationReport(
     const family = familyIndex.get(familyKey) ?? [];
     family.push(transition);
     familyIndex.set(familyKey, family);
+  }
+
+  for (const [from, count] of timeoutByFrom) {
+    if (count > 1) {
+      pushDiagnostic({
+        code: "invalid_transition_shape",
+        hint: "A state can declare at most one timeout transition; resolve the choice inside its resolver instead.",
+        message: `Multiple timeout transitions declared from state "${from}". Only one is allowed per state.`,
+        severity: "error",
+        from,
+      });
+    }
   }
 
   for (const [familyKey, family] of familyIndex) {

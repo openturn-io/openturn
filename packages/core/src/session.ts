@@ -543,10 +543,13 @@ type TransitionMatcher<TMachine extends AnyGame, TMatch extends MatchInput<GameP
  * Walks the active state's `path` from leaf to root and returns the most-
  * specific `kind: "timeout"` transition whose `from` matches a node in that
  * path, or `undefined` if none exists. Mirrors the parent-fallback search the
- * event dispatch uses in {@link applySingleEvent}: at each level, if exactly
- * one timeout transition matches we select it; if more than one matches at
- * the same level we throw — same ambiguity policy as authored event
- * transitions, since by the time we're firing the host can't recover.
+ * event dispatch uses in {@link applySingleEvent}.
+ *
+ * Definition-time validation (`invalid_transition_shape` in validation.ts)
+ * rejects games that declare more than one timeout transition from the same
+ * `from` source, so this lookup will only ever see zero or one match per
+ * level. The `> 1` branch below is kept as defense-in-depth in case a session
+ * is ever constructed without running validation first.
  */
 function findTimeoutTransition<TMachine extends AnyGame>(
   machine: TMachine,
