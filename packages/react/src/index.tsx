@@ -1603,6 +1603,28 @@ function useHostedRoom<
     },
   );
 
+  // Emit the current snapshot's controlMeta.deadline through the bridge
+  // whenever it changes. The shell's <TurnCountdown> reads via host.deadline
+  // and re-renders on `deadline-changed`. The bridge's iframe-side dedupe
+  // (game.setDeadline) means it's safe to call on every render — only
+  // genuinely changed values produce a postMessage.
+  const matchSnapshot = (gameMatch as {
+    snapshot?: { derived?: { controlMeta?: { deadline?: number | null } } };
+  }).snapshot;
+  const currentDeadline = matchSnapshot?.derived?.controlMeta?.deadline ?? null;
+  useEffect(() => {
+    if (backend === null) return;
+    backend.setDeadline(currentDeadline);
+  }, [backend, currentDeadline]);
+
+  // Hygiene: clear any pinned deadline on unmount so the shell stops counting
+  // down a stale value if the provider is torn down outside a normal match end.
+  useEffect(() => {
+    return () => {
+      if (backend !== null) backend.setDeadline(null);
+    };
+  }, [backend]);
+
   return useMemo<HostedRoomState<TGame, TPublicState, TResult>>(() => {
     if (backend === null) {
       return {
