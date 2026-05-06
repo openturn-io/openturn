@@ -7,41 +7,11 @@ import {
   type SplendorPlayerView,
 } from "@openturn/example-splendor-game";
 import { type HostedRoomState } from "@openturn/react";
-import { LobbyWithBots, type ConfigRenderers } from "@openturn/lobby/react";
+import { LobbyWithBots } from "@openturn/lobby/react";
 
 import { splendorBindings } from "../bindings";
 import { GameOverDialog } from "./GameOverDialog";
 import { Table } from "./Table";
-
-const splendorConfigRenderers: ConfigRenderers<typeof splendor.config> = {
-  turnTimeoutMs: ({ value, schema, disabled, onChange }) => {
-    const seconds = Math.round(value / 1000);
-    const minSeconds = Math.round((schema.min ?? 0) / 1000);
-    const maxSeconds = Math.round((schema.max ?? 0) / 1000);
-    return (
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="flex items-baseline justify-between gap-2">
-          <span>{schema.label}</span>
-          <span className="font-mono text-xs tabular-nums text-stone-700">{seconds}s</span>
-        </span>
-        <input
-          type="range"
-          min={schema.min}
-          max={schema.max}
-          step={schema.step}
-          value={value}
-          disabled={disabled}
-          onChange={(event) => onChange(Number(event.target.value))}
-          className="w-full"
-        />
-        <span className="flex justify-between text-[10px] tabular-nums text-stone-500">
-          <span>{minSeconds}s</span>
-          <span>{maxSeconds}s</span>
-        </span>
-      </label>
-    );
-  },
-};
 
 const { OpenturnProvider, useRoom } = splendorBindings;
 
@@ -81,7 +51,6 @@ function SplendorRoom() {
             title="Splendor"
             configUI="auto"
             configSchema={splendor.config}
-            configRenderers={splendorConfigRenderers}
           />
         </div>
       </section>

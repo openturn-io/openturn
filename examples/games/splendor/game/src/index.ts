@@ -376,7 +376,8 @@ export const splendor = defineGame({
       max: 300_000,
       step: 5_000,
       label: "Turn time",
-      description: "Per-turn deadline in milliseconds. Players who don't act in time get a random legal action played for them.",
+      description: "Per-turn deadline. Players who don't act in time get a random legal action played for them.",
+      format: (ms: number) => `${Math.round(ms / 1000)}s`,
     },
   } as const satisfies ConfigSchema,
 
