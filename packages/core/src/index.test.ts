@@ -777,6 +777,67 @@ describe("@openturn/core", () => {
     );
     expect(session.getState().meta.match.config).toEqual({ b: true });
   });
+
+  test("applyEvent advances meta.now to wall-clock dispatch instant", () => {
+    const game = defineGame({
+      playerIDs: ["0", "1"],
+      events: { tap: undefined },
+      initial: "play",
+      setup: () => ({}),
+      states: {
+        play: {
+          activePlayers: ({ match }) => [match.players[0]],
+          deadline: ({ now }) => now + 10_000,
+        },
+      },
+      transitions: [
+        { event: "tap", from: "play", to: "play" },
+      ],
+    });
+    const session = createLocalSession(game, {
+      match: { players: ["0", "1"] as const },
+      now: 1_000,
+    });
+    expect(session.getNextDeadline()).toBe(11_000);
+    expect(session.getState().meta.now).toBe(1_000);
+
+    const before = Date.now();
+    const result = session.applyEvent("0", "tap");
+    expect(result.ok).toBe(true);
+    const after = Date.now();
+    const advanced = session.getState().meta.now;
+    expect(advanced).toBeGreaterThanOrEqual(before);
+    expect(advanced).toBeLessThanOrEqual(after);
+    // Deadline tracks wall-clock — every turn gets a fresh window.
+    expect(session.getNextDeadline()).toBe(advanced + 10_000);
+  });
+
+  test("applyEventAt stamps action with the provided wall-clock instant (replay determinism)", () => {
+    const game = defineGame({
+      playerIDs: ["0", "1"],
+      events: { tap: undefined },
+      initial: "play",
+      setup: () => ({}),
+      states: {
+        play: {
+          activePlayers: ({ match }) => [match.players[0]],
+          deadline: ({ now }) => now + 10_000,
+        },
+      },
+      transitions: [
+        { event: "tap", from: "play", to: "play" },
+      ],
+    });
+    const session = createLocalSession(game, {
+      match: { players: ["0", "1"] as const },
+      now: 1_000,
+    });
+    const result = session.applyEventAt("0", "tap", 5_000);
+    expect(result.ok).toBe(true);
+    expect(session.getState().meta.now).toBe(5_000);
+    expect(session.getNextDeadline()).toBe(15_000);
+    expect(session.getState().meta.log[0]?.at).toBe(5_000);
+  });
 });
 
 describe("DeterministicRng dice helpers", () => {

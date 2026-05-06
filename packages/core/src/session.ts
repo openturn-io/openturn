@@ -38,6 +38,7 @@ import type {
   GameSnapshot,
   GameStateConfig,
   GameStateContext,
+  GameSuccessResult,
   GameTransitionCandidateEvaluation,
   GameTransitionConfig,
   GameTransitionFamilyEvaluation,
@@ -248,9 +249,12 @@ function buildLocalSession<
   const { seed, initialNow, match } = inputs;
   let snapshot = inputs.snapshot;
 
-  const applyEvent: LocalGameSession<TMachine, TMatch>["applyEvent"] = (playerID, event, ...payloadArgs) => {
-    const payload = payloadArgs[0];
-
+  const applyEventInternal = (
+    playerID: PlayerID,
+    event: string,
+    payload: unknown,
+    at: number,
+  ): GameErrorResult | GameSuccessResult<TMachine> => {
     if (snapshot.meta.result !== null) {
       return { ok: false, error: "game_over" as const };
     }
@@ -271,17 +275,30 @@ function buildLocalSession<
       return { ok: false, error: "non_serializable_args" as const };
     }
 
-    const actionID = createNextActionID(snapshot.meta.log);
+    // Stamp the action with the dispatch instant and hop the in-flight
+    // snapshot's `meta.now` forward so any state-context evaluation during
+    // this dispatch (e.g. `state.deadline = ctx => ctx.now + N`) reflects
+    // wall-clock at THIS event, not at session creation. Without this, every
+    // event would be timestamped at `initialNow` and per-state `deadline`
+    // recomputations would be frozen at game-start, causing a single global
+    // window instead of per-turn windows. See `applyEventAt` for replays
+    // that need to inject a recorded `at`.
+    const advancedSnapshot = {
+      ...snapshot,
+      meta: { ...snapshot.meta, now: at },
+    };
+
+    const actionID = createNextActionID(advancedSnapshot.meta.log);
     const externalRecord = {
       actionID,
-      at: snapshot.meta.now,
+      at,
       event,
       payload: normalizePayload(payload),
       playerID,
-      turn: snapshot.position.turn,
+      turn: advancedSnapshot.position.turn,
       type: "event",
     } as unknown as GameActionRecordFor<TMachine["events"], TMatch["players"][number]>;
-    const batch = applyEventBatch(machine, topology, snapshot, externalRecord, [
+    const batch = applyEventBatch(machine, topology, advancedSnapshot, externalRecord, [
       (
         payload === undefined
           ? { kind: event }
@@ -298,6 +315,19 @@ function buildLocalSession<
       ok: true,
       batch,
     };
+  };
+
+  const applyEvent: LocalGameSession<TMachine, TMatch>["applyEvent"] = (playerID, event, ...payloadArgs) => {
+    return applyEventInternal(playerID as PlayerID, event as string, payloadArgs[0], Date.now());
+  };
+
+  const applyEventAt: LocalGameSession<TMachine, TMatch>["applyEventAt"] = (
+    playerID,
+    event,
+    at,
+    ...payloadArgs
+  ) => {
+    return applyEventInternal(playerID as PlayerID, event as string, payloadArgs[0], at);
   };
 
   const dispatch = Object.fromEntries(
@@ -376,6 +406,7 @@ function buildLocalSession<
 
   return {
     applyEvent,
+    applyEventAt,
     dispatch,
     fireTimeout,
     getGraph() {

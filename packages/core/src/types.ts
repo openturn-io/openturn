@@ -864,6 +864,20 @@ export interface LocalGameSession<
     ...payload: GameEventArgsTuple<TMachine["events"], TKind>
   ): GameErrorResult | GameSuccessResult<TMachine>;
   /**
+   * Like {@link applyEvent} but stamps the action record with an explicit
+   * wall-clock instant `at` (and hops the snapshot's `meta.now` to that
+   * value) instead of `Date.now()`. Used by the replay materializer to
+   * preserve determinism — recorded `at` values are fed back in so any
+   * state-context evaluation that reads `ctx.now` produces identical
+   * results across replay runs. Live callers should use {@link applyEvent}.
+   */
+  applyEventAt<TKind extends keyof TMachine["events"] & string>(
+    playerID: TMatch["players"][number],
+    event: TKind,
+    at: number,
+    ...payload: GameEventArgsTuple<TMachine["events"], TKind>
+  ): GameErrorResult | GameSuccessResult<TMachine>;
+  /**
    * The wall-clock instant at which the host should fire the next
    * `kind: "timeout"` transition, or `null` when the active state has no
    * deadline. Mirrors `getState().derived.controlMeta.deadline`. Hosts compare

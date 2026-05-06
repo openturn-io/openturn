@@ -191,14 +191,17 @@ export function materializeReplay<TGame extends AnyGame>(
     }
 
     const payload = action.payload === null ? undefined : cloneJsonValue(action.payload);
-    const applyEvent = session.applyEvent as (
+    // Pass the recorded `at` so replay determinism holds — live applyEvent
+    // stamps `Date.now()` which would diverge across replay runs.
+    const applyEventAt = session.applyEventAt as (
       playerID: typeof action.playerID,
       event: typeof action.event,
+      at: number,
       payload?: unknown,
     ) => ReturnType<typeof session.applyEvent>;
     const replayResult = payload === undefined
-      ? applyEvent(action.playerID, action.event)
-      : applyEvent(action.playerID, action.event, payload);
+      ? applyEventAt(action.playerID, action.event, action.at)
+      : applyEventAt(action.playerID, action.event, action.at, payload);
 
     if (!replayResult.ok) {
       throw new Error(`Failed to replay action ${action.event}: ${replayResult.error}`);
