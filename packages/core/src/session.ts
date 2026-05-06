@@ -394,9 +394,14 @@ function buildLocalSession<
 
     if (isErrorResult(batch)) {
       // Timeout dispatch produced no observable error path for callers — the
-      // host fired and we silently log nothing on internal failure (e.g.,
-      // ambiguous timeout family). A future revision may surface this; for
-      // now align with the spec's "fire and forget" stance.
+      // host fires-and-forgets. We log the error so production rooms that
+      // get stuck mid-timeout (e.g. a buggy resolver returning a malformed
+      // event input, or an ambiguous timeout family that slipped past
+      // validation in a `skipValidation` path) leave a diagnostic trail
+      // instead of silently no-op'ing forever.
+      console.warn(
+        `[openturn:fireTimeout] timeout dispatch failed at state "${String(snapshot.position.name)}": ${batch.error}`,
+      );
       return null;
     }
 
