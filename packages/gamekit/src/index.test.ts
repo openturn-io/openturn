@@ -283,3 +283,164 @@ describe("@openturn/gamekit", () => {
     expect(evaluation.applied.map((modifier) => modifier.id)).toEqual(["double", "bonus"]);
   });
 });
+
+describe("phase.onTimeout", () => {
+  test("returning a moves dispatch executes that move's logic", () => {
+    const game = defineGame({
+      maxPlayers: 2,
+      moves: ({ move }) => ({
+        place: move<{ value: number }>({
+          run({ args, move }) {
+            return move.stay({ last: args.value });
+          },
+        }),
+      }),
+      phases: {
+        play: {
+          deadline: () => 1_000,
+          onTimeout: (_ctx, moves) => moves.place({ value: 42 }),
+        },
+      },
+      setup: () => ({ last: 0 }),
+    });
+    const session = createLocalSession(game, {
+      match: { players: ["0", "1"] as const },
+      now: 0,
+    });
+    session.fireTimeout(2_000);
+    expect(session.getState().G.last).toBe(42);
+  });
+
+  test("returning { kind: 'finish' } ends the game", () => {
+    const game = defineGame({
+      maxPlayers: 2,
+      moves: () => ({}),
+      phases: {
+        play: {
+          deadline: () => 1_000,
+          onTimeout: () => ({ kind: "finish" as const, result: { winner: "0" } }),
+        },
+      },
+      setup: () => ({}),
+    });
+    const session = createLocalSession(game, {
+      match: { players: ["0", "1"] as const },
+      now: 0,
+    });
+    session.fireTimeout(2_000);
+    expect(session.getState().position.name).toBe("__gamekit_finished");
+  });
+
+  test("returning null no-ops", () => {
+    const game = defineGame({
+      maxPlayers: 2,
+      moves: () => ({}),
+      phases: {
+        play: {
+          deadline: () => 1_000,
+          onTimeout: () => null,
+        },
+      },
+      setup: () => ({ count: 0 }),
+    });
+    const session = createLocalSession(game, {
+      match: { players: ["0", "1"] as const },
+      now: 0,
+    });
+    session.fireTimeout(2_000);
+    expect(session.getState().G.count).toBe(0);
+    expect(session.getState().position.name).toBe("play");
+  });
+
+  test("phase with deadline but no onTimeout: game stalls", () => {
+    // A move is required to keep `__gamekit_finished` reachable (gamekit's
+    // existing graph-validity rule). It's never invoked here — only its
+    // synthesized finish transition matters for reachability.
+    const game = defineGame({
+      maxPlayers: 2,
+      moves: ({ move }) => ({
+        noop: move({
+          run({ move: m, player }) {
+            return m.finish({ winner: player.id });
+          },
+        }),
+      }),
+      phases: {
+        play: {
+          deadline: () => 1_000,
+        },
+      },
+      setup: () => ({}),
+    });
+    const session = createLocalSession(game, {
+      match: { players: ["0", "1"] as const },
+      now: 0,
+    });
+    session.fireTimeout(2_000);
+    expect(session.getState().position.name).toBe("play");
+  });
+
+  test("phase with onTimeout but no deadline emits validation warning", () => {
+    expect(() => {
+      defineGame({
+        maxPlayers: 2,
+        moves: () => ({}),
+        phases: {
+          play: {
+            onTimeout: () => null,
+          },
+        },
+        setup: () => ({}),
+      });
+    }).toThrow(/onTimeout.*deadline/i);
+  });
+
+  test("multi-phase: each phase's onTimeout is independent", () => {
+    // Two phases each with their own deadline + onTimeout. Firing the timer
+    // while in phase A invokes A's handler and transitions to phase B; firing
+    // while in phase B invokes B's handler and finishes.
+    const game = defineGame({
+      maxPlayers: 2,
+      moves: ({ move }) => ({
+        toB: move({
+          phases: ["a"],
+          run({ move }) {
+            return move.goto("b");
+          },
+        }),
+        finishB: move({
+          phases: ["b"],
+          run({ move, player }) {
+            return move.finish({ winner: player.id });
+          },
+        }),
+      }),
+      initialPhase: "a",
+      phases: {
+        a: {
+          deadline: () => 1_000,
+          onTimeout: (_ctx, moves) => moves.toB(),
+        },
+        b: {
+          deadline: () => 1_000,
+          onTimeout: () => ({ kind: "finish" as const, result: { winner: "1" } }),
+        },
+      },
+      setup: () => ({}),
+    });
+
+    const session = createLocalSession(game, {
+      match: { players: ["0", "1"] as const },
+      now: 0,
+    });
+
+    expect(session.getState().position.name).toBe("a");
+    session.fireTimeout(2_000);
+    // Phase A's handler dispatched `toB`, which goto's to phase "b".
+    expect(session.getState().position.name).toBe("b");
+
+    session.fireTimeout(4_000);
+    // Phase B's handler returned `{ kind: "finish" }`, which finalizes.
+    expect(session.getState().position.name).toBe("__gamekit_finished");
+  });
+});

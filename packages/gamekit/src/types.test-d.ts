@@ -11,6 +11,7 @@ import type { GamePlayers, GameStateOf } from "@openturn/core";
 import { expectTypeOf } from "expect-type";
 
 import { defineGame, turn } from "./index";
+import type { BoundPhaseMoves, GamekitMoveDefinition } from "./index";
 
 // ---- maxPlayers form derives `playerIDs` from the literal capacity ----
 const ttt = defineGame({
@@ -86,3 +87,52 @@ const counter = defineGame({
 // View return types ride through to the compiled definition.
 expectTypeOf(counter.views!.public!).returns.toEqualTypeOf<CounterPublic>();
 expectTypeOf(counter.views!.player!).returns.toEqualTypeOf<CounterPlayer>();
+
+// ---- BoundPhaseMoves works with explicit TMoves ----
+type ManualMove = GamekitMoveDefinition<
+  { last: number },
+  Record<string, never>,
+  { x: number },
+  "play",
+  ["0", "1"],
+  never,
+  never
+>;
+type ManualMoves = { place: ManualMove };
+type ManualBound = BoundPhaseMoves<{ last: number }, "play", ["0", "1"], ManualMoves>;
+declare const manualBound: ManualBound;
+// Smoke: calling with the declared args compiles.
+manualBound.place({ x: 5 });
+
+// ---- phase.onTimeout: ctx is typed against the game's state/players ----
+//
+// Note: The `moves` dispatcher type would ideally infer per-game from the
+// game's `moves:` factory output, but TS can't propagate `TMoves` from a
+// generic-callback-shaped `moves` field through to a sibling `phases` field
+// in the same object literal during overload resolution. The runtime
+// dispatcher does carry per-args precision (each call invokes the underlying
+// `move.run`); the surface signature settles as a permissive
+// `Record<string, ...>`. This matches gamekit's existing inference behavior
+// for any sibling field that depends on `TMoves`.
+defineGame({
+  playerIDs: ["0", "1"] as const,
+  setup: (): { last: number } => ({ last: 0 }),
+  turn: turn.roundRobin(),
+  moves: ({ move }) => ({
+    place: move<{ x: number }>({
+      run: ({ args, move }) => move.stay({ last: args.x }),
+    }),
+  }),
+  phases: {
+    play: {
+      deadline: () => 1_000,
+      onTimeout: (ctx, _moves) => {
+        // ctx exposes the same `G`/`turn`/`player`/`rng` shape regular moves see.
+        expectTypeOf(ctx.G.last).toEqualTypeOf<number>();
+        expectTypeOf(ctx.player.id).toEqualTypeOf<"0" | "1">();
+        // Returning null no-ops the timeout.
+        return null;
+      },
+    },
+  },
+});

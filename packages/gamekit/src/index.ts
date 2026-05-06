@@ -170,7 +170,7 @@ export interface MovePermissionContext<
 type GamekitBuiltInNode<TPhase extends string> = TPhase | "__gamekit_finished";
 type GamekitNode<TPhase extends string, TCoreNode extends string = never> = GamekitBuiltInNode<TPhase> | TCoreNode;
 
-type MoveOutcome<
+export type MoveOutcome<
   TState extends object,
   TPhase extends string = string,
   TPlayerID extends string = string,
@@ -346,10 +346,81 @@ export interface GamekitPhaseConfig<
   TComputed extends Record<string, JsonValue> = Record<string, JsonValue>,
   TPhase extends string = string,
   TPlayers extends readonly PlayerID[] = readonly PlayerID[],
+  TMoves extends Record<string, unknown> = Record<string, unknown>,
+  TProfile extends ReplayValue = ReplayValue,
 > {
   activePlayers?: (context: ViewContext<TState, TComputed, TPhase, TPlayers>) => readonly TPlayers[number][];
+  /**
+   * Wall-clock deadline for the phase, in milliseconds since epoch (or `null`
+   * to clear). Returned value is exposed via `controlMeta.deadline` and read
+   * by the host's deadline scheduler. When the deadline elapses, the host
+   * fires `runtime.fireTimeout()`, which dispatches the synthesized timeout
+   * transition built from `onTimeout`.
+   */
+  deadline?:
+    | number
+    | null
+    | ((context: ViewContext<TState, TComputed, TPhase, TPlayers>) => number | null);
   label?: string | ((context: ViewContext<TState, TComputed, TPhase, TPlayers>) => string | null);
+  /**
+   * Author-defined response to a turn-timer expiring while this phase is
+   * active. Mirrors a regular move handler's signature: receives the same
+   * `ctx` shape (sans `args`/`move`/`profile` mutator) plus a typed `moves`
+   * dispatcher whose entries forward args to each declared move's `run`. May
+   * return any `MoveOutcome` (`stay`/`endTurn`/`goto`/`finish`) or `null` to
+   * consume the timeout without mutating state.
+   *
+   * Declaring `onTimeout` without `deadline` is a definition-time error: the
+   * timeout never fires, so the handler is dead code.
+   */
+  onTimeout?: (
+    context: PhaseTimeoutContext<TState, TComputed, TPhase, TPlayers, TProfile>,
+    moves: BoundPhaseMoves<TState, TPhase, TPlayers, TMoves>,
+  ) => MoveOutcome<TState, TPhase, TPlayers[number], AnyQueuedEvent> | null;
 }
+
+export type PhaseTimeoutContext<
+  TState extends object,
+  TComputed extends Record<string, JsonValue>,
+  TPhase extends string = string,
+  TPlayers extends readonly PlayerID[] = readonly PlayerID[],
+  TProfile extends ReplayValue = ReplayValue,
+> = MovePermissionContext<TState, TComputed, TPhase, TPlayers, TProfile>;
+
+/**
+ * Typed `moves` dispatcher passed to `phase.onTimeout`. Each entry forwards
+ * its declared args to the move's `run`, returning the same `MoveOutcome`
+ * shape regular handlers produce. The synthesized timeout transition pipes
+ * the result through gamekit's existing outcome interpreter, so calling
+ * `moves.X(args)` from `onTimeout` is equivalent to "the active player just
+ * sent move X with these args."
+ */
+export type BoundPhaseMoves<
+  TState extends object,
+  TPhase extends string,
+  TPlayers extends readonly PlayerID[],
+  TMoves extends Record<string, unknown>,
+> = {
+  [TName in keyof TMoves & string]: BoundPhaseMoveDispatcher<
+    TState,
+    TPhase,
+    TPlayers,
+    TMoves[TName]
+  >;
+};
+
+type BoundPhaseMoveDispatcher<
+  TState extends object,
+  TPhase extends string,
+  TPlayers extends readonly PlayerID[],
+  TMove,
+> = MoveArgs<TMove> extends infer TArgs
+  ? [TArgs] extends [undefined]
+    ? () => MoveOutcome<TState, TPhase, TPlayers[number]>
+    : undefined extends TArgs
+      ? (args?: TArgs) => MoveOutcome<TState, TPhase, TPlayers[number]>
+      : (args: TArgs) => MoveOutcome<TState, TPhase, TPlayers[number]>
+  : never;
 
 export interface GamekitViews<
   TState extends object,
@@ -474,7 +545,7 @@ export interface GamekitDefinition<
     playerID: TPlayers[number],
   ) => readonly LegalAction[];
   moves: MovesInput<TState, TComputed, TPhase, TPlayers, TMoves, TProfile>;
-  phases?: Record<TPhase, GamekitPhaseConfig<TState, ComputedValues<TComputed>, TPhase, TPlayers>>;
+  phases?: Record<TPhase, GamekitPhaseConfig<TState, ComputedValues<TComputed>, TPhase, TPlayers, TMoves, TProfile>>;
   /**
    * Persistent per-player state, hydrated into `match.profiles` before setup and
    * mutated via `profile.commit` after the match terminates. Use gamekit's
@@ -753,7 +824,17 @@ export function defineGame<
 
   for (const phase of phaseNames) {
     const phaseConfig = definition.phases?.[phase];
-    states[phase] = {
+    if (phaseConfig?.onTimeout !== undefined && phaseConfig.deadline === undefined) {
+      throw new Error(
+        `defineGame: phase "${phase}" declares onTimeout but no deadline; the timeout will never fire. Add a \`deadline\` to the phase or remove \`onTimeout\`.`,
+      );
+    }
+    const phaseState: GameStateConfig<
+      GamekitState<TState>,
+      GamekitNode<TPhase, TCoreNode>,
+      TPlayers,
+      ReplayValue
+    > = {
       activePlayers: (context) => {
         if (phaseConfig?.activePlayers !== undefined) {
           return phaseConfig.activePlayers(createPhaseContext(definition, turnPolicy, context, phase));
@@ -769,6 +850,13 @@ export function defineGame<
         return phaseConfig?.label ?? phase;
       },
     };
+    if (phaseConfig?.deadline !== undefined) {
+      const deadline = phaseConfig.deadline;
+      phaseState.deadline = typeof deadline === "function"
+        ? (context) => deadline(createPhaseContext(definition, turnPolicy, context, phase))
+        : deadline;
+    }
+    states[phase] = phaseState;
   }
 
   const transitions: Array<GameTransitionConfig<
@@ -1010,6 +1098,196 @@ export function defineGame<
           turn: "increment",
         },
       );
+    }
+  }
+
+  // ---- Synthesize timeout transitions for phases that declare onTimeout ----
+  //
+  // Core only allows ONE `kind: "timeout"` transition per `from` source, with
+  // a fixed `to`. To preserve `onTimeout`'s ergonomic return-any-MoveOutcome
+  // contract (including `finish` which targets `__gamekit_finished`), the
+  // synthesized timeout transition's resolver enqueues a synthetic
+  // `__gamekit_phase_outcome` event whose payload carries the outcome. That
+  // event has its own per-phase event transitions (one per outcome target —
+  // mirroring the per-move stay/endTurn/goto:X/finish fan-out below) which
+  // navigate to the right `to` based on the payload kind. The split keeps the
+  // user-facing `onTimeout` API in MoveOutcome shape while letting core's
+  // single-timeout-per-from invariant stand.
+  const phasesWithTimeout = phaseNames.filter((phase) => definition.phases?.[phase]?.onTimeout !== undefined);
+  if (phasesWithTimeout.length > 0) {
+    const TIMEOUT_OUTCOME_EVENT = "__gamekit_phase_outcome";
+    eventShapes[TIMEOUT_OUTCOME_EVENT] = null;
+
+    const matchesOutcome = (
+      payload: ReplayValue,
+      predicate: (outcome: MoveOutcome<TState, TPhase, TPlayers[number], GamekitQueuedEvent<TMoves>>) => boolean,
+    ): MoveOutcome<TState, TPhase, TPlayers[number], GamekitQueuedEvent<TMoves>> | null => {
+      if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return null;
+      const outcome = payload as unknown as MoveOutcome<TState, TPhase, TPlayers[number], GamekitQueuedEvent<TMoves>>;
+      return predicate(outcome) ? outcome : null;
+    };
+
+    for (const phase of phasesWithTimeout) {
+      const phaseConfig = definition.phases![phase]!;
+
+      // Synthetic outcome-application transitions, fanned out per outcome
+      // target. Each resolver is null-guarded so only the matching kind/target
+      // pair fires.
+      transitions.push(
+        {
+          event: TIMEOUT_OUTCOME_EVENT,
+          from: phase,
+          label: `__timeout:${phase}:stay`,
+          resolve: (context) => {
+            const outcome = matchesOutcome(
+              context.event.payload as ReplayValue,
+              (o) => o.kind === "stay" || (o.kind === "goto" && o.phase === phase && o.endTurn !== true),
+            );
+            if (outcome === null) return null;
+            return createTransitionResult(context.G, outcome);
+          },
+          to: phase,
+          turn: "preserve",
+        },
+        {
+          event: TIMEOUT_OUTCOME_EVENT,
+          from: phase,
+          label: `__timeout:${phase}:end_turn`,
+          resolve: (context) => {
+            const outcome = matchesOutcome(
+              context.event.payload as ReplayValue,
+              (o) => o.kind === "endTurn" || (o.kind === "goto" && o.phase === phase && o.endTurn === true),
+            );
+            if (outcome === null) return null;
+            return createTransitionResult(context.G, outcome, "increment");
+          },
+          to: phase,
+          turn: "increment",
+        },
+      );
+
+      for (const targetPhase of phaseNames) {
+        if (targetPhase === phase) continue;
+        transitions.push(
+          {
+            event: TIMEOUT_OUTCOME_EVENT,
+            from: phase,
+            label: `__timeout:${phase}:goto:${targetPhase}`,
+            resolve: (context) => {
+              const outcome = matchesOutcome(
+                context.event.payload as ReplayValue,
+                (o) => o.kind === "goto" && o.phase === targetPhase && o.endTurn !== true,
+              );
+              if (outcome === null) return null;
+              return createTransitionResult(context.G, outcome);
+            },
+            to: targetPhase,
+            turn: "preserve",
+          },
+          {
+            event: TIMEOUT_OUTCOME_EVENT,
+            from: phase,
+            label: `__timeout:${phase}:goto:${targetPhase}:end_turn`,
+            resolve: (context) => {
+              const outcome = matchesOutcome(
+                context.event.payload as ReplayValue,
+                (o) => o.kind === "goto" && o.phase === targetPhase && o.endTurn === true,
+              );
+              if (outcome === null) return null;
+              return createTransitionResult(context.G, outcome, "increment");
+            },
+            to: targetPhase,
+            turn: "increment",
+          },
+        );
+      }
+
+      transitions.push({
+        event: TIMEOUT_OUTCOME_EVENT,
+        from: phase,
+        label: `__timeout:${phase}:finish`,
+        resolve: (context) => {
+          const outcome = matchesOutcome(
+            context.event.payload as ReplayValue,
+            (o) => o.kind === "finish",
+          );
+          if (outcome === null) return null;
+          return createTransitionResult(context.G, outcome, "increment");
+        },
+        to: "__gamekit_finished",
+        turn: "increment",
+      });
+
+      // The single timeout transition that fires when the phase deadline
+      // elapses. Its resolver invokes `phaseConfig.onTimeout`, builds the
+      // bound-moves dispatcher (which calls each move's `run` directly), and
+      // enqueues the resulting outcome as a `__gamekit_phase_outcome` event so
+      // the synthetic event transitions above pick it up and navigate.
+      transitions.push({
+        kind: "timeout",
+        from: phase,
+        label: `__timeout:${phase}`,
+        resolve: (context) => {
+          const turnContext = resolveTurn(turnPolicy, context.match.players, context.position.turn);
+          const currentState = stripInternalState(context.G);
+          const computed = computeComputedValues(definition.computed, currentState, phase, turnContext) as ComputedValues<
+            TComputed
+          >;
+          const permissionContext: MovePermissionContext<TState, ComputedValues<TComputed>, TPhase, TPlayers, TProfile> = {
+            C: computed,
+            G: currentState,
+            phase,
+            // The active player snapshot: round-robin gives us a single seat;
+            // simultaneous-move phases get whatever the turn policy yields here
+            // (parallel resolvers can re-derive activePlayers via `phaseConfig`).
+            player: { id: turnContext.currentPlayer as TPlayers[number] },
+            profiles: (context.match.profiles ?? {}) as Readonly<Record<TPlayers[number], TProfile>>,
+            rng: context.rng,
+            turn: turnContext,
+          };
+
+          const moveHelpers = createMoveHelpers<TState, TPhase, TPlayers[number], GamekitQueuedEvent<TMoves>>();
+          const boundMoves: Record<string, (args?: unknown) => unknown> = {};
+          for (const [name, moveDef] of Object.entries(moves)) {
+            boundMoves[name] = (args?: unknown) =>
+              moveDef.run({
+                ...permissionContext,
+                args,
+                move: moveHelpers,
+                profile: profile.bind(
+                  (context.match.profiles ?? {}) as PlayerRecord<TPlayers, TProfile>,
+                ),
+              } as never);
+          }
+
+          const outcome = phaseConfig.onTimeout!(
+            permissionContext,
+            boundMoves as never,
+          );
+
+          if (outcome === null) return null;
+
+          // Enqueue the outcome as a synthetic event. The timeout transition
+          // itself contributes no state change (G is untouched, position loops
+          // back to `phase`); the enqueued event carries all navigation.
+          return {
+            G: context.G as GamekitState<TState>,
+            enqueue: [{
+              kind: TIMEOUT_OUTCOME_EVENT,
+              payload: outcome as unknown as ReplayValue,
+            }],
+          };
+        },
+        to: phase,
+        turn: "preserve",
+      } as GameTransitionConfig<
+        GamekitState<TState>,
+        GamekitEventMap<TMoves>,
+        GamekitResultState,
+        GamekitNode<TPhase, TCoreNode>,
+        TPlayers,
+        ReplayValue
+      >);
     }
   }
 
@@ -1364,7 +1642,7 @@ function stripStateContext<TState extends object, TNode extends string, TPlayers
 function resolvePhaseNames(definition: {
   initialPhase?: string;
   moves: Record<string, GamekitMoveDefinition<any, any, any, any, any, any, any>>;
-  phases?: Record<string, GamekitPhaseConfig<any, any, any, any>>;
+  phases?: Record<string, GamekitPhaseConfig<any, any, any, any, any, any>>;
 }): readonly string[] {
   const explicitPhases = definition.phases === undefined ? [] : Object.keys(definition.phases);
   const movePhases = Object.values(definition.moves).flatMap((move) =>
