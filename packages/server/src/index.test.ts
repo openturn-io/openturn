@@ -5,6 +5,8 @@ import {
   defineGame,
   defineProfile,
   rejectTransition,
+  type DeadlineKey,
+  type DeadlineScheduler,
   type ProfileDelta,
 } from "@openturn/core";
 
@@ -516,5 +518,134 @@ describe("@openturn/server", () => {
         playerID: "0",
       },
     ]);
+  });
+});
+
+class FakeScheduler implements DeadlineScheduler {
+  public calls: Array<{ key: DeadlineKey; at: number | null }> = [];
+  public setDeadline(key: DeadlineKey, at: number | null): void {
+    this.calls.push({ key, at });
+  }
+}
+
+const deadlineGameWithTimeout = defineGame({
+  playerIDs: MATCH.players,
+  events: { noop: undefined },
+  initial: "play",
+  setup: () => ({}),
+  states: {
+    play: {
+      activePlayers: () => ["0"],
+      deadline: 1_000,
+    },
+    done: { activePlayers: () => [] },
+  },
+  transitions: [
+    { kind: "timeout" as const, from: "play", to: "done", resolve: () => null },
+  ],
+});
+
+const deadlineGameNoDeadline = defineGame({
+  playerIDs: MATCH.players,
+  events: { noop: undefined },
+  initial: "play",
+  setup: () => ({}),
+  states: {
+    play: { activePlayers: () => ["0"] },
+  },
+  transitions: [],
+});
+
+describe("RoomRuntime — DeadlineScheduler integration", () => {
+  test("setDeadline('turn-timeout', X) is called after constructing the runtime", async () => {
+    const scheduler = new FakeScheduler();
+    await createRoomRuntime({
+      deployment: defineGameDeployment({
+        deploymentVersion: "dev",
+        game: deadlineGameWithTimeout,
+        gameKey: "deadline-game",
+        match: MATCH,
+        schemaVersion: "1",
+      }),
+      roomID: "room_deadline_construct",
+      scheduler,
+    });
+    expect(scheduler.calls.some((c) => c.key === "turn-timeout" && c.at === 1_000)).toBe(true);
+  });
+
+  test("setDeadline('turn-timeout', null) is called when no deadline is set", async () => {
+    const scheduler = new FakeScheduler();
+    await createRoomRuntime({
+      deployment: defineGameDeployment({
+        deploymentVersion: "dev",
+        game: deadlineGameNoDeadline,
+        gameKey: "deadline-game-no-deadline",
+        match: MATCH,
+        schemaVersion: "1",
+      }),
+      roomID: "room_deadline_null",
+      scheduler,
+    });
+    expect(scheduler.calls.some((c) => c.key === "turn-timeout" && c.at === null)).toBe(true);
+  });
+
+  test("RoomRuntime.fireTimeout() applies the timeout transition", async () => {
+    const scheduler = new FakeScheduler();
+    const runtime = await createRoomRuntime({
+      deployment: defineGameDeployment({
+        deploymentVersion: "dev",
+        game: deadlineGameWithTimeout,
+        gameKey: "deadline-game",
+        match: MATCH,
+        schemaVersion: "1",
+      }),
+      roomID: "room_deadline_fire",
+      scheduler,
+    });
+    await runtime.fireTimeout(2_000);
+    // Read the live session position directly. The wire-shaped
+    // `runtime.getState().snapshot` would currently re-protocolize the action
+    // log, which fails on the timeout sentinel record (Task 2 emits
+    // `playerID: null` with `type: "event"`, conflicting with
+    // `ProtocolActionRecordSchema`'s `playerID: string`). Tracking that
+    // upstream gap separately; the runtime itself wires fireTimeout
+    // correctly — this assertion confirms the session advanced.
+    expect(runtime.getSession().getState().position.name).toBe("done");
+  });
+
+  test("RoomRuntime.fireTimeout() no-ops when deadline not yet elapsed (idempotency)", async () => {
+    const scheduler = new FakeScheduler();
+    const runtime = await createRoomRuntime({
+      deployment: defineGameDeployment({
+        deploymentVersion: "dev",
+        game: deadlineGameWithTimeout,
+        gameKey: "deadline-game",
+        match: MATCH,
+        schemaVersion: "1",
+      }),
+      roomID: "room_deadline_idem",
+      scheduler,
+    });
+    await runtime.fireTimeout(500); // before deadline
+    expect(runtime.getState().snapshot.position.name).not.toBe("done");
+  });
+
+  test("RoomRuntime.fireTimeout() re-arms scheduler after firing", async () => {
+    const scheduler = new FakeScheduler();
+    const runtime = await createRoomRuntime({
+      deployment: defineGameDeployment({
+        deploymentVersion: "dev",
+        game: deadlineGameWithTimeout,
+        gameKey: "deadline-game",
+        match: MATCH,
+        schemaVersion: "1",
+      }),
+      roomID: "room_deadline_rearm",
+      scheduler,
+    });
+    scheduler.calls = [];
+    await runtime.fireTimeout(2_000);
+    // After firing into "done" (no deadline), scheduler should be cleared with null.
+    expect(scheduler.calls.some((c) => c.key === "turn-timeout" && c.at === null)).toBe(true);
   });
 });

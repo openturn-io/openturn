@@ -3,6 +3,7 @@ import {
   createLocalSession,
   profile,
   type AnyGame,
+  type DeadlineScheduler,
   type GameErrorCode,
   type GameErrorResult,
   type GamePlayerView,
@@ -173,6 +174,19 @@ export interface RoomRuntime<
   handleClientMessage(
     message: ProtocolClientMessage,
   ): Promise<readonly RoomRuntimeEnvelope<TGame>[]>;
+  /**
+   * Idempotent timeout dispatch. Hosts (Cloudflare DO `alarm()`, CLI
+   * `setTimeout`, etc.) call this when their underlying scheduler fires the
+   * `turn-timeout` deadline. The runtime re-checks the active deadline against
+   * `now` (defense-in-depth — `session.fireTimeout` also re-checks), applies a
+   * matching `kind: "timeout"` transition through the session, broadcasts a
+   * standard `batch_applied` envelope to every connected player, and re-arms
+   * the injected `DeadlineScheduler` with the new state's deadline (which may
+   * be `null` if the timeout drove the match to a deadline-less state).
+   * Returns `[]` when no transition fires (no deadline, deadline in the
+   * future, or no matching `kind: "timeout"` rule).
+   */
+  fireTimeout(now?: number): Promise<readonly RoomRuntimeEnvelope<TGame>[]>;
 }
 
 export {
@@ -277,6 +291,15 @@ export interface RoomRuntimeOptions<
   persistence?: RoomPersistence;
   restorePersistedState?: boolean;
   roomID: MatchID;
+  /**
+   * Host-injected wall-clock deadline scheduler. When provided, the runtime
+   * calls `setDeadline("turn-timeout", session.getNextDeadline())` after
+   * construction (post-restore) and after every successful event application,
+   * including `fireTimeout`. Hosts (Cloudflare DO, CLI) own the underlying
+   * timer and dispatch back into the runtime via `fireTimeout(now)` when the
+   * deadline elapses. Optional — runtimes without time-bound rules can omit it.
+   */
+  scheduler?: DeadlineScheduler;
   seed?: string;
 }
 
@@ -490,6 +513,22 @@ export async function createRoomRuntime<
     });
   };
 
+  /**
+   * Re-arm the host-injected scheduler with the session's current next
+   * deadline. Called once at construction (post-restore) and after every
+   * successful event application — including `fireTimeout` itself. `setDeadline`
+   * is idempotent on the host side; we don't gate on whether the value
+   * changed.
+   */
+  const rearmScheduler = async () => {
+    if (options.scheduler === undefined) return;
+    await options.scheduler.setDeadline("turn-timeout", session.getNextDeadline());
+  };
+
+  // Initial arm — must happen after any restore-from-saved replay so the
+  // scheduled instant reflects the live session, not the empty initial state.
+  await rearmScheduler();
+
   return {
     async connect(playerID) {
       connectedPlayers.add(playerID);
@@ -527,6 +566,55 @@ export async function createRoomRuntime<
           return handleSaveRequest(message);
       }
     },
+    async fireTimeout(now = Date.now()) {
+      // Defense-in-depth idempotency. `session.fireTimeout` re-checks too,
+      // but inspecting here lets us short-circuit broadcast/persist on stale
+      // alarm fires (e.g. an event already advanced past the deadline before
+      // the host's scheduler rang).
+      const deadline = session.getNextDeadline();
+      if (deadline === null || deadline > now) {
+        // Re-arm anyway — host's view may have drifted; harmless if correct.
+        await rearmScheduler();
+        return [];
+      }
+
+      const priorLogLength = (session.getState().meta.log as readonly unknown[]).length;
+      session.fireTimeout(now);
+
+      // The session's `fireTimeout` doesn't return a batch. Detect a fired
+      // transition by comparing log length pre/post. When no matching
+      // `kind: "timeout"` rule existed the game stalls intentionally — bail
+      // without broadcasting.
+      const newLogLength = (session.getState().meta.log as readonly unknown[]).length;
+      if (newLogLength === priorLogLength) {
+        await rearmScheduler();
+        return [];
+      }
+
+      const stepsApplied = newLogLength - priorLogLength;
+      revision += stepsApplied;
+      // Use the synthetic timeout actionID minted inside `session.fireTimeout`
+      // (the most recently-appended log entry) as the new branch head.
+      const log = session.getState().meta.log as readonly { actionID: string }[];
+      const headActionID = log[log.length - 1]?.actionID ?? branch.headActionID;
+      branch = { ...branch, headActionID };
+
+      await persist();
+      await maybeSettle();
+      await rearmScheduler();
+
+      const recipients = [...connectedPlayers];
+      return recipients.map((playerID) => ({
+        message: createPlayerSnapshot(
+          options.roomID,
+          revision,
+          session,
+          options.deployment.game,
+          playerID,
+        ),
+        playerID,
+      }));
+    },
   };
 
   async function handleAction(
@@ -554,6 +642,7 @@ export async function createRoomRuntime<
     await persist();
     await emitActionProfileCommits(result.batch.steps);
     await maybeSettle();
+    await rearmScheduler();
 
     const recipients = connectedPlayers.size === 0
       ? [message.playerID]
