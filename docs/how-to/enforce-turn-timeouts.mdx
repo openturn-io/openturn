@@ -170,6 +170,42 @@ In the **CLI dev shell**, the scheduler tracks one `setTimeout` handle per key i
 
 You don't see any of this from the game-author surface — it's just `phase.onTimeout` (or `transition({ kind: "timeout" })`).
 
+## Showing the countdown to players
+
+You don't have to build a clock. The play shell (`<PlayShell>` in `@openturn/bridge`, used by both the CLI dev shell and the cloud play page) auto-mounts a compact `m:ss` countdown in its toolbar. It turns red under 5 seconds and is hidden entirely when no deadline is active. Embedders can suppress the default with `<PlayShell showTurnCountdown={false}>` or relocate it by mounting `<TurnCountdown host={host}>` themselves.
+
+The shell-side countdown reads from a typed bridge protocol message: when your game's `controlMeta.deadline` changes, `<OpenturnProvider>` from `@openturn/react` calls `bridgeGame.setDeadline(deadline)` automatically. The shell receives it via `host.deadline` / `host.on("deadline-changed", ...)` and re-renders. You don't write any of this — declaring `phase.deadline` in your game is enough.
+
+### Custom in-game UI: `useTurnDeadline()`
+
+For richer treatment inside your game iframe — pulse animations, "5 seconds left!" banners, urgent state changes in the layout — `@openturn/react` exports a `useTurnDeadline()` hook:
+
+```tsx
+import { useTurnDeadline } from "@openturn/react";
+
+function UrgentBanner() {
+  const { deadline, remainingMs, isExpired } = useTurnDeadline();
+  if (deadline === null) return null;
+  if (isExpired) return <div className="alert">Time's up — auto-playing!</div>;
+  if (remainingMs < 10_000) {
+    return <div className="pulse">{(remainingMs / 1000).toFixed(1)}s</div>;
+  }
+  return null;
+}
+```
+
+The hook reads `controlMeta.deadline` from `useMatch()`'s current snapshot and updates live: 1 Hz baseline, ramping to 10 Hz when remaining drops under 5 seconds (so the final-seconds display feels smooth without re-rendering every 100 ms during normal play). Each tick recomputes from `Date.now()`, so the value self-corrects after the user backgrounds and refocuses the tab.
+
+Return shape:
+
+| Field | Type | Notes |
+|---|---|---|
+| `deadline` | `number \| null` | Wall-clock instant in ms (server clock), or `null` when no deadline is active |
+| `remainingMs` | `number` | `max(0, deadline - Date.now())`. `0` when `deadline` is null. |
+| `isExpired` | `boolean` | `deadline !== null && remainingMs === 0` |
+
+The shell-side `<PlayShell>` countdown and your in-game hook are independent renderings of the same data — both look at the same wall-clock instant. They can coexist (a chrome-level "0:30" plus a game-level "5s left!" banner).
+
 ## Edge cases worth knowing
 
 - **Player disconnects mid-turn.** The clock keeps running. Reconnects with whatever time is left.
@@ -180,8 +216,8 @@ You don't see any of this from the game-author surface — it's just `phase.onTi
 
 ## When NOT to use this
 
-- **Animation / transition states with no active player.** Just declare `deadline: () => null` (or omit it). The scheduler clears.
-- **Out-of-band notifications.** Turn timer is for *gameplay enforcement*. If you want to notify a user that their turn is ending soon, do that with a client-side countdown reading `snapshot.derived.controlMeta.deadline`. The framework's enforcement and your UI countdowns are independent — both look at the same wall-clock instant.
+- **Animation / transition states with no active player.** Just declare `deadline: () => null` (or omit it). The scheduler clears and `<TurnCountdown>` hides.
+- **Pre-deadline notifications and sounds.** The framework doesn't ship browser notifications or alerts. Use `useTurnDeadline()` and trigger your own (e.g. `Notification.requestPermission` + a `useEffect` that fires when `remainingMs` crosses a threshold).
 - **"Time pressure" mechanics within a turn** (e.g., "score more if you act faster"). That's gameplay, not timeout enforcement; track it in `G` state and reference it in your move handlers. Turn timeouts only fire *at* the deadline.
 
 ## See also
