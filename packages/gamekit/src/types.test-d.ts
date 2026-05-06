@@ -7,7 +7,7 @@
 // File is included by `tsc` (matches `src/**/*.ts`, doesn't match `*.test.ts`)
 // but not by the test runner.
 
-import type { GamePlayers, GameStateOf } from "@openturn/core";
+import type { ConfigSchema, GameConfigValuesOf, GamePlayers, GameStateOf, ReplayValue } from "@openturn/core";
 import { expectTypeOf } from "expect-type";
 
 import { defineGame, turn } from "./index";
@@ -135,4 +135,75 @@ defineGame({
       },
     },
   },
+});
+
+// ---- config schema is preserved on the compiled definition ----
+const configured = defineGame({
+  maxPlayers: 2,
+  config: {
+    turnTimeoutMs: { type: "number", default: 30_000, label: "Turn time" },
+    variant: {
+      type: "enum",
+      options: ["classic", "blitz"] as const,
+      default: "classic",
+      label: "Variant",
+    },
+  } as const satisfies ConfigSchema,
+  setup: (): { count: number } => ({ count: 0 }),
+  moves: ({ move }) => ({
+    bump: move({ run: ({ G, move: m }) => m.endTurn({ count: G.count + 1 }) }),
+  }),
+});
+
+// `GameConfigValuesOf` derives the typed values shape from the compiled
+// definition's preserved schema. Enum option literals stay narrow because the
+// schema was authored with `as const satisfies ConfigSchema`.
+expectTypeOf<GameConfigValuesOf<typeof configured>["turnTimeoutMs"]>().toEqualTypeOf<number>();
+expectTypeOf<GameConfigValuesOf<typeof configured>["variant"]>().toEqualTypeOf<"classic" | "blitz">();
+
+// ---- typed match.config flows into phase / move handlers ----
+defineGame({
+  maxPlayers: 2,
+  config: {
+    turnTimeoutMs: { type: "number", default: 30_000, label: "Turn time" },
+  } as const satisfies ConfigSchema,
+  setup: (): { count: number } => ({ count: 0 }),
+  moves: ({ move }) => ({
+    bump: move({
+      run: ({ G, match, move: m }) => {
+        // match.config is required (not optional) when game declares schema.
+        expectTypeOf(match.config.turnTimeoutMs).toEqualTypeOf<number>();
+        return m.endTurn({ count: G.count + 1 });
+      },
+    }),
+  }),
+  phases: {
+    play: {
+      deadline: (ctx) => {
+        expectTypeOf(ctx.match.config.turnTimeoutMs).toEqualTypeOf<number>();
+        expectTypeOf(ctx.now).toEqualTypeOf<number>();
+        return ctx.now + ctx.match.config.turnTimeoutMs;
+      },
+      onTimeout: (ctx, _moves) => {
+        expectTypeOf(ctx.match.config.turnTimeoutMs).toEqualTypeOf<number>();
+        return null;
+      },
+    },
+  },
+});
+
+// ---- games without a config schema keep loose match.config typing ----
+defineGame({
+  maxPlayers: 2,
+  setup: (): { count: number } => ({ count: 0 }),
+  moves: ({ move }) => ({
+    bump: move({
+      run: ({ G, match, move: m }) => {
+        // No schema → match.config is optional and loosely typed (matching
+        // core's MatchInput default).
+        expectTypeOf(match.config).toEqualTypeOf<Record<string, ReplayValue> | undefined>();
+        return m.endTurn({ count: G.count + 1 });
+      },
+    }),
+  }),
 });
