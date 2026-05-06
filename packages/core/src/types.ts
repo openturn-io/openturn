@@ -505,18 +505,16 @@ export type LegalActionsResolver<
   playerID: TPlayers[number],
 ) => readonly LegalAction[];
 
-export interface GameDefinition<
+interface GameDefinitionBase<
   TState,
-  TEvents extends GameEventMap = GameEventMap,
-  TResult = ReplayValue | null,
-  TPlayers extends PlayerList = PlayerList,
-  TNode extends string = string,
-  TPublic = TState,
-  TPlayer = TPublic,
-  TControl extends ReplayValue = ReplayValue,
-  TTransitions extends readonly GameTransitionConfig<TState, TEvents, TResult, TNode, TPlayers, TControl>[] =
-    readonly GameTransitionConfig<TState, TEvents, TResult, TNode, TPlayers, TControl>[],
-  TConfig extends ConfigSchema | undefined = ConfigSchema | undefined,
+  TEvents extends GameEventMap,
+  TResult,
+  TPlayers extends PlayerList,
+  TNode extends string,
+  TPublic,
+  TPlayer,
+  TControl extends ReplayValue,
+  TTransitions extends readonly GameTransitionConfig<TState, TEvents, TResult, TNode, TPlayers, TControl>[],
 > {
   events: { readonly [TKind in keyof TEvents & string]: TEvents[TKind] };
   initial: TNode;
@@ -563,18 +561,57 @@ export interface GameDefinition<
    * context's `result` type without a cast.
    */
   profile?: GameProfileInput<TPlayers, TResult>;
-  /**
-   * Optional declarative config schema. Lobby renders a host-mutable settings
-   * form from this; values are locked into `match.config` at game-start. See
-   * `superpowers/specs/2026-05-06-lobby-config-system-design.md`.
-   */
-  config?: TConfig;
   selectors?: GameSelectorMap<TState, TNode, TPlayers, TControl>;
   setup: (context: SetupContext<TPlayers>) => TState;
   states: Record<TNode, GameStateConfig<TState, TNode, TPlayers, TControl>>;
   transitions: TTransitions;
   views?: GameViews<TState, TPublic, TPlayer, TNode, TPlayers, TControl>;
 }
+
+/**
+ * Compiled game definition. The `config` field is conditional on `TConfig`:
+ * when authors declare a schema (`config: { ... } as const satisfies
+ * ConfigSchema`), `config` is typed as the narrow schema (no `| undefined`)
+ * and required, so consumers can pass `game.config` directly to APIs
+ * expecting `ConfigSchema` without a non-null assertion. When `TConfig`
+ * defaults to `undefined`, `config` is absent — games without a declared
+ * schema continue to typecheck unchanged.
+ */
+type IsAny<T> = 0 extends 1 & T ? true : false;
+
+/**
+ * Resolved config-field shape for a `TConfig` parameter. When `TConfig`
+ * is the loose default `ConfigSchema | undefined` (or `any` for `AnyGame`),
+ * `config` stays optional with the schema-or-undefined union — this is the
+ * back-compat shape for callers that don't care about `TConfig` narrowing.
+ * When `TConfig` is narrowed to a specific schema literal, `config` becomes
+ * required and typed as that literal (no `| undefined`). When `TConfig` is
+ * the explicit default `undefined`, `config` is absent so games without a
+ * declared schema typecheck unchanged.
+ */
+type ConfigFieldFor<TConfig extends ConfigSchema | undefined> =
+  IsAny<TConfig> extends true
+    ? { config?: ConfigSchema | undefined }
+    : ConfigSchema | undefined extends TConfig
+      ? { config?: ConfigSchema | undefined }
+      : [TConfig] extends [ConfigSchema]
+        ? { config: TConfig }
+        : { config?: undefined };
+
+export type GameDefinition<
+  TState,
+  TEvents extends GameEventMap = GameEventMap,
+  TResult = ReplayValue | null,
+  TPlayers extends PlayerList = PlayerList,
+  TNode extends string = string,
+  TPublic = TState,
+  TPlayer = TPublic,
+  TControl extends ReplayValue = ReplayValue,
+  TTransitions extends readonly GameTransitionConfig<TState, TEvents, TResult, TNode, TPlayers, TControl>[] =
+    readonly GameTransitionConfig<TState, TEvents, TResult, TNode, TPlayers, TControl>[],
+  TConfig extends ConfigSchema | undefined = ConfigSchema | undefined,
+> = GameDefinitionBase<TState, TEvents, TResult, TPlayers, TNode, TPublic, TPlayer, TControl, TTransitions>
+  & ConfigFieldFor<TConfig>;
 
 export type AnyGame = GameDefinition<any, any, any, any, any, any, any, any, any, any>;
 
@@ -616,7 +653,7 @@ export type GamePublicView<TMachine extends AnyGame> =
     : never;
 
 export type GameConfigSchemaOf<TMachine extends AnyGame> =
-  TMachine extends GameDefinition<any, any, any, any, any, any, any, any, any, infer TConfig> ? TConfig : undefined;
+  TMachine extends GameDefinition<any, any, any, any, any, any, any, any, any, infer TConfig extends ConfigSchema | undefined> ? TConfig : undefined;
 
 export type GameConfigValuesOf<TMachine extends AnyGame> = ConfigValuesOf<GameConfigSchemaOf<TMachine>>;
 

@@ -401,11 +401,10 @@ export const splendor = defineGame({
         const legal = enumerateSplendorLegalActions(G, playerID);
         if (legal.length === 0) return null;
         const pick = ctx.rng.pick(legal);
-        // The dispatch surface for `moves` from a phase callback hits a TS
-        // inference limitation today (see gamekit's types.test-d.ts) — TMoves
-        // doesn't propagate from the inline `moves: ({ move }) => ({...})`
-        // factory through to onTimeout's BoundPhaseMoves parameter. The
-        // runtime works correctly; we cast to unblock typing.
+        // Inline `phases:` shape can't propagate `TMoves` through to onTimeout
+        // — gamekit also exposes a `phases: ({ moves }) => ({...})` callback
+        // form for typed dispatch, but it interacts badly with `TState`
+        // inference in this codebase. Splendor sticks with the cast.
         const dispatch = moves as unknown as Record<
           string,
           (args: unknown) => ReturnType<typeof moves[keyof typeof moves]>

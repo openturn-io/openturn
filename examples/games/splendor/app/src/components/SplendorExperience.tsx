@@ -49,7 +49,7 @@ function SplendorRoom() {
           lobby={room.lobby}
           title="Splendor"
           configUI="auto"
-          configSchema={splendor.config!}
+          configSchema={splendor.config}
         />
       </section>
     );

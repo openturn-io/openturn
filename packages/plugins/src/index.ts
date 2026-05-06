@@ -273,7 +273,14 @@ export function withPlugins<
   // explicit `phases` keys, and any move-level `phases` declarations. If we
   // can't find any (the typical single-phase game), fall back to `"play"`.
   const phaseNames = collectPhaseNames(base);
-  const basePhases = (base.phases ?? {}) as Record<string, Record<string, unknown> | undefined>;
+  // `base.phases` may be a callback `({ moves }) => phases` (gamekit's
+  // typed-onTimeout form). Plugins doesn't support that form yet — composing
+  // around the callback would need to thread the moves dispatcher through.
+  // For now we fall back to an empty per-phase record when phases is a
+  // function; phaseNames still contains the union the engine will traverse.
+  const basePhases = (typeof base.phases === "function" || base.phases === undefined
+    ? {}
+    : base.phases) as Record<string, Record<string, unknown> | undefined>;
   const wrappedPhases: Record<string, Record<string, unknown>> = {};
   for (const phaseName of phaseNames) {
     const existing = basePhases[phaseName] ?? {};
@@ -330,15 +337,15 @@ export function withPlugins<
 
 function collectPhaseNames(base: {
   initialPhase?: string;
-  phases?: Record<string, unknown>;
+  phases?: unknown;
   moves: unknown;
 }): string[] {
   const names = new Set<string>();
   if (typeof base.initialPhase === "string") {
     names.add(base.initialPhase);
   }
-  if (base.phases !== undefined) {
-    for (const key of Object.keys(base.phases)) {
+  if (base.phases !== undefined && typeof base.phases !== "function") {
+    for (const key of Object.keys(base.phases as Record<string, unknown>)) {
       names.add(key);
     }
   }
