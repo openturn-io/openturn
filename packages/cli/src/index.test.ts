@@ -926,6 +926,49 @@ describe("@openturn/cli", () => {
     }
   });
 
+  test("primes an anonymous session cookie on the play-shell HTML response", async () => {
+    const databasePath = createDatabasePath("primes-session-cookie");
+    const server = await startLocalDevServer({
+      dbPath: databasePath,
+      deployment,
+      iframe: {
+        bundleURL: "http://localhost:4999",
+        deploymentID: "dev",
+        gameName: "Local Game",
+      },
+      port: createTestPort(),
+    });
+
+    try {
+      const firstResponse = await fetch(`${server.url}/play/dev`);
+      expect(firstResponse.status).toBe(200);
+      const firstSetCookies = firstResponse.headers.getSetCookie();
+      expect(firstSetCookies.length).toBeGreaterThan(0);
+      // discard body; we only care about the Set-Cookie header on the boot response
+      await firstResponse.text();
+
+      const sessionCookie = firstSetCookies
+        .map((value) => value.split(";")[0]!)
+        .join("; ");
+
+      const secondResponse = await fetch(`${server.url}/play/dev`, {
+        headers: { cookie: sessionCookie },
+      });
+      expect(secondResponse.status).toBe(200);
+      expect(secondResponse.headers.getSetCookie().length).toBe(0);
+      await secondResponse.text();
+
+      // confirm the primed cookie actually authenticates against /api/dev/me
+      const meResponse = await fetch(`${server.url}/api/dev/me`, {
+        headers: { cookie: sessionCookie },
+      });
+      expect(meResponse.status).toBe(200);
+    } finally {
+      await server.stop();
+      removeDatabaseFile(databasePath);
+    }
+  });
+
   test("creates missing parent directories for sqlite database paths", async () => {
     const databasePath = createNestedDatabasePath("creates-missing-parent-directories");
     const server = await startLocalDevServer({

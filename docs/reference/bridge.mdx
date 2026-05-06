@@ -296,25 +296,6 @@ Decodes the `BridgeInit` from `window.location.hash` (returns `null` when runnin
 
 Prefix used by every bridge postMessage type (`openturn:bridge:*`). Filter on this before schema validation when sharing a window with other postMessage traffic.
 
-## Local-dev transport
-
-### `createDevTransport(options?)`
-
-Talks to a running `openturn dev` server directly. Returns a `DevTransport` that can create and join rooms, then produces a `BridgeInit` via `toBridgeInit()`.
-
-```ts
-const dev = createDevTransport({ baseURL: "http://localhost:4010" });
-const snapshot = await dev.createRoom();
-const init = dev.toBridgeInit(snapshot);
-```
-
-### Dev-transport types
-
-- `DevTransport` — the returned handle (`createRoom`, `joinRoom`, `createInviteURL`, `readRoomIDFromLocation`, `writeRoomIDToLocation`, `toBridgeInit`).
-- `DevTransportOptions` — constructor options (`baseURL`, `sessionStorageKey`, `storage`).
-- `AnonymousSession` — the session descriptor the dev server mints for unauthenticated users.
-- `DevLobbySnapshot` — lobby state returned by `createRoom` / `joinRoom` and consumed by `toBridgeInit`.
-
 ## Play-shell adapter
 
 The play shell (cloud `/play` and the local CLI dev shell) is a bridge-host shell that renders shell controls (save, load, reset, return-to-lobby, public rooms, …) around any embedded game. The adapter is the host-side contract that the shell calls into when those controls are activated; the bridge package owns its types so both shells can be implemented against the same surface and the shell-controls registry can gate rendering on `adapter[meta.adapterMethod]`.

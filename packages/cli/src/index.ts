@@ -523,6 +523,7 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
 
       if (options.iframe !== undefined) {
         if (request.method === "GET" && (requestURL.pathname === "/" || requestURL.pathname === `/play/${options.iframe.deploymentID}`)) {
+          const setCookies = await primeAnonymousSessionCookie(request);
           return htmlResponse(createLocalPlayShell({
             bundleURL: options.iframe.bundleURL,
             deploymentID: options.iframe.deploymentID,
@@ -531,7 +532,7 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
             ...(options.iframe.shellControls === undefined
               ? {}
               : { shellControls: options.iframe.shellControls }),
-          }));
+          }), setCookies);
         }
 
         if (request.method === "GET" && requestURL.pathname === "/__openturn/play-app/main.js") {
@@ -553,6 +554,7 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
         const wantsShell = staticOptions.shell !== false;
         if (request.method === "GET" && (requestURL.pathname === "/" || requestURL.pathname === `/play/${staticOptions.deploymentID}`)) {
           if (wantsShell) {
+            const setCookies = await primeAnonymousSessionCookie(request);
             return htmlResponse(createLocalPlayShell({
               deploymentID: staticOptions.deploymentID,
               gameName: staticOptions.gameName,
@@ -560,7 +562,7 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
               ...(staticOptions.shellControls === undefined
                 ? {}
                 : { shellControls: staticOptions.shellControls }),
-            }));
+            }), setCookies);
           }
           return fileResponse(resolve(staticOptions.outDir, "index.html"), "text/html; charset=utf-8");
         }
@@ -1859,6 +1861,28 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
     return handler(session);
   }
 
+  // When serving the play-shell HTML, ensure the response carries a valid
+  // anonymous session cookie. If the request already presents one, no-op.
+  // Otherwise drive better-auth's anonymous sign-in handler and return its
+  // Set-Cookie strings so the caller can attach them to the HTML response.
+  // This eliminates the client-side probe-then-mint dance that previously
+  // produced visible 401s on `/api/dev/me` during shell boot.
+  async function primeAnonymousSessionCookie(request: Request): Promise<readonly string[]> {
+    if (auth === null) return [];
+    const existing = await auth.api.getSession({ headers: request.headers }).catch(() => null);
+    if (existing !== null) return [];
+    const signInResponse = await auth
+      .handler(
+        new Request(new URL("/api/auth/sign-in/anonymous", url), {
+          headers: request.headers,
+          method: "POST",
+        }),
+      )
+      .catch(() => null);
+    if (signInResponse === null) return [];
+    return signInResponse.headers.getSetCookie();
+  }
+
   async function getSession(request: Request) {
     if (auth === null) {
       const userID = resolveAuthlessUserID(request);
@@ -2992,12 +3016,10 @@ function resolveAssetPath(rootDir: string, relativePath: string): string | null 
   return candidate;
 }
 
-function htmlResponse(html: string): Response {
-  return new Response(html, {
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-    },
-  });
+function htmlResponse(html: string, setCookies: readonly string[] = []): Response {
+  const headers = new Headers({ "Content-Type": "text/html; charset=utf-8" });
+  for (const cookie of setCookies) headers.append("Set-Cookie", cookie);
+  return new Response(html, { headers });
 }
 
 

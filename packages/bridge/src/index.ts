@@ -36,13 +36,6 @@ export {
   type BridgeHostTokenRefreshResult,
 } from "./host";
 export {
-  createDevTransport,
-  type AnonymousSession,
-  type DevTransport,
-  type DevTransportOptions,
-  type DevLobbySnapshot,
-} from "./dev-transport";
-export {
   describeRoomStatus,
   extractRoomID,
   snapshotToBridgeInit,
