@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { defineGame, rejectTransition } from "@openturn/core";
 
@@ -248,6 +248,186 @@ describe("@openturn/react", () => {
     expect(screen.getByTestId("lobby-min").textContent).toBe("2");
     expect(screen.getByTestId("lobby-max").textContent).toBe("2");
     expect(screen.getByTestId("lobby-seats").textContent).toBe("2");
+  });
+});
+
+describe("useTurnDeadline", () => {
+  // Uses a stable wall-clock so the hook's `Date.now()` reads align with the
+  // game's `deadline: ({ now }) => now + N` resolutions made at session
+  // bootstrap. `vi.setSystemTime` runs BEFORE the test body so the bindings'
+  // initial snapshot embeds a deadline tied to the same instant.
+  const FIXED_NOW = 1_700_000_000_000;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(FIXED_NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("returns null deadline when match has none", () => {
+    const noDeadlineGame = defineGame({
+      playerIDs: MATCH.players,
+      events: { noop: undefined },
+      initial: "play",
+      setup: () => ({}),
+      states: { play: { activePlayers: () => ["0"] } },
+      transitions: [],
+    });
+    const bindings = createOpenturnBindings(noDeadlineGame, {
+      runtime: "local",
+      match: MATCH,
+    });
+
+    const ref = {
+      current: { deadline: null as number | null, remainingMs: -1, isExpired: true },
+    };
+    function Probe() {
+      ref.current = bindings.useTurnDeadline();
+      return null;
+    }
+    const localMatch = bindings.createLocalMatch({ match: MATCH });
+    render(
+      <bindings.OpenturnProvider match={localMatch}>
+        <Probe />
+      </bindings.OpenturnProvider>,
+    );
+
+    expect(ref.current.deadline).toBeNull();
+    expect(ref.current.remainingMs).toBe(0);
+    expect(ref.current.isExpired).toBe(false);
+  });
+
+  test("returns the snapshot's controlMeta.deadline", () => {
+    const deadlineGame = defineGame({
+      playerIDs: MATCH.players,
+      events: { noop: undefined },
+      initial: "play",
+      setup: () => ({}),
+      states: {
+        play: {
+          activePlayers: () => ["0"],
+          deadline: ({ now }) => now + 30_000,
+        },
+      },
+      transitions: [],
+    });
+    const bindings = createOpenturnBindings(deadlineGame, {
+      runtime: "local",
+      match: MATCH,
+    });
+
+    const ref = {
+      current: { deadline: null as number | null, remainingMs: -1, isExpired: true },
+    };
+    function Probe() {
+      ref.current = bindings.useTurnDeadline();
+      return null;
+    }
+    const localMatch = bindings.createLocalMatch({ match: MATCH, now: FIXED_NOW });
+    render(
+      <bindings.OpenturnProvider match={localMatch}>
+        <Probe />
+      </bindings.OpenturnProvider>,
+    );
+
+    expect(ref.current.deadline).toBe(FIXED_NOW + 30_000);
+    expect(ref.current.remainingMs).toBe(30_000);
+    expect(ref.current.isExpired).toBe(false);
+  });
+
+  test("ticks at 1Hz when remainingMs >= 5000", () => {
+    const deadlineGame = defineGame({
+      playerIDs: MATCH.players,
+      events: { noop: undefined },
+      initial: "play",
+      setup: () => ({}),
+      states: {
+        play: {
+          activePlayers: () => ["0"],
+          deadline: ({ now }) => now + 30_000,
+        },
+      },
+      transitions: [],
+    });
+    const bindings = createOpenturnBindings(deadlineGame, {
+      runtime: "local",
+      match: MATCH,
+    });
+
+    const ref = {
+      current: { deadline: null as number | null, remainingMs: -1, isExpired: true },
+    };
+    function Probe() {
+      ref.current = bindings.useTurnDeadline();
+      return null;
+    }
+    const localMatch = bindings.createLocalMatch({ match: MATCH, now: FIXED_NOW });
+    render(
+      <bindings.OpenturnProvider match={localMatch}>
+        <Probe />
+      </bindings.OpenturnProvider>,
+    );
+
+    expect(ref.current.remainingMs).toBe(30_000);
+
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+    expect(ref.current.remainingMs).toBe(29_000);
+
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+    expect(ref.current.remainingMs).toBe(28_000);
+  });
+
+  test("ramps to 10Hz when remainingMs < 5000", () => {
+    const deadlineGame = defineGame({
+      playerIDs: MATCH.players,
+      events: { noop: undefined },
+      initial: "play",
+      setup: () => ({}),
+      states: {
+        play: {
+          activePlayers: () => ["0"],
+          deadline: ({ now }) => now + 4_500,
+        },
+      },
+      transitions: [],
+    });
+    const bindings = createOpenturnBindings(deadlineGame, {
+      runtime: "local",
+      match: MATCH,
+    });
+
+    const ref = {
+      current: { deadline: null as number | null, remainingMs: -1, isExpired: true },
+    };
+    function Probe() {
+      ref.current = bindings.useTurnDeadline();
+      return null;
+    }
+    const localMatch = bindings.createLocalMatch({ match: MATCH, now: FIXED_NOW });
+    render(
+      <bindings.OpenturnProvider match={localMatch}>
+        <Probe />
+      </bindings.OpenturnProvider>,
+    );
+
+    expect(ref.current.remainingMs).toBe(4_500);
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(ref.current.remainingMs).toBe(4_400);
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(ref.current.remainingMs).toBe(4_300);
   });
 });
 

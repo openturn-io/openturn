@@ -336,6 +336,22 @@ export interface OpenturnBindings<TGame extends AnyGame> {
    */
   useMatch: () => MatchView<TGame>;
   /**
+   * Live-updating turn-countdown derived from the active match's
+   * `controlMeta.deadline`. Drives custom in-game UI inside the iframe (e.g.
+   * urgent flashes, "5s left!" alerts, animated displays). Ticks at 1Hz
+   * baseline, ramping to 10Hz when `remainingMs < 5000` so the final-seconds
+   * display feels smooth. Each tick recomputes from `Date.now()` so tab-
+   * visibility throttling self-corrects on foreground.
+   *
+   * Same return shape as `@openturn/bridge`'s `useTurnDeadline(host)` — the
+   * shell-side hook that drives the host's countdown UI.
+   */
+  useTurnDeadline: () => {
+    deadline: number | null;
+    remainingMs: number;
+    isExpired: boolean;
+  };
+  /**
    * Build the inspector timeline + interaction state for the active match.
    * Returns null if no match is active (e.g. pre-connect). Pair with
    * `<InspectorShell>` from `@openturn/inspector-ui` to render.
@@ -635,6 +651,27 @@ function createLocalMatchStore<
   };
 }
 
+// Tick cadences for the in-iframe `useTurnDeadline` hook. Mirrors the
+// bridge-side hook (@openturn/bridge `useTurnDeadline(host)`): 1Hz baseline
+// with a 10Hz ramp inside the final 5 seconds so the last-second display
+// feels smooth.
+const TURN_DEADLINE_FAST_TICK_MS = 100;
+const TURN_DEADLINE_SLOW_TICK_MS = 1_000;
+const TURN_DEADLINE_FAST_TICK_THRESHOLD_MS = 5_000;
+
+// `MatchView`'s discriminated union has the same nested deadline path on both
+// the local and hosted shapes, but TS doesn't see them as a single type. This
+// helper narrows defensively — returns null when the snapshot is missing
+// (hosted match still connecting) or the current state has no `deadline`.
+function readMatchDeadline<TGame extends AnyGame>(
+  match: MatchView<TGame>,
+): number | null {
+  const snapshot = (match as {
+    snapshot?: { derived?: { controlMeta?: { deadline?: number | null } } };
+  }).snapshot;
+  return snapshot?.derived?.controlMeta?.deadline ?? null;
+}
+
 export function createOpenturnBindings<TGame extends AnyGame>(
   game: TGame,
   options?: CreateOpenturnBindingsOptions<TGame>,
@@ -801,6 +838,56 @@ export function createOpenturnBindings<TGame extends AnyGame>(
     return view;
   }
 
+  function useTurnDeadline(): {
+    deadline: number | null;
+    remainingMs: number;
+    isExpired: boolean;
+  } {
+    const view = useContext(MatchViewContext);
+    const deadline = view === null ? null : readMatchDeadline(view);
+
+    const [remainingMs, setRemainingMs] = useState<number>(() =>
+      deadline === null ? 0 : Math.max(0, deadline - Date.now()),
+    );
+
+    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    useEffect(() => {
+      if (timerRef.current !== null) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      if (deadline === null) {
+        setRemainingMs(0);
+        return;
+      }
+
+      const tick = () => {
+        const next = Math.max(0, deadline - Date.now());
+        setRemainingMs(next);
+        if (next === 0) return;
+        const interval = next < TURN_DEADLINE_FAST_TICK_THRESHOLD_MS
+          ? TURN_DEADLINE_FAST_TICK_MS
+          : TURN_DEADLINE_SLOW_TICK_MS;
+        timerRef.current = setTimeout(tick, interval);
+      };
+
+      tick();
+      return () => {
+        if (timerRef.current !== null) {
+          clearTimeout(timerRef.current);
+          timerRef.current = null;
+        }
+      };
+    }, [deadline]);
+
+    return {
+      deadline,
+      remainingMs,
+      isExpired: deadline !== null && remainingMs === 0,
+    };
+  }
+
   function useRoom(): HostedRoomState<TGame> {
     const room = useContext(HostedRoomContext);
     if (room === null) {
@@ -838,6 +925,7 @@ export function createOpenturnBindings<TGame extends AnyGame>(
     runtime,
     OpenturnProvider,
     useMatch,
+    useTurnDeadline,
     useRoom,
     useInspector: useInspectorInternal,
     useReplayInspector,
