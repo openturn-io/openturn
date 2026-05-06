@@ -871,3 +871,156 @@ describe("DeterministicRng dice helpers", () => {
     expect(a.disadvantage()).toBe(b.disadvantage());
   });
 });
+
+describe("turn-timer enforcement (core)", () => {
+  test("getNextDeadline returns controlMeta.deadline from current snapshot", () => {
+    const session = createLocalSession(
+      defineGame({
+        playerIDs: ["0", "1"] as const,
+        events: { noop: undefined },
+        initial: "play",
+        setup: () => ({}),
+        states: {
+          play: {
+            activePlayers: () => ["0"],
+            deadline: 12345,
+          },
+        },
+        transitions: [],
+      }),
+      { match: { players: ["0", "1"] as const }, now: 0 },
+    );
+    expect(session.getNextDeadline()).toBe(12345);
+  });
+
+  test("getNextDeadline returns null when no deadline set", () => {
+    const session = createLocalSession(
+      defineGame({
+        playerIDs: ["0", "1"] as const,
+        events: { noop: undefined },
+        initial: "play",
+        setup: () => ({}),
+        states: { play: { activePlayers: () => ["0"] } },
+        transitions: [],
+      }),
+      { match: { players: ["0", "1"] as const } },
+    );
+    expect(session.getNextDeadline()).toBe(null);
+  });
+
+  test("fireTimeout no-ops when no deadline is set", () => {
+    const session = createLocalSession(
+      defineGame({
+        playerIDs: ["0", "1"] as const,
+        events: { noop: undefined },
+        initial: "play",
+        setup: () => ({}),
+        states: { play: { activePlayers: () => ["0"] } },
+        transitions: [],
+      }),
+      { match: { players: ["0", "1"] as const } },
+    );
+    const stateNameBefore = session.getState().position.name;
+    session.fireTimeout(1_000_000);
+    expect(session.getState().position.name).toBe(stateNameBefore);
+  });
+
+  test("fireTimeout no-ops when deadline is in the future", () => {
+    const game = defineGame({
+      playerIDs: ["0", "1"] as const,
+      events: { noop: undefined },
+      initial: "play",
+      setup: () => ({}),
+      states: {
+        play: {
+          activePlayers: () => ["0"],
+          deadline: 1_000_000,
+        },
+        done: { activePlayers: () => [] },
+      },
+      transitions: [
+        { kind: "timeout" as const, from: "play", to: "done", resolve: () => null },
+      ],
+    });
+    const session = createLocalSession(game, {
+      match: { players: ["0", "1"] as const },
+      now: 0,
+    });
+    session.fireTimeout(500_000);
+    expect(session.getState().position.name).toBe("play");
+  });
+
+  test("fireTimeout applies matching kind: timeout transition when deadline elapsed", () => {
+    const game = defineGame({
+      playerIDs: ["0", "1"] as const,
+      events: { noop: undefined },
+      initial: "play",
+      setup: () => ({ ticks: 0 }),
+      states: {
+        play: {
+          activePlayers: () => ["0"],
+          deadline: 1_000,
+        },
+        done: { activePlayers: () => [] },
+      },
+      transitions: [
+        { kind: "timeout" as const, from: "play", to: "done", resolve: () => null },
+      ],
+    });
+    const session = createLocalSession(game, {
+      match: { players: ["0", "1"] as const },
+      now: 0,
+    });
+    session.fireTimeout(2_000);
+    expect(session.getState().position.name).toBe("done");
+  });
+
+  test("fireTimeout no-ops when deadline elapsed but no matching transition", () => {
+    const game = defineGame({
+      playerIDs: ["0", "1"] as const,
+      events: { noop: undefined },
+      initial: "play",
+      setup: () => ({}),
+      states: {
+        play: {
+          activePlayers: () => ["0"],
+          deadline: 1_000,
+        },
+      },
+      transitions: [],
+    });
+    const session = createLocalSession(game, {
+      match: { players: ["0", "1"] as const },
+      now: 0,
+    });
+    session.fireTimeout(2_000);
+    expect(session.getState().position.name).toBe("play");
+  });
+
+  test("fireTimeout uses parent-fallback transition matching", () => {
+    const game = defineGame({
+      playerIDs: ["0", "1"] as const,
+      events: { noop: undefined },
+      initial: "child",
+      setup: () => ({}),
+      states: {
+        parent: {},
+        child: {
+          activePlayers: () => ["0"],
+          deadline: 1_000,
+          parent: "parent",
+        },
+        done: { activePlayers: () => [] },
+      },
+      transitions: [
+        { kind: "timeout" as const, from: "parent", to: "done", resolve: () => null },
+      ],
+    });
+    const session = createLocalSession(game, {
+      match: { players: ["0", "1"] as const },
+      now: 0,
+    });
+    session.fireTimeout(2_000);
+    expect(session.getState().position.name).toBe("done");
+  });
+});

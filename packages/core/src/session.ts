@@ -27,6 +27,7 @@ import type {
   GameGraph,
   GameGraphEdge,
   GameNodes,
+  GameNodeState,
   GameObservedTransition,
   GamePlayers,
   GamePlayerView,
@@ -49,6 +50,21 @@ import type {
   ReplayValue,
 } from "./types";
 import { normalizeMatchInput, validateGameDefinition } from "./validation";
+
+/**
+ * Sentinel `event` name used in action-record entries, queued-event records,
+ * and graph edges that originated from a `kind: "timeout"` transition. The
+ * sentinel is intentionally NOT a key in any game's public events map — it
+ * exists only on the recorded log entry so replays can re-dispatch the same
+ * timeout deterministically (per spec §6) and on graph edges so visualizers
+ * can render timeout edges with a distinct label. The double underscore
+ * mirrors how internal-only enqueued events are usually distinguished from
+ * author-declared events. A future change could replace this with a new
+ * `type: "timeout"` discriminator on `GameActionRecord`; for Task 2 we keep
+ * the existing record shape and only repurpose `event` to minimize churn in
+ * the log shape that hosts and replayers read.
+ */
+const TIMEOUT_EVENT_NAME = "__timeout";
 
 type SnapshotFor<
   TMachine extends AnyGame,
@@ -270,11 +286,76 @@ function buildLocalSession<
     ]),
   ) as unknown as LocalGameSession<TMachine, TMatch>["dispatch"];
 
+  const fireTimeout: LocalGameSession<TMachine, TMatch>["fireTimeout"] = (now = Date.now()) => {
+    if (snapshot.meta.result !== null) return;
+
+    const deadline = snapshot.derived.controlMeta.deadline;
+    if (deadline === null || deadline > now) {
+      // Idempotency: no deadline, or it hasn't elapsed yet. Stale alarm or
+      // race-condition trigger — silently no-op so cloud DOs and CLI hosts
+      // can fire-and-forget.
+      return;
+    }
+
+    const transition = findTimeoutTransition<TMachine>(machine, snapshot.position as GameNodeState<GameNodes<TMachine>>);
+    if (transition === undefined) {
+      // No `kind: "timeout"` transition matched along the parent fallback
+      // chain. The game stalls intentionally — authors must declare an
+      // `onTimeout`/timeout transition to advance from a deadlined state.
+      return;
+    }
+
+    const actionID = createNextActionID(snapshot.meta.log);
+    // The action record uses the `TIMEOUT_EVENT_NAME` sentinel as `event` and
+    // `playerID: null` to mark the entry as host-dispatched. The cast
+    // matches the `applyEvent` path and is required because the typed
+    // `GameActionRecordFor` only describes player-emitted records (its
+    // `event` is constrained to `keyof TMachine["events"]`). Replays read the
+    // sentinel to re-dispatch the timeout deterministically.
+    const externalRecord = {
+      actionID,
+      at: now,
+      event: TIMEOUT_EVENT_NAME,
+      payload: null,
+      playerID: null,
+      turn: snapshot.position.turn,
+      type: "event",
+    } as unknown as GameActionRecordFor<TMachine["events"], TMatch["players"][number]>;
+
+    const timeoutInput = { kind: TIMEOUT_EVENT_NAME, payload: null } as unknown as GameEventInput<TMachine["events"]>;
+    const timeoutMatcher: TransitionMatcher<TMachine, TMatch> = (candidate, _input): candidate is TransitionFor<TMachine, TMatch> =>
+      "kind" in candidate && (candidate as { kind?: unknown }).kind === "timeout";
+
+    // Hop wall-clock forward to `now` for the duration of this transition so
+    // any resolver-side `resolveTimeValue(deadline, ctx)` re-evaluation and
+    // the resulting snapshot's `meta.now` reflect the moment the timeout
+    // fired. Mirrors how `applyEvent` advances `now` to the action's `at`.
+    const advancedSnapshot = {
+      ...snapshot,
+      meta: { ...snapshot.meta, now },
+    };
+    const batch = applyEventBatch(machine, topology, advancedSnapshot, externalRecord, [timeoutInput], timeoutMatcher);
+
+    if (isErrorResult(batch)) {
+      // Timeout dispatch produced no observable error path for callers — the
+      // host fired and we silently log nothing on internal failure (e.g.,
+      // ambiguous timeout family). A future revision may surface this; for
+      // now align with the spec's "fire and forget" stance.
+      return;
+    }
+
+    snapshot = batch.snapshot as SnapshotFor<TMachine, TMatch>;
+  };
+
   return {
     applyEvent,
     dispatch,
+    fireTimeout,
     getGraph() {
       return compileGameGraph(machine);
+    },
+    getNextDeadline() {
+      return snapshot.derived.controlMeta.deadline ?? null;
     },
     getPlayerView(playerID) {
       const context = createRuleContext(snapshot);
@@ -317,13 +398,21 @@ export function compileGameGraph(machine: AnyGame): GameGraph {
   return {
     initial: machine.initial,
     nodes: Object.values(topology.nodes).map((node) => topologyNodeToGraphNode(node)),
-    edges: machine.transitions.map((transition: AnyGame["transitions"][number]): GameGraphEdge => ({
-      event: transition.event,
-      from: transition.from,
-      resolver: describeResolver(transition),
-      to: transition.to,
-      turn: transition.turn ?? "preserve",
-    })),
+    edges: machine.transitions.map((transition: AnyGame["transitions"][number]): GameGraphEdge => {
+      // `kind: "timeout"` transitions don't have an `event` field. They
+      // surface in the graph under the `TIMEOUT_EVENT_NAME` sentinel so
+      // visualizers and inspectors can render them as a distinct edge label
+      // without colliding with any author-declared event name.
+      const isTimeout =
+        "kind" in transition && (transition as { kind?: unknown }).kind === "timeout";
+      return {
+        event: isTimeout ? TIMEOUT_EVENT_NAME : (transition as { event: string }).event,
+        from: transition.from,
+        resolver: describeResolver(transition),
+        to: transition.to,
+        turn: transition.turn ?? "preserve",
+      };
+    }),
   };
 }
 
@@ -336,6 +425,7 @@ function applyEventBatch<
   current: SnapshotFor<TMachine, TMatch>,
   actionRecord: GameActionRecordFor<TMachine["events"], TMatch["players"][number]>,
   queue: GameEventInput<TMachine["events"]>[],
+  initialMatcher?: TransitionMatcher<TMachine, TMatch>,
 ): GameBatch<TMachine> | GameErrorResult {
   const steps: Array<GameBatch<TMachine>["steps"][number]> = [];
   let nextSnapshot = current;
@@ -355,7 +445,25 @@ function applyEventBatch<
           type: "internal",
         } as GameEventRecord<TMachine["events"], TMatch["players"]>;
 
-    const transitionResult = applySingleEvent(machine, topology, nextSnapshot, eventRecord, nextInput, actionRecord.playerID);
+    // The custom matcher (if any) only applies to the FIRST event in the batch
+    // — the external trigger. Any events enqueued by a timeout-dispatched
+    // transition's resolver behave as ordinary internal events from then on
+    // (matched by their event-kind name).
+    const matcher = isFirst ? initialMatcher : undefined;
+    // For timeouts the action record's `playerID` is `null`; widen the
+    // function-call signature here so we don't accidentally up-cast `null` to
+    // `PlayerID` on the way through.
+    const actingPlayerID =
+      (actionRecord as { playerID: PlayerID | null }).playerID;
+    const transitionResult = applySingleEvent(
+      machine,
+      topology,
+      nextSnapshot,
+      eventRecord,
+      nextInput,
+      actingPlayerID,
+      matcher,
+    );
     if (isErrorResult(transitionResult)) {
       return transitionResult;
     }
@@ -406,6 +514,44 @@ function applyEventBatch<
   };
 }
 
+/**
+ * Predicate used by {@link applySingleEvent} to decide which transitions in a
+ * machine should be considered for a given dispatch. The default predicate
+ * (used by player-dispatched events) matches by `transition.event` against
+ * the event input's `kind`. The timeout dispatch path passes a kind-aware
+ * predicate that selects only `kind: "timeout"` transitions.
+ */
+type TransitionMatcher<TMachine extends AnyGame, TMatch extends MatchInput<GamePlayers<TMachine>>> = (
+  transition: TMachine["transitions"][number],
+  eventInput: GameEventInput<TMachine["events"]>,
+) => transition is TransitionFor<TMachine, TMatch>;
+
+/**
+ * Walks the active state's `path` from leaf to root and returns the most-
+ * specific `kind: "timeout"` transition whose `from` matches a node in that
+ * path, or `undefined` if none exists. Mirrors the parent-fallback search the
+ * event dispatch uses in {@link applySingleEvent}: at each level, if exactly
+ * one timeout transition matches we select it; if more than one matches at
+ * the same level we throw — same ambiguity policy as authored event
+ * transitions, since by the time we're firing the host can't recover.
+ */
+function findTimeoutTransition<TMachine extends AnyGame>(
+  machine: TMachine,
+  position: GameNodeState<GameNodes<TMachine>>,
+): TMachine["transitions"][number] | undefined {
+  for (const source of [...position.path].reverse()) {
+    const matches = machine.transitions.filter((candidate: TMachine["transitions"][number]) =>
+      "kind" in candidate &&
+      (candidate as { kind?: unknown }).kind === "timeout" &&
+      (candidate as { from: string }).from === source);
+    if (matches.length === 1) return matches[0];
+    if (matches.length > 1) {
+      throw new Error(`Ambiguous timeout transitions from "${String(source)}".`);
+    }
+  }
+  return undefined;
+}
+
 function applySingleEvent<
   TMachine extends AnyGame,
   TMatch extends MatchInput<GamePlayers<TMachine>>,
@@ -415,15 +561,25 @@ function applySingleEvent<
   current: SnapshotFor<TMachine, TMatch>,
   eventRecord: GameEventRecord,
   eventInput: GameEventInput<TMachine["events"]>,
-  actingPlayerID: PlayerID,
+  actingPlayerID: PlayerID | null,
+  matcher?: TransitionMatcher<TMachine, TMatch>,
 ): TransitionResolution<TMachine, TMatch> {
   const familyEvaluations: GameTransitionFamilyEvaluation<GameNodes<TMachine>>[] = [];
   let selected: EvaluatedTransition<TMachine, TMatch> | null = null;
   let rejected: EvaluatedTransition<TMachine, TMatch> | null = null;
+  const isMatch: TransitionMatcher<TMachine, TMatch> =
+    matcher ??
+    ((transition, input): transition is TransitionFor<TMachine, TMatch> =>
+      // Default: only event-shaped transitions whose declared `event` matches
+      // the input's `kind`. Timeout transitions are excluded here so player
+      // events can never fire one accidentally; they're dispatched via
+      // {@link fireTimeout}.
+      !("kind" in transition && (transition as { kind?: unknown }).kind === "timeout") &&
+      (transition as { event: string }).event === input.kind);
 
   for (const source of [...current.position.path].reverse()) {
     const transitions = machine.transitions.filter((transition: TMachine["transitions"][number]): transition is TransitionFor<TMachine, TMatch> =>
-      transition.from === source && transition.event === eventInput.kind);
+      transition.from === source && isMatch(transition, eventInput));
 
     if (transitions.length === 0) {
       continue;
@@ -579,8 +735,18 @@ function evaluateTransition<
   snapshot: SnapshotFor<TMachine, TMatch>,
   eventInput: GameEventInput<TMachine["events"]>,
   eventRecord: GameEventRecord,
-  actingPlayerID: PlayerID,
+  actingPlayerID: PlayerID | null,
 ): EvaluatedTransition<TMachine, TMatch> {
+  // `kind: "timeout"` transitions take a different "no-op" semantics than
+  // event transitions: where an event resolver returning `null/false/undefined`
+  // signals "I am not the right transition; try the next sibling/parent",
+  // a timeout resolver returning `null/false/undefined` means "fire the
+  // transition with no state mutation". That's because by the time we're in
+  // here we've already singled out one timeout transition for this state via
+  // {@link findTimeoutTransition}; there is no fallback to walk to.
+  const isTimeoutTransition =
+    "kind" in transition && (transition as { kind?: unknown }).kind === "timeout";
+
   if (transition.resolve === undefined) {
     return {
       evaluation: {
@@ -605,6 +771,30 @@ function evaluateTransition<
   const output = transition.resolve?.(context);
 
   if (output === false || output === null || output === undefined) {
+    if (isTimeoutTransition) {
+      const after = rng.getSnapshot();
+      return {
+        evaluation: {
+          from: transition.from,
+          matched: true,
+          rejectedBy: null,
+          resolver: describeResolver(transition),
+          to: transition.to,
+        },
+        matches: true,
+        rejection: null,
+        result: undefined,
+        rng: after.draws === before.draws
+          ? null
+          : {
+              after: after.state,
+              before: before.state,
+              draws: after.draws - before.draws,
+            },
+        rngSnapshot: after,
+        transition,
+      };
+    }
     return {
       evaluation: {
         from: transition.from,

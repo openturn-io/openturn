@@ -814,6 +814,23 @@ export interface LocalGameSession<
     event: TKind,
     ...payload: GameEventArgsTuple<TMachine["events"], TKind>
   ): GameErrorResult | GameSuccessResult<TMachine>;
+  /**
+   * The wall-clock instant at which the host should fire the next
+   * `kind: "timeout"` transition, or `null` when the active state has no
+   * deadline. Mirrors `getState().derived.controlMeta.deadline`. Hosts compare
+   * against their wall-clock to decide when to call {@link fireTimeout}.
+   */
+  getNextDeadline(): number | null;
+  /**
+   * Idempotent timeout dispatcher. When the active state's deadline has
+   * elapsed (`now >= controlMeta.deadline`), looks up a `kind: "timeout"`
+   * transition with the same parent-fallback search used for events and
+   * applies it through the existing dispatch path. No-op when no deadline is
+   * set, the deadline is in the future, or no matching transition exists
+   * (the game stalls intentionally — authors must declare an `onTimeout` to
+   * advance). `now` defaults to `Date.now()` for live hosts.
+   */
+  fireTimeout(now?: number): void;
   getGraph(): GameGraph;
   getPlayerView(playerID: TMatch["players"][number]): GamePlayerView<TMachine>;
   getPublicView(): GamePublicView<TMachine>;

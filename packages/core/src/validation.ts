@@ -265,6 +265,14 @@ export function getGameValidationReport(
   const familyIndex = new Map<string, AnyGame["transitions"][number][]>();
 
   for (const transition of machine.transitions) {
+    // Discriminated union: a `kind: "timeout"` transition has no `event` field
+    // and is matched by the timeout dispatch path rather than by player events.
+    // Task 3 layers on richer kind-aware shape validation; here we just bypass
+    // the event-name and event-family rules so timeout transitions don't trip
+    // them.
+    const isTimeoutTransition =
+      "kind" in transition && (transition as { kind?: unknown }).kind === "timeout";
+
     if (!stateNames.has(transition.from)) {
       pushDiagnostic({
         code: "missing_state",
@@ -300,6 +308,11 @@ export function getGameValidationReport(
           to: transition.to,
         });
       }
+    }
+
+    if (isTimeoutTransition) {
+      outgoingByState.set(transition.from, (outgoingByState.get(transition.from) ?? 0) + 1);
+      continue;
     }
 
     if (!eventNames.has(transition.event)) {
