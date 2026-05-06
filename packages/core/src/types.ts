@@ -825,12 +825,18 @@ export interface LocalGameSession<
    * Idempotent timeout dispatcher. When the active state's deadline has
    * elapsed (`now >= controlMeta.deadline`), looks up a `kind: "timeout"`
    * transition with the same parent-fallback search used for events and
-   * applies it through the existing dispatch path. No-op when no deadline is
-   * set, the deadline is in the future, or no matching transition exists
-   * (the game stalls intentionally — authors must declare an `onTimeout` to
-   * advance). `now` defaults to `Date.now()` for live hosts.
+   * applies it through the existing dispatch path. Returns the resulting
+   * batch (mirroring {@link applyEvent}'s success shape) when a transition
+   * fires, or `null` when the call was a no-op — no deadline is set, the
+   * deadline is still in the future, no matching `kind: "timeout"` rule
+   * exists (the game stalls intentionally — authors must declare an
+   * `onTimeout` to advance), or the dispatch produced an internal error.
+   * Hosts use the returned batch to broadcast a standard `batch_applied`
+   * envelope (same wire format as a regular event apply); a `null` return
+   * signals "nothing to broadcast, just re-arm the scheduler". `now`
+   * defaults to `Date.now()` for live hosts.
    */
-  fireTimeout(now?: number): void;
+  fireTimeout(now?: number): GameBatch<TMachine> | null;
   getGraph(): GameGraph;
   getPlayerView(playerID: TMatch["players"][number]): GamePlayerView<TMachine>;
   getPublicView(): GamePublicView<TMachine>;

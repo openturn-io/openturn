@@ -23,7 +23,7 @@ import {
 } from "@openturn/core";
 import {
   MatchSnapshotSchema,
-  ProtocolActionRecordSchema,
+  ProtocolEventRecordSchema,
   ProtocolHistoryBranchSchema,
   protocolizeGameSnapshot,
   protocolizeGameStep,
@@ -34,10 +34,10 @@ import {
   type MatchID,
   type MatchSnapshot,
   type PlayerViewSnapshot,
-  type ProtocolActionRecord,
   type ProtocolClientMessage,
   type ProtocolErrorCode,
   type ProtocolErrorDetail,
+  type ProtocolEventRecord,
   type ProtocolHistoryBranch,
   type ProtocolValue,
   type ResyncRequest,
@@ -126,7 +126,12 @@ export interface RoomPersistenceRecord<
   checkpoint: CanonicalSnapshot<TGame>;
   deploymentVersion: string;
   initialNow: number;
-  log: readonly ProtocolActionRecord[];
+  /**
+   * Recorded action history. Mostly player-emitted `type: "event"` records;
+   * host-dispatched entries (e.g. the `__timeout` sentinel) appear with
+   * `type: "internal"` + `playerID: null`. Replay handles both shapes.
+   */
+  log: readonly ProtocolEventRecord[];
   match: MatchInput<GamePlayers<TGame>>;
   roomID: MatchID;
   seed: string;
@@ -400,8 +405,8 @@ export async function createRoomRuntime<
   );
 
   if (saved !== undefined) {
-    const savedLog = (saved.snapshot as { log?: readonly ProtocolActionRecord[] }).log
-      ?? (saved.snapshot as { meta?: { log?: readonly ProtocolActionRecord[] } }).meta?.log
+    const savedLog = (saved.snapshot as { log?: readonly ProtocolEventRecord[] }).log
+      ?? (saved.snapshot as { meta?: { log?: readonly ProtocolEventRecord[] } }).meta?.log
       ?? [];
     replayIntoSession(session, savedLog);
   }
@@ -578,40 +583,48 @@ export async function createRoomRuntime<
         return [];
       }
 
-      const priorLogLength = (session.getState().meta.log as readonly unknown[]).length;
-      session.fireTimeout(now);
+      const batch = session.fireTimeout(now);
 
-      // The session's `fireTimeout` doesn't return a batch. Detect a fired
-      // transition by comparing log length pre/post. When no matching
-      // `kind: "timeout"` rule existed the game stalls intentionally — bail
-      // without broadcasting.
-      const newLogLength = (session.getState().meta.log as readonly unknown[]).length;
-      if (newLogLength === priorLogLength) {
+      // `null` means the session decided this was a no-op (no deadline,
+      // future deadline, no matching `kind: "timeout"` transition, or an
+      // internal error). Re-arm and bail without broadcasting.
+      if (batch === null) {
         await rearmScheduler();
         return [];
       }
 
-      const stepsApplied = newLogLength - priorLogLength;
-      revision += stepsApplied;
-      // Use the synthetic timeout actionID minted inside `session.fireTimeout`
-      // (the most recently-appended log entry) as the new branch head.
-      const log = session.getState().meta.log as readonly { actionID: string }[];
-      const headActionID = log[log.length - 1]?.actionID ?? branch.headActionID;
-      branch = { ...branch, headActionID };
+      revision += batch.steps.length;
+      // The synthetic timeout actionID minted inside `session.fireTimeout`
+      // is the first step's `event.actionID` (mirrors `handleAction`).
+      branch = {
+        ...branch,
+        headActionID: batch.steps[0]?.event.actionID ?? branch.headActionID,
+      };
 
       await persist();
+      await emitActionProfileCommits(batch.steps);
       await maybeSettle();
       await rearmScheduler();
 
+      // Broadcast the standard `batch_applied` envelope to every connected
+      // player — same wire shape as a player-emitted event. There's no
+      // originating client request, so no `ackClientActionID` is included.
       const recipients = [...connectedPlayers];
       return recipients.map((playerID) => ({
-        message: createPlayerSnapshot(
-          options.roomID,
+        message: {
+          type: "batch_applied",
+          matchID: options.roomID,
           revision,
-          session,
-          options.deployment.game,
-          playerID,
-        ),
+          branch,
+          snapshot: createPlayerSnapshot(options.roomID, revision, session, options.deployment.game, playerID),
+          steps: createPlayerBatchSteps(
+            options.roomID,
+            revision,
+            batch.steps,
+            options.deployment.game,
+            playerID,
+          ),
+        } satisfies PlayerBatchMessage<ProtocolCompatibleGame<TGame>>,
         playerID,
       }));
     },
@@ -893,9 +906,18 @@ function isGameDeployment(value: unknown): value is GameDeployment {
 
 function replayIntoSession<TGame extends AnyGame>(
   session: LocalGameSession<TGame>,
-  actions: readonly ProtocolActionRecord[],
+  actions: readonly ProtocolEventRecord[],
 ) {
   for (const action of actions) {
+    if (action.type === "internal") {
+      // Host-dispatched entries (currently only the `__timeout` sentinel)
+      // are re-fired by the host's scheduler when the deadline elapses on
+      // restore — they don't replay through `applyEvent`. Skipping here is
+      // safe because the persisted checkpoint advances `revision` past the
+      // sentinel; the scheduler will re-arm against the (post-timeout)
+      // active state's deadline if any.
+      continue;
+    }
     const moveResult = session.applyEvent(
       action.playerID,
       action.event as never,
@@ -991,7 +1013,7 @@ const RoomPersistenceRecordSchema = z.object({
   checkpoint: MatchSnapshotSchema,
   deploymentVersion: z.string(),
   initialNow: z.number().finite(),
-  log: ProtocolActionRecordSchema.array(),
+  log: ProtocolEventRecordSchema.array(),
   match: MatchInputSchema,
   roomID: z.string(),
   seed: z.string(),

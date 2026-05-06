@@ -971,8 +971,86 @@ describe("turn-timer enforcement (core)", () => {
       match: { players: ["0", "1"] as const },
       now: 0,
     });
-    session.fireTimeout(2_000);
+    const batch = session.fireTimeout(2_000);
     expect(session.getState().position.name).toBe("done");
+    // The returned batch mirrors `applyEvent`'s success shape so hosts can
+    // broadcast a standard `batch_applied` envelope without having to diff
+    // log lengths.
+    expect(batch).not.toBeNull();
+    expect(batch?.steps.length).toBeGreaterThan(0);
+    expect(batch?.snapshot.position.name).toBe("done");
+    // The recorded log entry uses `type: "internal"` (not `"event"`) with
+    // `playerID: null` — matches `ProtocolInternalEventRecordSchema`. See
+    // `TIMEOUT_EVENT_NAME` in `session.ts`.
+    const log = session.getState().meta.log as readonly {
+      event: string;
+      playerID: unknown;
+      type: string;
+    }[];
+    const sentinel = log[log.length - 1]!;
+    expect(sentinel.type).toBe("internal");
+    expect(sentinel.playerID).toBeNull();
+    expect(sentinel.event).toBe("__timeout");
+  });
+
+  test("fireTimeout returns null when no deadline is set", () => {
+    const session = createLocalSession(
+      defineGame({
+        playerIDs: ["0", "1"] as const,
+        events: { noop: undefined },
+        initial: "play",
+        setup: () => ({}),
+        states: { play: { activePlayers: () => ["0"] } },
+        transitions: [],
+      }),
+      { match: { players: ["0", "1"] as const } },
+    );
+    expect(session.fireTimeout(1_000_000)).toBeNull();
+  });
+
+  test("fireTimeout returns null when deadline is in the future", () => {
+    const game = defineGame({
+      playerIDs: ["0", "1"] as const,
+      events: { noop: undefined },
+      initial: "play",
+      setup: () => ({}),
+      states: {
+        play: {
+          activePlayers: () => ["0"],
+          deadline: 1_000_000,
+        },
+        done: { activePlayers: () => [] },
+      },
+      transitions: [
+        { kind: "timeout" as const, from: "play", to: "done", resolve: () => null },
+      ],
+    });
+    const session = createLocalSession(game, {
+      match: { players: ["0", "1"] as const },
+      now: 0,
+    });
+    expect(session.fireTimeout(500_000)).toBeNull();
+  });
+
+  test("fireTimeout returns null when deadline elapsed but no matching transition", () => {
+    const game = defineGame({
+      playerIDs: ["0", "1"] as const,
+      events: { noop: undefined },
+      initial: "play",
+      setup: () => ({}),
+      states: {
+        play: {
+          activePlayers: () => ["0"],
+          deadline: 1_000,
+        },
+      },
+      transitions: [],
+    });
+    const session = createLocalSession(game, {
+      match: { players: ["0", "1"] as const },
+      now: 0,
+    });
+    expect(session.fireTimeout(2_000)).toBeNull();
   });
 
   test("fireTimeout no-ops when deadline elapsed but no matching transition", () => {

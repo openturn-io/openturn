@@ -59,10 +59,18 @@ import { normalizeMatchInput, validateGameDefinition } from "./validation";
  * timeout deterministically (per spec §6) and on graph edges so visualizers
  * can render timeout edges with a distinct label. The double underscore
  * mirrors how internal-only enqueued events are usually distinguished from
- * author-declared events. A future change could replace this with a new
- * `type: "timeout"` discriminator on `GameActionRecord`; for Task 2 we keep
- * the existing record shape and only repurpose `event` to minimize churn in
- * the log shape that hosts and replayers read.
+ * author-declared events.
+ *
+ * The recorded log entry uses `type: "internal"` (not `"event"`) with
+ * `playerID: null` — host-dispatched timeouts are not player events and
+ * the protocol's `ProtocolActionRecordSchema` requires `type: "event"`
+ * records to carry a non-null `playerID`. The sibling
+ * `ProtocolInternalEventRecordSchema` permits `type: "internal"` with
+ * `playerID: null`, which exactly matches the timeout sentinel's shape.
+ * A future change could replace this with a dedicated `type: "timeout"`
+ * discriminator on `GameActionRecord`; for now we reuse the existing
+ * `internal` record shape to minimize churn in the log readers (hosts and
+ * replayers).
  */
 const TIMEOUT_EVENT_NAME = "__timeout";
 
@@ -301,14 +309,14 @@ function buildLocalSession<
   ) as unknown as LocalGameSession<TMachine, TMatch>["dispatch"];
 
   const fireTimeout: LocalGameSession<TMachine, TMatch>["fireTimeout"] = (now = Date.now()) => {
-    if (snapshot.meta.result !== null) return;
+    if (snapshot.meta.result !== null) return null;
 
     const deadline = snapshot.derived.controlMeta.deadline;
     if (deadline === null || deadline > now) {
       // Idempotency: no deadline, or it hasn't elapsed yet. Stale alarm or
       // race-condition trigger — silently no-op so cloud DOs and CLI hosts
       // can fire-and-forget.
-      return;
+      return null;
     }
 
     const transition = findTimeoutTransition<TMachine>(machine, snapshot.position as GameNodeState<GameNodes<TMachine>>);
@@ -316,16 +324,20 @@ function buildLocalSession<
       // No `kind: "timeout"` transition matched along the parent fallback
       // chain. The game stalls intentionally — authors must declare an
       // `onTimeout`/timeout transition to advance from a deadlined state.
-      return;
+      return null;
     }
 
     const actionID = createNextActionID(snapshot.meta.log);
-    // The action record uses the `TIMEOUT_EVENT_NAME` sentinel as `event` and
-    // `playerID: null` to mark the entry as host-dispatched. The cast
-    // matches the `applyEvent` path and is required because the typed
-    // `GameActionRecordFor` only describes player-emitted records (its
-    // `event` is constrained to `keyof TMachine["events"]`). Replays read the
-    // sentinel to re-dispatch the timeout deterministically.
+    // The action record uses the `TIMEOUT_EVENT_NAME` sentinel as `event`,
+    // `playerID: null`, and `type: "internal"` to mark the entry as
+    // host-dispatched. The protocol's `ProtocolActionRecordSchema` requires
+    // `type: "event"` to carry a non-null `playerID`; the sibling
+    // `ProtocolInternalEventRecordSchema` permits `playerID: null` paired
+    // with `type: "internal"`, which is the right shape for a host-emitted
+    // timeout. The cast is required because the typed `GameActionRecordFor`
+    // only describes player-emitted records (its `event` is constrained to
+    // `keyof TMachine["events"]`). Replays read the sentinel to re-dispatch
+    // the timeout deterministically.
     const externalRecord = {
       actionID,
       at: now,
@@ -333,7 +345,7 @@ function buildLocalSession<
       payload: null,
       playerID: null,
       turn: snapshot.position.turn,
-      type: "event",
+      type: "internal",
     } as unknown as GameActionRecordFor<TMachine["events"], TMatch["players"][number]>;
 
     const timeoutInput = { kind: TIMEOUT_EVENT_NAME, payload: null } as unknown as GameEventInput<TMachine["events"]>;
@@ -355,10 +367,11 @@ function buildLocalSession<
       // host fired and we silently log nothing on internal failure (e.g.,
       // ambiguous timeout family). A future revision may surface this; for
       // now align with the spec's "fire and forget" stance.
-      return;
+      return null;
     }
 
     snapshot = batch.snapshot as SnapshotFor<TMachine, TMatch>;
+    return batch;
   };
 
   return {

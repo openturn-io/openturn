@@ -603,14 +603,12 @@ describe("RoomRuntime — DeadlineScheduler integration", () => {
       scheduler,
     });
     await runtime.fireTimeout(2_000);
-    // Read the live session position directly. The wire-shaped
-    // `runtime.getState().snapshot` would currently re-protocolize the action
-    // log, which fails on the timeout sentinel record (Task 2 emits
-    // `playerID: null` with `type: "event"`, conflicting with
-    // `ProtocolActionRecordSchema`'s `playerID: string`). Tracking that
-    // upstream gap separately; the runtime itself wires fireTimeout
-    // correctly — this assertion confirms the session advanced.
-    expect(runtime.getSession().getState().position.name).toBe("done");
+    // The wire-shaped `runtime.getState().snapshot` re-protocolizes the
+    // action log; with the timeout sentinel emitted as a `type: "internal"`
+    // record (matching `ProtocolInternalEventRecordSchema`'s `playerID: null`
+    // shape) the wire shape now round-trips cleanly, so we can assert via
+    // the public state.
+    expect(runtime.getState().snapshot.position.node).toBe("done");
   });
 
   test("RoomRuntime.fireTimeout() no-ops when deadline not yet elapsed (idempotency)", async () => {
@@ -627,7 +625,7 @@ describe("RoomRuntime — DeadlineScheduler integration", () => {
       scheduler,
     });
     await runtime.fireTimeout(500); // before deadline
-    expect(runtime.getState().snapshot.position.name).not.toBe("done");
+    expect(runtime.getState().snapshot.position.node).not.toBe("done");
   });
 
   test("RoomRuntime.fireTimeout() re-arms scheduler after firing", async () => {
