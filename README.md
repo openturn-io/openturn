@@ -37,6 +37,19 @@ But we recommend a quick start example below to overview the basic game definiti
   - CDN, storage and db
   - All handled by cloud with zero infra setup for developers.
 
+## Design Philosophy
+
+Openturn has follow design philosophy in mind:
+
+- determinism
+- inspectability
+- serializability
+- graphability
+- validation
+- worker-safe execution
+
+And our APIs and typescript typing systems are keep evolving and are being consolidated, still at its early stages.
+
 ## Comparisons to boardgame.io
 
 Openturn takes inspirations from boardgame.io and boardgamearena.com (no direct code copy though)
@@ -116,6 +129,8 @@ npx skills add openturn-io/openturn
 ```
 
 See the [skill docs](https://openturn.io/docs/agent-skills) for what's covered and how to update.
+
+
 
 ## Learn more
 
