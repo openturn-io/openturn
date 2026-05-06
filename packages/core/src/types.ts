@@ -369,7 +369,7 @@ export type GameTransitionResolver<
   context: GameEventContext<TState, TEvents, TNode, TPlayers, TControl>,
 ) => GameTransitionResult<TState, TEvents, TResult> | GameTransitionRejection | false | null | void;
 
-export interface GameTransitionConfig<
+export interface GameEventTransition<
   TState,
   TEvents extends GameEventMap = GameEventMap,
   TResult = ReplayValue | null,
@@ -384,6 +384,33 @@ export interface GameTransitionConfig<
   to: TNode;
   turn?: "increment" | "preserve";
 }
+
+export interface GameTimeoutTransition<
+  TState,
+  TEvents extends GameEventMap = GameEventMap,
+  TResult = ReplayValue | null,
+  TNode extends string = string,
+  TPlayers extends PlayerList = PlayerList,
+  TControl extends ReplayValue = ReplayValue,
+> {
+  kind: "timeout";
+  from: TNode;
+  label?: string;
+  resolve?: GameTransitionResolver<TState, TEvents, TResult, TNode, TPlayers, TControl>;
+  to: TNode;
+  turn?: "increment" | "preserve";
+}
+
+export type GameTransitionConfig<
+  TState,
+  TEvents extends GameEventMap = GameEventMap,
+  TResult = ReplayValue | null,
+  TNode extends string = string,
+  TPlayers extends PlayerList = PlayerList,
+  TControl extends ReplayValue = ReplayValue,
+> =
+  | GameEventTransition<TState, TEvents, TResult, TNode, TPlayers, TControl>
+  | GameTimeoutTransition<TState, TEvents, TResult, TNode, TPlayers, TControl>;
 
 export interface GameStateConfig<
   TState,

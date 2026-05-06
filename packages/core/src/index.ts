@@ -140,6 +140,8 @@ export {
   type GameStateContext,
   type GameStep,
   type GameSuccessResult,
+  type GameEventTransition,
+  type GameTimeoutTransition,
   type GameTransitionCandidateEvaluation,
   type GameTransitionConfig,
   type GameTransitionFamilyEvaluation,
