@@ -189,6 +189,51 @@ describe("@openturn/replay", () => {
     expect(materializeSavedReplay(replayGame, parsed)).toEqual(expectedTimeline);
   });
 
+  test("saved replay envelope round-trips through a kind:timeout transition", () => {
+    const timeoutGame = defineGame({
+      playerIDs: ["0", "1"] as const,
+      events: { foo: undefined },
+      initial: "play",
+      setup: () => ({ ticks: 0 }),
+      states: {
+        play: { activePlayers: () => ["0"], deadline: 1_000 },
+        done: { activePlayers: () => [] },
+      },
+      transitions: [
+        { event: "foo" as const, from: "play", to: "play", resolve: () => null },
+        { kind: "timeout" as const, from: "play", to: "done", resolve: () => null },
+      ],
+    });
+    const timeoutMatch = { players: ["0", "1"] as const };
+    const session = createLocalSession(timeoutGame, {
+      match: timeoutMatch,
+      now: 0,
+    });
+    expect(session.fireTimeout(2_000)).not.toBeNull();
+    expect(session.getState().position.name).toBe("done");
+
+    const envelope = createSavedReplayFromSession({
+      gameID: "tests/timeout-replay",
+      playerID: "0",
+      session,
+    });
+
+    // The recorded log entry uses `type: "internal"` — the parser must accept
+    // it so saved replays containing a fired timeout round-trip cleanly.
+    const parsed = parseSavedReplay(serializeSavedReplay(envelope));
+    expect(parsed).toEqual(envelope);
+    expect(parsed.actions[0]?.type).toBe("internal");
+    expect(parsed.actions[0]?.playerID).toBeNull();
+    expect(parsed.actions[0]?.event).toBe("__timeout");
+
+    // Materialization must re-fire the timeout via `session.fireTimeout`
+    // rather than `applyEvent`, otherwise the unknown-event path would throw.
+    const materialized = materializeSavedReplay(timeoutGame, parsed);
+    const finalFrame = materialized.frames.at(-1);
+    expect(finalFrame?.snapshot.position.name).toBe("done");
+    expect(materialized.actions).toEqual(envelope.actions);
+  });
+
   test("rejects malformed config in saved replay", () => {
     expect(() => parseSavedReplay(JSON.stringify({
       actions: [],
@@ -224,6 +269,29 @@ describe("@openturn/replay", () => {
           payload: null,
           playerID: "0",
           turn: 1,
+          type: "weird",
+        },
+      ],
+      gameID: "tests/replay-game",
+      initialNow: 0,
+      match: {
+        players: ["0", "1"],
+      },
+      seed: "seed-1",
+      version: 1,
+    }))).toThrow('saved replay.actions[0].type must be "event" or "internal".');
+
+    // Internal records require `playerID: null` — a non-null playerID on
+    // `type: "internal"` must reject so the parser stays canonical.
+    expect(() => parseSavedReplay(JSON.stringify({
+      actions: [
+        {
+          actionID: "m_1",
+          at: 0,
+          event: "__timeout",
+          payload: null,
+          playerID: "0",
+          turn: 1,
           type: "internal",
         },
       ],
@@ -234,7 +302,7 @@ describe("@openturn/replay", () => {
       },
       seed: "seed-1",
       version: 1,
-    }))).toThrow('saved replay.actions[0].type must be "event".');
+    }))).toThrow("saved replay.actions[0].playerID must be null for internal records.");
 
     expect(() => parseSavedReplay(JSON.stringify({
       actions: [],
