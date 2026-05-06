@@ -66,6 +66,20 @@ import { normalizeMatchInput, validateGameDefinition } from "./validation";
  */
 const TIMEOUT_EVENT_NAME = "__timeout";
 
+/**
+ * Type guard for the `kind: "timeout"` variant of `GameTransitionConfig`.
+ * Used by the dispatch path's matcher predicates, the parent-fallback lookup
+ * in `fireTimeout`, and graph-edge labeling in `compileGameGraph`.
+ */
+function isTimeoutTransition(transition: unknown): boolean {
+  return (
+    typeof transition === "object" &&
+    transition !== null &&
+    "kind" in transition &&
+    (transition as { kind?: unknown }).kind === "timeout"
+  );
+}
+
 type SnapshotFor<
   TMachine extends AnyGame,
   TMatch extends MatchInput<GamePlayers<TMachine>> = MatchInput<GamePlayers<TMachine>>,
@@ -324,7 +338,7 @@ function buildLocalSession<
 
     const timeoutInput = { kind: TIMEOUT_EVENT_NAME, payload: null } as unknown as GameEventInput<TMachine["events"]>;
     const timeoutMatcher: TransitionMatcher<TMachine, TMatch> = (candidate, _input): candidate is TransitionFor<TMachine, TMatch> =>
-      "kind" in candidate && (candidate as { kind?: unknown }).kind === "timeout";
+      isTimeoutTransition(candidate);
 
     // Hop wall-clock forward to `now` for the duration of this transition so
     // any resolver-side `resolveTimeValue(deadline, ctx)` re-evaluation and
@@ -403,8 +417,7 @@ export function compileGameGraph(machine: AnyGame): GameGraph {
       // surface in the graph under the `TIMEOUT_EVENT_NAME` sentinel so
       // visualizers and inspectors can render them as a distinct edge label
       // without colliding with any author-declared event name.
-      const isTimeout =
-        "kind" in transition && (transition as { kind?: unknown }).kind === "timeout";
+      const isTimeout = isTimeoutTransition(transition);
       return {
         event: isTimeout ? TIMEOUT_EVENT_NAME : (transition as { event: string }).event,
         from: transition.from,
@@ -541,9 +554,7 @@ function findTimeoutTransition<TMachine extends AnyGame>(
 ): TMachine["transitions"][number] | undefined {
   for (const source of [...position.path].reverse()) {
     const matches = machine.transitions.filter((candidate: TMachine["transitions"][number]) =>
-      "kind" in candidate &&
-      (candidate as { kind?: unknown }).kind === "timeout" &&
-      (candidate as { from: string }).from === source);
+      isTimeoutTransition(candidate) && (candidate as { from: string }).from === source);
     if (matches.length === 1) return matches[0];
     if (matches.length > 1) {
       throw new Error(`Ambiguous timeout transitions from "${String(source)}".`);
@@ -574,8 +585,7 @@ function applySingleEvent<
       // the input's `kind`. Timeout transitions are excluded here so player
       // events can never fire one accidentally; they're dispatched via
       // {@link fireTimeout}.
-      !("kind" in transition && (transition as { kind?: unknown }).kind === "timeout") &&
-      (transition as { event: string }).event === input.kind);
+      !isTimeoutTransition(transition) && (transition as { event: string }).event === input.kind);
 
   for (const source of [...current.position.path].reverse()) {
     const transitions = machine.transitions.filter((transition: TMachine["transitions"][number]): transition is TransitionFor<TMachine, TMatch> =>
