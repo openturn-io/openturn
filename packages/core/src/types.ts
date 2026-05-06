@@ -53,6 +53,18 @@ export interface NumberFieldSchema {
   step?: number;
   label: string;
   description?: string;
+  /**
+   * Display suffix appended to the raw value in the auto-generated UI (e.g.
+   * `"s"`, `"ms"`, `"%"`). UI-only; the stored value is unchanged. Ignored
+   * when `format` is set.
+   */
+  unit?: string;
+  /**
+   * UI-only formatter for the value display and min/max ticks (e.g. convert
+   * ms → seconds). The stored value is unchanged. Overrides `unit` when both
+   * are set.
+   */
+  format?: (value: number) => string;
 }
 
 export interface BooleanFieldSchema {

@@ -101,14 +101,17 @@ function NumberInput(props: {
   onChange: (next: number) => void;
 }): ReactNode {
   const { fieldKey, field, value, disabled, onChange } = props;
-  const inputType =
-    field.min !== undefined && field.max !== undefined ? "range" : "number";
+  const isRange = field.min !== undefined && field.max !== undefined;
+  const display = formatNumber(value, field);
   return (
     <label className="flex flex-col gap-1 text-sm" htmlFor={fieldKey}>
-      <span>{field.label}</span>
+      <span className="flex items-baseline justify-between gap-2">
+        <span>{field.label}</span>
+        <span className="font-mono text-xs tabular-nums text-gray-600">{display}</span>
+      </span>
       <input
         id={fieldKey}
-        type={inputType}
+        type={isRange ? "range" : "number"}
         value={value}
         min={field.min}
         max={field.max}
@@ -117,8 +120,20 @@ function NumberInput(props: {
         onChange={(e) => onChange(Number(e.target.value))}
         className="w-full"
       />
+      {isRange ? (
+        <span className="flex justify-between text-[10px] tabular-nums text-gray-400">
+          <span>{formatNumber(field.min as number, field)}</span>
+          <span>{formatNumber(field.max as number, field)}</span>
+        </span>
+      ) : null}
     </label>
   );
+}
+
+function formatNumber(value: number, field: NumberFieldSchema): string {
+  if (field.format !== undefined) return field.format(value);
+  if (field.unit !== undefined) return `${value}${field.unit}`;
+  return String(value);
 }
 
 function BooleanToggle(props: {
