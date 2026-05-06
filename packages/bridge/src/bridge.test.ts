@@ -337,6 +337,53 @@ describe("bridge host <-> game", () => {
     game.dispose();
   });
 
+  it("game.setDeadline: round-trips through to host.deadline", async () => {
+    const { host, game } = setup(async () => null);
+    const fired: Array<number | null> = [];
+    host.on("deadline-changed", (e) => fired.push(e.deadline));
+
+    game.setDeadline(1_700_000_000_000);
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(host.deadline).toBe(1_700_000_000_000);
+    expect(fired).toEqual([1_700_000_000_000]);
+
+    host.dispose();
+    game.dispose();
+  });
+
+  it("game.setDeadline: identical consecutive calls coalesce (one bridge message)", async () => {
+    const { host, game } = setup(async () => null);
+    const fired: Array<number | null> = [];
+    host.on("deadline-changed", (e) => fired.push(e.deadline));
+
+    game.setDeadline(1_700_000_000_000);
+    game.setDeadline(1_700_000_000_000);
+    game.setDeadline(1_700_000_000_000);
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(fired.length).toBe(1);
+
+    host.dispose();
+    game.dispose();
+  });
+
+  it("game.setDeadline: null after a number clears", async () => {
+    const { host, game } = setup(async () => null);
+    const fired: Array<number | null> = [];
+    host.on("deadline-changed", (e) => fired.push(e.deadline));
+
+    game.setDeadline(1_700_000_000_000);
+    game.setDeadline(null);
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(host.deadline).toBe(null);
+    expect(fired).toEqual([1_700_000_000_000, null]);
+
+    host.dispose();
+    game.dispose();
+  });
+
   it("batch stream: no-source when game has not registered a source", async () => {
     const { host, game } = setup(async () => null);
     // No registerBatchSource call.
