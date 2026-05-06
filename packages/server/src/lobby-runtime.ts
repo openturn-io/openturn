@@ -1,3 +1,4 @@
+import type { ConfigFieldSchema, ConfigSchema } from "@openturn/core";
 import type {
   LobbyAvailableBot,
   LobbyClientMessage,
@@ -38,6 +39,12 @@ export interface LobbyEnv {
    * bot-vs-bot matches.
    */
   requireHumanSeat?: boolean;
+  /**
+   * Optional config schema declared by the game. When present, the lobby
+   * initializes `#configValues` with each field's default and accepts
+   * `setConfig` mutations. When absent, `setConfig` rejects everything.
+   */
+  configSchema?: ConfigSchema;
 }
 
 export interface LobbyAvailableBotInfo {
@@ -67,11 +74,23 @@ export interface LobbyPersistedState {
   userToPlayer: Readonly<Record<string, string>>;
   /** Effective capacity at persistence time. Restored on rehydrate. */
   targetCapacity?: number;
+  /**
+   * Config values at persistence time. Present only when the env declared a
+   * `configSchema`; absent otherwise. On rehydrate, each persisted value is
+   * re-validated against the field schema and falls back to the field default
+   * if the schema has changed shape since the room was last persisted.
+   */
+  configValues?: Readonly<Record<string, unknown>>;
 }
 
 export type LobbyApplyResult =
   | { ok: true; changed: boolean }
-  | { ok: false; reason: LobbyRejectionReason };
+  | {
+      ok: false;
+      reason: LobbyRejectionReason;
+      configKey?: string;
+      configDetail?: string;
+    };
 
 export interface LobbyStartAssignment {
   seatIndex: number;
@@ -84,7 +103,12 @@ export interface LobbyStartAssignment {
 }
 
 export type LobbyStartResult =
-  | { ok: true; assignments: readonly LobbyStartAssignment[]; hostPlayerID: string | null }
+  | {
+      ok: true;
+      assignments: readonly LobbyStartAssignment[];
+      hostPlayerID: string | null;
+      config: { values: Readonly<Record<string, unknown>> } | null;
+    }
   | { ok: false; reason: LobbyRejectionReason };
 
 export interface LobbyDropUserResult {
@@ -107,6 +131,7 @@ export class LobbyRuntime {
   #seats: Map<number, SeatRecord>;
   #userToPlayer: Map<string, string>;
   #targetCapacity: number;
+  #configValues: Record<string, unknown>;
 
   constructor(env: LobbyEnv, persisted?: LobbyPersistedState) {
     this.env = env;
@@ -116,6 +141,10 @@ export class LobbyRuntime {
       env.maxPlayers,
     );
     this.#targetCapacity = initialTarget;
+    this.#configValues = computeInitialConfigValues(
+      env.configSchema,
+      persisted?.configValues,
+    );
     if (persisted === undefined) {
       this.#mode = "lobby";
       this.#seats = new Map();
@@ -156,6 +185,9 @@ export class LobbyRuntime {
       seats: [...this.#seats.values()].sort((a, b) => a.seatIndex - b.seatIndex),
       userToPlayer: Object.fromEntries(this.#userToPlayer),
       targetCapacity: this.#targetCapacity,
+      ...(this.env.configSchema === undefined
+        ? {}
+        : { configValues: { ...this.#configValues } }),
     };
   }
 
@@ -210,6 +242,8 @@ export class LobbyRuntime {
         return this.clearSeat(userID, message.seatIndex);
       case "lobby:set_target_capacity":
         return this.setTargetCapacity(userID, message.targetCapacity);
+      case "host:set_config":
+        return this.setConfig(userID, message.key, message.value);
     }
   }
 
@@ -366,6 +400,65 @@ export class LobbyRuntime {
     return { ok: true, changed };
   }
 
+  /**
+   * Host-only. Set a single config value during the lobby phase. Validates
+   * `value` against the field schema declared in `env.configSchema`. On
+   * success, un-readies all human seats so players must re-confirm before the
+   * host can call `start()` again. Bot seats are left alone (bots are
+   * implicitly always ready).
+   */
+  setConfig(hostUserID: string, key: string, value: unknown): LobbyApplyResult {
+    if (hostUserID !== this.env.hostUserID) {
+      return { ok: false, reason: "not_host" };
+    }
+    if (this.#mode !== "lobby") {
+      return {
+        ok: false,
+        reason: this.#mode === "closed" ? "room_closed" : "bad_phase",
+      };
+    }
+    const schema = this.env.configSchema;
+    if (schema === undefined) {
+      return {
+        ok: false,
+        reason: "invalid_config_value",
+        configKey: key,
+        configDetail: "no_schema",
+      };
+    }
+    const field = schema[key];
+    if (field === undefined) {
+      return {
+        ok: false,
+        reason: "invalid_config_value",
+        configKey: key,
+        configDetail: "unknown_key",
+      };
+    }
+
+    const detail = validationDetail(field, value);
+    if (detail !== null) {
+      return {
+        ok: false,
+        reason: "invalid_config_value",
+        configKey: key,
+        configDetail: detail,
+      };
+    }
+
+    this.#configValues[key] = value;
+
+    // Un-ready all human seats so players re-confirm after the host changed
+    // anything. Bots stay implicitly ready.
+    for (const seat of this.#seats.values()) {
+      if (seat.kind === "human") {
+        seat.ready = false;
+      }
+    }
+
+    return { ok: true, changed: true };
+  }
+
   start(hostUserID: string): LobbyStartResult {
     if (hostUserID !== this.env.hostUserID) {
       return { ok: false, reason: "not_host" };
@@ -432,7 +525,12 @@ export class LobbyRuntime {
         ? null
         : (this.#userToPlayer.get(this.env.hostUserID) ?? null);
 
-    return { ok: true, assignments, hostPlayerID };
+    const config =
+      this.env.configSchema === undefined
+        ? null
+        : { values: { ...this.#configValues } };
+
+    return { ok: true, assignments, hostPlayerID, config };
   }
 
   close(hostUserID: string): LobbyApplyResult {
@@ -492,6 +590,9 @@ export class LobbyRuntime {
       targetCapacity: this.#targetCapacity,
       canStart,
       availableBots: buildAvailableBots(this.env.knownBots),
+      ...(this.env.configSchema === undefined
+        ? {}
+        : { config: { values: { ...this.#configValues } } }),
     };
   }
 }
@@ -548,4 +649,48 @@ function buildAvailableBots(
     });
   }
   return out;
+}
+
+function computeInitialConfigValues(
+  schema: ConfigSchema | undefined,
+  persisted: Readonly<Record<string, unknown>> | undefined,
+): Record<string, unknown> {
+  if (schema === undefined) return {};
+  const result: Record<string, unknown> = {};
+  for (const [key, field] of Object.entries(schema)) {
+    const fromPersisted = persisted?.[key];
+    if (fromPersisted !== undefined && isValueValidForField(fromPersisted, field)) {
+      result[key] = fromPersisted;
+    } else {
+      result[key] = field.default;
+    }
+  }
+  return result;
+}
+
+function isValueValidForField(value: unknown, field: ConfigFieldSchema): boolean {
+  return validationDetail(field, value) === null;
+}
+
+function validationDetail(field: ConfigFieldSchema, value: unknown): string | null {
+  if (field.type === "number") {
+    if (typeof value !== "number" || !Number.isFinite(value)) return "expected_number";
+    if (field.min !== undefined && value < field.min) return `below_min: ${field.min}`;
+    if (field.max !== undefined && value > field.max) return `above_max: ${field.max}`;
+    return null;
+  }
+  if (field.type === "boolean") {
+    if (typeof value !== "boolean") return "expected_boolean";
+    return null;
+  }
+  if (field.type === "enum") {
+    if (
+      typeof value !== "string"
+      || !(field.options as readonly string[]).includes(value)
+    ) {
+      return `not_in_options: ${JSON.stringify(value)}`;
+    }
+    return null;
+  }
+  return null;
 }

@@ -57,6 +57,7 @@ import {
   type SavedGamePayload,
 } from "@openturn/server";
 import type { ProtocolClientMessage } from "@openturn/protocol";
+import type { ConfigSchema, ReplayValue } from "@openturn/core";
 
 import { DEFAULT_CLOUD_URL, cloudDeploy, loadCloudAuth, saveCloudAuth } from "./cloud";
 import { startDevBundleServer, type DevBundleServer } from "./dev-bundle";
@@ -323,12 +324,14 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
     const maxPlayers = players.length;
     const minPlayers = (currentDeployment.game as { minPlayers?: number }).minPlayers ?? maxPlayers;
     const knownBots = extractKnownBotsFromGame(currentDeployment.game);
+    const gameConfigSchema = (currentDeployment.game as { config?: ConfigSchema }).config;
     return {
       hostUserID,
       minPlayers,
       maxPlayers,
       playerIDs: players,
       ...(knownBots === null ? {} : { knownBots }),
+      ...(gameConfigSchema === undefined ? {} : { configSchema: gameConfigSchema }),
     };
   }
 
@@ -1492,6 +1495,9 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
       const startMatch = {
         players: activePlayerIDs as unknown as readonly [string, ...string[]],
         hostPlayerID: startResult.hostPlayerID,
+        ...(startResult.config === null
+          ? {}
+          : { config: startResult.config.values as Record<string, ReplayValue> }),
       };
       const startNow = Date.now();
       const startSeed = `${ws.data.roomID}:seed`;

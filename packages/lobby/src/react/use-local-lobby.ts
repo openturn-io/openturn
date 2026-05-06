@@ -6,7 +6,7 @@ import {
   type LobbyEnv,
   type LobbyStartAssignment,
 } from "@openturn/server";
-import type { AnyGame, GamePlayers, MatchInput } from "@openturn/core";
+import type { AnyGame, ConfigSchema, GamePlayers, MatchInput } from "@openturn/core";
 import type {
   LobbyClientMessage,
   LobbyRejectedMessage,
@@ -70,6 +70,12 @@ export interface UseLocalLobbyChannelOptions<TGame extends AnyGame> {
      * MatchInput should pass this through to `match.hostPlayerID`.
      */
     hostPlayerID: string | null;
+    /**
+     * Locked config values (per LobbyRuntime's resolution at start). `null`
+     * when the game declares no config schema. Consumers writing MatchInput
+     * should pass this through to `match.config`.
+     */
+    config: { values: Readonly<Record<string, unknown>> } | null;
   }) => void;
 }
 
@@ -106,6 +112,7 @@ export function useLocalLobbyChannel<TGame extends AnyGame>(
     const maxPlayers = match.players.length;
     const gameMinPlayers = (game as { minPlayers?: number }).minPlayers;
     const effectiveMin = minPlayers ?? gameMinPlayers ?? maxPlayers;
+    const gameConfigSchema = (game as { config?: ConfigSchema }).config;
     const env: LobbyEnv = {
       hostUserID,
       minPlayers: effectiveMin,
@@ -115,6 +122,7 @@ export function useLocalLobbyChannel<TGame extends AnyGame>(
         : { targetCapacity: initialTargetCapacity }),
       playerIDs: match.players,
       ...(registry === undefined ? {} : { knownBots: buildKnownBots(registry) }),
+      ...(gameConfigSchema === undefined ? {} : { configSchema: gameConfigSchema }),
     };
     runtimeRef.current = new LobbyRuntime(env);
   }
@@ -216,6 +224,7 @@ export function useLocalLobbyChannel<TGame extends AnyGame>(
           roomID: LOCAL_ROOM_ID,
           assignments: result.assignments,
           hostPlayerID: result.hostPlayerID,
+          config: result.config,
         });
       },
       close: () => handleResult(runtime.close(hostUserID), "lobby:close"),
@@ -228,6 +237,8 @@ export function useLocalLobbyChannel<TGame extends AnyGame>(
           runtime.setTargetCapacity(hostUserID, targetCapacity),
           "lobby:set_target_capacity",
         ),
+      setConfig: (key, value) =>
+        handleResult(runtime.setConfig(hostUserID, key, value), "host:set_config"),
       disconnect: () => {
         setStatus("closed");
       },

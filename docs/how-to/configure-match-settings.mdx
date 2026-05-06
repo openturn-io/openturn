@@ -1,0 +1,158 @@
+---
+title: Configure match settings in the lobby
+description: Declare a typed config schema on your game so the host can pick settings (turn timer, score target, variant, etc.) in the lobby before the match starts. Values are agreed by all viewers and locked into `match.config` at game-start.
+sidebarTitle: Match config
+---
+
+Most games have settings that should be agreed before play begins: turn time limit, score target, variant rules, difficulty. Declaring them as a `config` schema on your game gets you a host-mutable settings form in the lobby, validation at three layers, full TypeScript inference for game code, and persistence-safe round-trip — without writing a config form yourself.
+
+If your game has no match-shape settings, skip this entirely. `match.config` is opt-in.
+
+## 1. Declare the schema
+
+Add `config` to your `defineGame(...)` call. Each field declares a type, a `default`, a `label`, and any type-specific bounds.
+
+```ts
+import { defineGame, deadline } from "@openturn/gamekit";
+
+export const myGame = defineGame({
+  maxPlayers: 2,
+  // ...other fields...
+  config: {
+    turnTimeoutMs: {
+      type: "number",
+      default: 30_000,
+      min: 5_000,
+      max: 300_000,
+      step: 5_000,
+      label: "Turn time",
+      description: "Per-turn deadline in milliseconds.",
+    },
+    variant: {
+      type: "enum",
+      options: ["classic", "advanced"] as const,
+      default: "classic",
+      labels: { classic: "Classic", advanced: "Advanced rules" },
+      label: "Variant",
+    },
+    rankedMode: {
+      type: "boolean",
+      default: false,
+      label: "Ranked",
+    },
+  } as const satisfies import("@openturn/core").ConfigSchema,
+  // ...rest of game...
+});
+```
+
+**Why `as const satisfies ConfigSchema`:** without `as const` on the literal, enum option tuples widen to `string` and you lose narrow inference (`variant` would type as `string` instead of `"classic" | "advanced"`). The `satisfies` clause keeps the schema typed without needing an explicit annotation that would also widen literals.
+
+### Supported field types
+
+| Type | Knobs | Default UI |
+|---|---|---|
+| `"number"` | `default`, optional `min`, `max`, `step` | Slider when both `min` and `max` are set, otherwise numeric stepper |
+| `"boolean"` | `default` | Checkbox |
+| `"enum"` | `options` (literal tuple), `default`, optional per-option `labels` | Radio group when `options.length <= 4`, dropdown otherwise |
+
+Every field can also carry a `label` (required) and `description` (optional). `step` on numbers is purely a UI hint — the engine doesn't validate against it.
+
+## 2. Read values from game code
+
+`match.config` is typed from your schema. Read it in state configs, transition resolvers, view functions, or anywhere `ctx.match` is in scope:
+
+```ts
+state("playing", {
+  // Honor the lobby's chosen turn timer.
+  deadline: (ctx) => deadline.after(ctx, ctx.match.config.turnTimeoutMs),
+  activePlayers: (ctx) => [ctx.match.players[ctx.G.turn % ctx.match.players.length]],
+});
+
+setup({ match }) {
+  return {
+    targetScore: match.config.variant === "advanced" ? 100 : 50,
+    isRanked: match.config.rankedMode,
+    turn: 0,
+  };
+}
+```
+
+Game code can override per-state too — if a particular state needs a hardcoded timer regardless of the lobby setting, just write `deadline: (ctx) => deadline.after(ctx, 5_000)` for that state. The schema is a source of values, not a directive.
+
+## 3. Render the lobby UI
+
+`<Lobby>` and `<LobbyWithBots>` accept a `configUI` opt-in prop. When `"auto"`, they render a collapsible "Settings" section above the seat list, default-expanded for the host with disabled inputs for non-host viewers.
+
+```tsx
+import { LobbyWithBots, useLocalLobbyChannel } from "@openturn/lobby/react";
+
+function MyLobby() {
+  const channel = useLocalLobbyChannel({
+    game: myGame,
+    hostUserID: "local-host",
+    onTransitionToGame: ({ assignments, hostPlayerID, config }) => {
+      // `config.values` is the locked snapshot — pass it through into match.
+    },
+  });
+
+  return (
+    <LobbyWithBots
+      lobby={channel.view}
+      configUI="auto"
+      configSchema={myGame.config}
+    />
+  );
+}
+```
+
+`configUI` defaults to `"none"` for back-compat — existing lobbies don't grow a config section unless you explicitly opt in.
+
+### Custom field rendering
+
+For fields that need bespoke UI (a slider with custom tick labels, a swatch picker for a color enum, etc.), pass a `configRenderers` map. The generic helper `ConfigRenderers<TSchema>` enforces that each renderer's `value` type matches its field's declared type at construction time:
+
+```tsx
+import type { ConfigRenderers } from "@openturn/lobby/react";
+
+const renderers: ConfigRenderers<typeof myGame.config> = {
+  turnTimeoutMs: (props) => <BigClockSlider {...props} />,
+  variant: (props) => <VariantCardPicker {...props} />,
+};
+
+<LobbyWithBots
+  lobby={channel.view}
+  configUI="auto"
+  configSchema={myGame.config}
+  configRenderers={renderers}
+/>
+```
+
+The renderer receives a typed `value`, an `onChange(next)` callback, the field's `defaultValue` and `schema`, plus `disabled` and an optional `error` (set when the server rejects a mutation). Other fields fall back to the built-in renderer.
+
+## 4. Validation, errors, and lifecycle
+
+Three validation layers protect the runtime:
+
+- **Wire** — `LobbyRuntime.setConfig` rejects invalid values with `reason: "invalid_config_value"` and `configKey` / `configDetail` (`"below_min: 5000"`, `"not_in_options: foo"`, etc.). The auto-rendered form surfaces these next to the offending field.
+- **Lock** — `lobby.start()` re-validates the whole config before snapshotting it into `match.config`.
+- **Engine** — `normalizeMatchInput` (called automatically at session creation) validates against the schema and fills any missing keys with their declared defaults. This catches malformed input from non-lobby callers (saved replays, hand-rolled tests, external `createRoomRuntime` invocations).
+
+A few rules to know:
+
+- **Mutable until `lobby:start`, frozen afterward.** Once the lobby starts, `match.config` is immutable for the duration of the match — same model as the rest of `match` (replays are deterministic).
+- **Host-only mutations.** Non-host viewers can read but not write.
+- **Successful changes un-ready every human seat.** Players have to re-confirm before the host can start, so nobody gets surprised by a last-second timer change.
+- **Schema evolution between deploys.** Lobby state preserves persisted values that still pass validation; fields removed from the schema are dropped silently, fields newly added pick up their default. No migrations.
+
+## When to reach for this vs. game state
+
+Use the config schema for **match-shape settings** — values that everyone in the match needs to agree on before play, that affect the rules, and that are read-only after start: turn timer, point target, variant rules, difficulty.
+
+Use normal game state (with [a host-only setup state](/concepts/turns-phases-control), if you have a host) for **in-match decisions** — drafts, variant picks tied to who's seated, per-player choices, anything that depends on the actual match starting first.
+
+The two compose: a "draft" state can read `ctx.match.config.draftStyle` (config) and present different choices for that draft (game state).
+
+## See also
+
+- [Build a lobby](/how-to/build-a-lobby) for the lobby surface this plugs into.
+- [Concepts: turns, phases, and control](/concepts/turns-phases-control) for the per-state `deadline` field that pairs naturally with `config.turnTimeoutMs`.

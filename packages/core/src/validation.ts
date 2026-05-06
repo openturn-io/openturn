@@ -5,6 +5,9 @@ import { createReadonlyValue } from "./readonly";
 import { createGameTopology } from "./topology";
 import type {
   AnyGame,
+  ConfigFieldSchema,
+  ConfigSchema,
+  EnumFieldSchema,
   GameControlMeta,
   GameControlState,
   GameDerivedState,
@@ -25,6 +28,7 @@ export type GameValidationCode =
   | "duplicate_transition_signature"
   | "initial_missing"
   | "initial_non_leaf"
+  | "invalid_config_value"
   | "invalid_deadline"
   | "invalid_hierarchy"
   | "invalid_host_player"
@@ -43,6 +47,8 @@ export type GameValidationCode =
   | "structurally_ambiguous_family"
   | "suspicious_initial_activity"
   | "suspicious_terminal_leaf"
+  | "unexpected_config"
+  | "unknown_config_key"
   | "unreachable_state";
 
 export interface GameValidationDiagnostic {
@@ -92,11 +98,17 @@ export class InvalidGameDefinitionError extends Error {
  * - Coerces `hostPlayerID: undefined` to `null` so consumers see a 2-state field.
  * - Rejects `hostPlayerID` that is not in `match.players`.
  * - Rejects non-null `hostPlayerID` for single-player matches.
+ * - Validates `match.config` against `machine.config` schema, filling defaults
+ *   for missing keys and rejecting unknown keys / out-of-bounds / wrong-type
+ *   values.
  *
  * Throws `InvalidGameDefinitionError` on validation failure. Returns the
  * normalized match (a shallow copy when normalization changed anything).
  */
-export function normalizeMatchInput<TMatch extends MatchInput>(match: TMatch): TMatch {
+export function normalizeMatchInput<TMatch extends MatchInput>(
+  machine: AnyGame,
+  match: TMatch,
+): TMatch {
   const hostPlayerID = match.hostPlayerID ?? null;
 
   if (hostPlayerID !== null) {
@@ -112,8 +124,83 @@ export function normalizeMatchInput<TMatch extends MatchInput>(match: TMatch): T
     }
   }
 
-  if (match.hostPlayerID === hostPlayerID) return match;
-  return { ...match, hostPlayerID } as TMatch;
+  const schema = (machine as { config?: ConfigSchema }).config;
+  const inputConfig = match.config as Record<string, unknown> | undefined;
+
+  let normalizedConfig: Record<string, unknown> | undefined;
+
+  if (schema === undefined) {
+    if (inputConfig !== undefined) {
+      throw new InvalidGameDefinitionError(
+        `match.config provided but game declares no config schema (unexpected_config)`,
+      );
+    }
+    normalizedConfig = undefined;
+  } else {
+    const result: Record<string, unknown> = {};
+    const inputKeys = inputConfig !== undefined ? Object.keys(inputConfig) : [];
+    for (const key of inputKeys) {
+      if (!Object.prototype.hasOwnProperty.call(schema, key)) {
+        throw new InvalidGameDefinitionError(
+          `match.config has unknown key "${key}" not in schema (unknown_config_key)`,
+        );
+      }
+    }
+    for (const [key, field] of Object.entries(schema)) {
+      const provided = inputConfig?.[key];
+      const value = provided === undefined ? field.default : provided;
+      validateConfigValue(key, field, value);
+      result[key] = value;
+    }
+    normalizedConfig = result;
+  }
+
+  const normalizedHost = match.hostPlayerID === hostPlayerID;
+  const sameConfig = match.config === normalizedConfig;
+  if (normalizedHost && sameConfig) return match;
+  return {
+    ...match,
+    hostPlayerID,
+    ...(normalizedConfig === undefined ? {} : { config: normalizedConfig }),
+  } as TMatch;
+}
+
+function validateConfigValue(key: string, field: ConfigFieldSchema, value: unknown): void {
+  if (field.type === "number") {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      throw new InvalidGameDefinitionError(
+        `match.config.${key} must be a finite number (invalid_config_value)`,
+      );
+    }
+    if (field.min !== undefined && value < field.min) {
+      throw new InvalidGameDefinitionError(
+        `match.config.${key} value ${value} is below min ${field.min} (invalid_config_value)`,
+      );
+    }
+    if (field.max !== undefined && value > field.max) {
+      throw new InvalidGameDefinitionError(
+        `match.config.${key} value ${value} is above max ${field.max} (invalid_config_value)`,
+      );
+    }
+    return;
+  }
+  if (field.type === "boolean") {
+    if (typeof value !== "boolean") {
+      throw new InvalidGameDefinitionError(
+        `match.config.${key} must be a boolean (invalid_config_value)`,
+      );
+    }
+    return;
+  }
+  if (field.type === "enum") {
+    const enumField = field as EnumFieldSchema;
+    if (typeof value !== "string" || !enumField.options.includes(value)) {
+      throw new InvalidGameDefinitionError(
+        `match.config.${key} value ${JSON.stringify(value)} is not in options [${enumField.options.join(", ")}] (invalid_config_value)`,
+      );
+    }
+    return;
+  }
 }
 
 export function getGameValidationReport(

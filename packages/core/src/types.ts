@@ -42,6 +42,68 @@ export type ProfilePathSegment = string | number;
 export type ProfilePath = readonly ProfilePathSegment[];
 export type ProfilePathInput = ProfilePath | ProfilePathSegment;
 
+// ---- Config schema (match-shape settings agreed in the lobby) ----
+
+export interface NumberFieldSchema {
+  type: "number";
+  default: number;
+  min?: number;
+  max?: number;
+  /** UI hint only; not validated server-side. */
+  step?: number;
+  label: string;
+  description?: string;
+}
+
+export interface BooleanFieldSchema {
+  type: "boolean";
+  default: boolean;
+  label: string;
+  description?: string;
+}
+
+export interface EnumFieldSchema<TOption extends string = string> {
+  type: "enum";
+  options: readonly [TOption, ...TOption[]];
+  default: TOption;
+  /** Per-option display labels. Keys default to the option string when omitted. */
+  labels?: Partial<Record<TOption, string>>;
+  label: string;
+  description?: string;
+}
+
+export type ConfigFieldSchema =
+  | NumberFieldSchema
+  | BooleanFieldSchema
+  | EnumFieldSchema;
+
+export type ConfigSchema = Record<string, ConfigFieldSchema>;
+
+/**
+ * Inferred values shape from a config schema. Each field's value type is
+ * derived from its declared `type` discriminator.
+ *
+ * Authors should write the schema with `as const satisfies ConfigSchema` so
+ * enum option literals stay narrow:
+ *
+ *     defineGame({ config: {
+ *       variant: { type: "enum", options: ["a", "b"] as const, default: "a", label: "V" },
+ *     } });
+ *
+ * Without `as const` on the options tuple, `variant` would infer as `string`
+ * instead of `"a" | "b"` and the Custom-render override types would break.
+ */
+export type ConfigValuesOf<TConfig extends ConfigSchema | undefined> =
+  TConfig extends ConfigSchema
+    ? {
+        [K in keyof TConfig]:
+          TConfig[K] extends NumberFieldSchema ? number :
+          TConfig[K] extends BooleanFieldSchema ? boolean :
+          TConfig[K] extends EnumFieldSchema<infer TOption> ? TOption :
+          never;
+      }
+    : Record<string, ReplayValue>;
+
 export type ProfileOp =
   | { op: "set"; path: ProfilePath; value: ReplayValue }
   | { op: "inc"; path: ProfilePath; value: number }
@@ -88,7 +150,11 @@ export type GameEventArgsTuple<TEvents extends GameEventMap, TKind extends keyof
  * (`minPlayers`, full pool) lives on `GameDefinition`, not here. `players` is
  * a non-empty subset of the game's declared pool, validated at session start.
  */
-export interface MatchInput<TPlayers extends PlayerList = PlayerList, TMatchData = ReplayValue> {
+export interface MatchInput<
+  TPlayers extends PlayerList = PlayerList,
+  TMatchData = ReplayValue,
+  TConfigValues = Record<string, ReplayValue>,
+> {
   data?: TMatchData;
   /** Seated players for this match, a non-empty subset of the game's `playerIDs`. */
   players: readonly [TPlayers[number], ...TPlayers[number][]];
@@ -106,6 +172,12 @@ export interface MatchInput<TPlayers extends PlayerList = PlayerList, TMatchData
    * verbatim. Game logic accesses via `ctx.match.hostPlayerID`.
    */
   hostPlayerID?: TPlayers[number] | null;
+  /**
+   * Match-shape settings agreed in the lobby and locked at game-start. Game
+   * code reads via `ctx.match.config` and may use or override per-state.
+   * Shape is inferred from the game's `config` schema declaration.
+   */
+  config?: TConfigValues;
 }
 
 /**
@@ -417,6 +489,7 @@ export interface GameDefinition<
   TControl extends ReplayValue = ReplayValue,
   TTransitions extends readonly GameTransitionConfig<TState, TEvents, TResult, TNode, TPlayers, TControl>[] =
     readonly GameTransitionConfig<TState, TEvents, TResult, TNode, TPlayers, TControl>[],
+  TConfig extends ConfigSchema | undefined = ConfigSchema | undefined,
 > {
   events: { readonly [TKind in keyof TEvents & string]: TEvents[TKind] };
   initial: TNode;
@@ -463,6 +536,12 @@ export interface GameDefinition<
    * context's `result` type without a cast.
    */
   profile?: GameProfileInput<TPlayers, TResult>;
+  /**
+   * Optional declarative config schema. Lobby renders a host-mutable settings
+   * form from this; values are locked into `match.config` at game-start. See
+   * `superpowers/specs/2026-05-06-lobby-config-system-design.md`.
+   */
+  config?: TConfig;
   selectors?: GameSelectorMap<TState, TNode, TPlayers, TControl>;
   setup: (context: SetupContext<TPlayers>) => TState;
   states: Record<TNode, GameStateConfig<TState, TNode, TPlayers, TControl>>;
@@ -470,44 +549,49 @@ export interface GameDefinition<
   views?: GameViews<TState, TPublic, TPlayer, TNode, TPlayers, TControl>;
 }
 
-export type AnyGame = GameDefinition<any, any, any, any, any, any, any, any, any>;
+export type AnyGame = GameDefinition<any, any, any, any, any, any, any, any, any, any>;
 
 export type GameStateOf<TMachine extends AnyGame> = ReturnType<TMachine["setup"]>;
 
 export type GamePlayers<TMachine extends AnyGame> =
-  TMachine extends GameDefinition<any, any, any, infer TPlayers, any, any, any, any, any> ? TPlayers : PlayerList;
+  TMachine extends GameDefinition<any, any, any, infer TPlayers, any, any, any, any, any, any> ? TPlayers : PlayerList;
 
 /** Union of player IDs the game can seat. Equivalent to `GamePlayers<TGame>[number]`. */
 export type PlayerIDOf<TMachine extends AnyGame> = GamePlayers<TMachine>[number];
 
 export type GameNodes<TMachine extends AnyGame> =
-  TMachine extends GameDefinition<any, any, any, any, infer TNode, any, any, any, any> ? TNode : string;
+  TMachine extends GameDefinition<any, any, any, any, infer TNode, any, any, any, any, any> ? TNode : string;
 
 export type GameControlState<TMachine extends AnyGame> =
-  TMachine extends GameDefinition<any, any, any, any, any, any, any, infer TControl, any> ? TControl : unknown;
+  TMachine extends GameDefinition<any, any, any, any, any, any, any, infer TControl, any, any> ? TControl : unknown;
 
 export type GameResultState<TMachine extends AnyGame> =
-  TMachine extends GameDefinition<any, any, infer TResult, any, any, any, any, any, any> ? TResult | null : never;
+  TMachine extends GameDefinition<any, any, infer TResult, any, any, any, any, any, any, any> ? TResult | null : never;
 
 export type GameSnapshotOf<TMachine extends AnyGame> =
-  TMachine extends GameDefinition<any, any, any, infer TPlayers, infer TNode, any, any, infer TControl, any>
+  TMachine extends GameDefinition<any, any, any, infer TPlayers, infer TNode, any, any, infer TControl, any, any>
     ? GameSnapshot<GameStateOf<TMachine>, GameResultState<TMachine>, TNode, MatchInput<TPlayers>, TControl>
     : never;
 
 export type GameRuleContextOf<TMachine extends AnyGame> =
-  TMachine extends GameDefinition<any, any, any, infer TPlayers, infer TNode, any, any, infer TControl, any>
+  TMachine extends GameDefinition<any, any, any, infer TPlayers, infer TNode, any, any, infer TControl, any, any>
     ? GameRuleContext<GameStateOf<TMachine>, TNode, TPlayers, TControl>
     : never;
 
 export type GamePlayerView<TMachine extends AnyGame> =
-  TMachine extends GameDefinition<any, any, any, infer TPlayers, infer TNode, any, infer TPlayer, infer TControl, any>
+  TMachine extends GameDefinition<any, any, any, infer TPlayers, infer TNode, any, infer TPlayer, infer TControl, any, any>
     ? TPlayer extends never ? GameSnapshot<any, any, TNode, MatchInput<TPlayers>, TControl>["G"] : TPlayer
     : never;
 
 export type GamePublicView<TMachine extends AnyGame> =
-  TMachine extends GameDefinition<any, any, any, infer TPlayers, infer TNode, infer TPublic, any, infer TControl, any>
+  TMachine extends GameDefinition<any, any, any, infer TPlayers, infer TNode, infer TPublic, any, infer TControl, any, any>
     ? TPublic extends never ? GameSnapshot<any, any, TNode, MatchInput<TPlayers>, TControl>["G"] : TPublic
     : never;
+
+export type GameConfigSchemaOf<TMachine extends AnyGame> =
+  TMachine extends GameDefinition<any, any, any, any, any, any, any, any, any, infer TConfig> ? TConfig : undefined;
+
+export type GameConfigValuesOf<TMachine extends AnyGame> = ConfigValuesOf<GameConfigSchemaOf<TMachine>>;
 
 export type GameTransitionTargets<TMachine extends AnyGame> = TransitionNames<TMachine["transitions"]>;
 
@@ -960,6 +1044,7 @@ export function defineGame<
     TControl
   > | undefined,
   TPlayers extends PlayerList = DefaultPlayerIDsBound<TMaxPlayers>,
+  const TConfig extends ConfigSchema | undefined = undefined,
 >(
   machine: {
     maxPlayers: TMaxPlayers;
@@ -976,6 +1061,7 @@ export function defineGame<
       transition: AuthoredTransitionDefinitionFactory<TState, TEvents, keyof TStates & string, TPlayers, any>;
     }) => TTransitions;
     views?: TViews;
+    config?: TConfig;
   } & JsonCompatibilityChecks<TState, PublicViewFrom<TViews, TState>, PlayerViewFrom<TViews, TState>, AuthoredTransitionsResult<TTransitions>>,
 ): GameDefinition<
   TState,
@@ -993,7 +1079,8 @@ export function defineGame<
     keyof TStates & string,
     TPlayers,
     TControl
-  >[]
+  >[],
+  TConfig
 >;
 export function defineGame<
   const TMaxPlayers extends number,
@@ -1018,6 +1105,7 @@ export function defineGame<
     TControl
   > | undefined,
   TPlayers extends PlayerList = DefaultPlayerIDsBound<TMaxPlayers>,
+  const TConfig extends ConfigSchema | undefined = undefined,
 >(
   machine: {
     maxPlayers: TMaxPlayers;
@@ -1032,6 +1120,7 @@ export function defineGame<
     };
     transitions: TTransitions;
     views?: TViews;
+    config?: TConfig;
   } & JsonCompatibilityChecks<TState, PublicViewFrom<TViews, TState>, PlayerViewFrom<TViews, TState>, TransitionResultFrom<TTransitions>>,
 ): GameDefinition<
   TState,
@@ -1042,7 +1131,8 @@ export function defineGame<
   PublicViewFrom<TViews, TState>,
   PlayerViewFrom<TViews, TState>,
   TControl,
-  TTransitions
+  TTransitions,
+  TConfig
 >;
 // ---- playerIDs form (named seats; opt-in) ----
 export function defineGame<
@@ -1060,6 +1150,7 @@ export function defineGame<
     TPlayers,
     TControl
   > | undefined,
+  const TConfig extends ConfigSchema | undefined = undefined,
 >(
   machine: {
     playerIDs: TPlayers;
@@ -1077,6 +1168,7 @@ export function defineGame<
       transition: AuthoredTransitionDefinitionFactory<TState, TEvents, keyof TStates & string, TPlayers, any>;
     }) => TTransitions;
     views?: TViews;
+    config?: TConfig;
   } & JsonCompatibilityChecks<TState, PublicViewFrom<TViews, TState>, PlayerViewFrom<TViews, TState>, AuthoredTransitionsResult<TTransitions>>,
 ): GameDefinition<
   TState,
@@ -1094,7 +1186,8 @@ export function defineGame<
     keyof TStates & string,
     TPlayers,
     TControl
-  >[]
+  >[],
+  TConfig
 >;
 export function defineGame<
   const TPlayers extends PlayerList,
@@ -1118,6 +1211,7 @@ export function defineGame<
     TPlayers,
     TControl
   > | undefined,
+  const TConfig extends ConfigSchema | undefined = undefined,
 >(
   machine: {
     playerIDs: TPlayers;
@@ -1133,6 +1227,7 @@ export function defineGame<
     };
     transitions: TTransitions;
     views?: TViews;
+    config?: TConfig;
   } & JsonCompatibilityChecks<TState, PublicViewFrom<TViews, TState>, PlayerViewFrom<TViews, TState>, TransitionResultFrom<TTransitions>>,
 ): GameDefinition<
   TState,
@@ -1143,7 +1238,8 @@ export function defineGame<
   PublicViewFrom<TViews, TState>,
   PlayerViewFrom<TViews, TState>,
   TControl,
-  TTransitions
+  TTransitions,
+  TConfig
 >;
 export function defineGame<
   TState,
@@ -1162,6 +1258,7 @@ export function defineGame<
     TPlayers,
     TControl
   >[] = readonly GameTransitionConfig<TState, TEvents, TResult, TNode, TPlayers, TControl>[],
+  const TConfig extends ConfigSchema | undefined = undefined,
 >(
   machine: Omit<GameDefinition<
     TState,
@@ -1172,7 +1269,8 @@ export function defineGame<
     TPublic,
     TPlayer,
     TControl,
-    TTransitions
+    TTransitions,
+    TConfig
   >, "minPlayers"> & { minPlayers?: number } & JsonCompatibilityChecks<TState, TPublic, TPlayer, TResult>,
 ): GameDefinition<
   TState,
@@ -1183,7 +1281,8 @@ export function defineGame<
   TPublic,
   TPlayer,
   TControl,
-  TTransitions
+  TTransitions,
+  TConfig
 >;
 export function defineGame(
   machine: Record<string, any>,

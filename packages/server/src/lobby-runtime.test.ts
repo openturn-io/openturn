@@ -435,3 +435,191 @@ describe("LobbyRuntime.start() — hostPlayerID resolution", () => {
     expect(result.hostPlayerID).toBe(null);
   });
 });
+
+describe("LobbyRuntime.setConfig()", () => {
+  function envWithConfig(overrides: Partial<LobbyEnv> = {}): LobbyEnv {
+    return {
+      hostUserID: HOST,
+      minPlayers: 2,
+      maxPlayers: 2,
+      playerIDs: ["0", "1"],
+      configSchema: {
+        turnTimeoutMs: { type: "number", default: 30_000, min: 5_000, max: 300_000, label: "Turn time" },
+        variant: { type: "enum", options: ["a", "b"] as const, default: "a", label: "Variant" },
+        flag: { type: "boolean", default: false, label: "Flag" },
+      },
+      ...overrides,
+    };
+  }
+
+  test("non-host setConfig is rejected", () => {
+    const runtime = new LobbyRuntime(envWithConfig());
+    expect(runtime.setConfig(ALICE, "turnTimeoutMs", 60_000)).toEqual({
+      ok: false,
+      reason: "not_host",
+    });
+  });
+
+  test("setConfig in active phase is rejected", () => {
+    const runtime = new LobbyRuntime(envWithConfig());
+    runtime.takeSeat(HOST, "Host", 0);
+    runtime.takeSeat(BOB, "Bob", 1);
+    runtime.setReady(HOST, true);
+    runtime.setReady(BOB, true);
+    runtime.start(HOST);
+    expect(runtime.setConfig(HOST, "turnTimeoutMs", 60_000)).toEqual({
+      ok: false,
+      reason: "bad_phase",
+    });
+  });
+
+  test("setConfig with unknown key rejects with invalid_config_value", () => {
+    const runtime = new LobbyRuntime(envWithConfig());
+    const result = runtime.setConfig(HOST, "mystery", 1);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe("invalid_config_value");
+    expect(result.configKey).toBe("mystery");
+    expect(result.configDetail).toBe("unknown_key");
+  });
+
+  test("setConfig with wrong type rejects with invalid_config_value", () => {
+    const runtime = new LobbyRuntime(envWithConfig());
+    const result = runtime.setConfig(HOST, "turnTimeoutMs", "ten" as unknown as number);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe("invalid_config_value");
+    expect(result.configKey).toBe("turnTimeoutMs");
+    expect(result.configDetail).toBe("expected_number");
+  });
+
+  test("setConfig with out-of-bounds number rejects", () => {
+    const runtime = new LobbyRuntime(envWithConfig());
+    const tooLow = runtime.setConfig(HOST, "turnTimeoutMs", 100);
+    expect(tooLow.ok).toBe(false);
+    if (tooLow.ok) return;
+    expect(tooLow.configDetail).toMatch(/^below_min: /);
+
+    const tooHigh = runtime.setConfig(HOST, "turnTimeoutMs", 999_999);
+    expect(tooHigh.ok).toBe(false);
+    if (tooHigh.ok) return;
+    expect(tooHigh.configDetail).toMatch(/^above_max: /);
+  });
+
+  test("setConfig with unknown enum option rejects", () => {
+    const runtime = new LobbyRuntime(envWithConfig());
+    const result = runtime.setConfig(HOST, "variant", "c");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.configDetail).toMatch(/^not_in_options: /);
+  });
+
+  test("setConfig success un-readies all human seats but not bot seats", () => {
+    const runtime = new LobbyRuntime(
+      envWithConfig({ knownBots: new Map([["random", { label: "Random" }]]) }),
+    );
+    runtime.takeSeat(HOST, "Host", 0);
+    runtime.assignBot(HOST, 1, "random");
+    runtime.setReady(HOST, true);
+
+    const before = runtime.buildStateMessage("room", new Set([HOST]));
+    const hostSeatBefore = before.seats.find((s) => s.kind === "human");
+    expect(hostSeatBefore?.kind === "human" && hostSeatBefore.ready).toBe(true);
+
+    const result = runtime.setConfig(HOST, "turnTimeoutMs", 60_000);
+    expect(result).toEqual({ ok: true, changed: true });
+
+    const after = runtime.buildStateMessage("room", new Set([HOST]));
+    const hostSeatAfter = after.seats.find((s) => s.kind === "human");
+    expect(hostSeatAfter?.kind === "human" && hostSeatAfter.ready).toBe(false);
+    const botSeat = after.seats.find((s) => s.kind === "bot");
+    expect(botSeat).toBeDefined();  // bot seats unaffected
+  });
+
+  test("setConfig with no schema rejects every key", () => {
+    const runtime = new LobbyRuntime(env());  // existing env() helper, no schema
+    const result = runtime.setConfig(HOST, "anything", 1);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe("invalid_config_value");
+    expect(result.configDetail).toBe("no_schema");
+  });
+
+  test("buildStateMessage includes config.values when schema present", () => {
+    const runtime = new LobbyRuntime(envWithConfig());
+    const state = runtime.buildStateMessage("room", new Set([HOST]));
+    expect(state.config).toEqual({
+      values: { turnTimeoutMs: 30_000, variant: "a", flag: false },
+    });
+  });
+
+  test("buildStateMessage omits config when schema absent", () => {
+    const runtime = new LobbyRuntime(env());
+    const state = runtime.buildStateMessage("room", new Set([HOST]));
+    expect(state.config).toBeUndefined();
+  });
+
+  test("setConfig success reflects in subsequent buildStateMessage", () => {
+    const runtime = new LobbyRuntime(envWithConfig());
+    runtime.setConfig(HOST, "turnTimeoutMs", 60_000);
+    const state = runtime.buildStateMessage("room", new Set([HOST]));
+    expect(state.config?.values.turnTimeoutMs).toBe(60_000);
+  });
+});
+
+describe("LobbyRuntime.start() — config in result", () => {
+  test("start() returns config.values snapshot", () => {
+    const runtime = new LobbyRuntime({
+      hostUserID: HOST,
+      minPlayers: 2,
+      maxPlayers: 2,
+      playerIDs: ["0", "1"],
+      configSchema: {
+        n: { type: "number", default: 5, label: "N" },
+      },
+    });
+    runtime.takeSeat(HOST, "Host", 0);
+    runtime.takeSeat(BOB, "Bob", 1);
+    runtime.setConfig(HOST, "n", 10);
+    // setConfig un-readies all humans (by design); ready them here so start
+    // succeeds and we can assert on the config snapshot in the result.
+    runtime.setReady(HOST, true);
+    runtime.setReady(BOB, true);
+    const result = runtime.start(HOST);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.config).toEqual({ values: { n: 10 } });
+  });
+
+  test("start() returns null config when no schema", () => {
+    const runtime = new LobbyRuntime(env());
+    runtime.takeSeat(ALICE, "Alice", 0);
+    runtime.takeSeat(BOB, "Bob", 1);
+    runtime.setReady(ALICE, true);
+    runtime.setReady(BOB, true);
+    const result = runtime.start(HOST);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.config).toBeNull();
+  });
+});
+
+describe("LobbyRuntime persistence with config", () => {
+  test("config values round-trip through serialize / re-construct", () => {
+    const sharedEnv: LobbyEnv = {
+      hostUserID: HOST,
+      minPlayers: 2,
+      maxPlayers: 2,
+      playerIDs: ["0", "1"],
+      configSchema: {
+        n: { type: "number", default: 5, label: "N" },
+      },
+    };
+    const runtime = new LobbyRuntime(sharedEnv);
+    runtime.setConfig(HOST, "n", 42);
+    const persisted = runtime.toPersisted();
+    const rehydrated = new LobbyRuntime(sharedEnv, persisted);
+    const state = rehydrated.buildStateMessage("room", new Set([HOST]));
+    expect(state.config?.values.n).toBe(42);
+  });
+});

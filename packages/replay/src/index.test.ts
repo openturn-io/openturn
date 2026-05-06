@@ -18,6 +18,24 @@ const MATCH = {
 
 const replayGame = defineGame({
   playerIDs: MATCH.players,
+  config: {
+    difficulty: {
+      type: "enum",
+      options: ["easy", "hard"] as const,
+      default: "easy",
+      label: "Difficulty",
+    },
+    rounds: {
+      type: "number",
+      default: 1,
+      label: "Rounds",
+    },
+    ranked: {
+      type: "boolean",
+      default: false,
+      label: "Ranked",
+    },
+  },
   events: {
     attack: {
       amount: 0,
@@ -133,7 +151,15 @@ describe("@openturn/replay", () => {
   });
 
   test("serializes and parses canonical saved replay envelopes", () => {
-    const session = createLocalSession(replayGame, { match: MATCH, now: 12, seed: "seed-7" });
+    const matchWithConfig = {
+      players: MATCH.players,
+      config: {
+        difficulty: "hard",
+        rounds: 3,
+        ranked: true,
+      },
+    };
+    const session = createLocalSession(replayGame, { match: matchWithConfig, now: 12, seed: "seed-7" });
     expect(session.applyEvent("0", "attack", { amount: 2 }).ok).toBe(true);
 
     const envelope = createSavedReplayFromSession({
@@ -149,13 +175,32 @@ describe("@openturn/replay", () => {
     const expectedTimeline = materializeReplay(replayGame, {
       actions: session.getState().meta.log,
       initialNow: 12,
-      match: MATCH,
+      match: matchWithConfig,
       playerID: "0",
       seed: "seed-7",
     });
 
     expect(parsed).toEqual(envelope);
+    expect(parsed.match.config).toEqual({
+      difficulty: "hard",
+      rounds: 3,
+      ranked: true,
+    });
     expect(materializeSavedReplay(replayGame, parsed)).toEqual(expectedTimeline);
+  });
+
+  test("rejects malformed config in saved replay", () => {
+    expect(() => parseSavedReplay(JSON.stringify({
+      actions: [],
+      gameID: "tests/replay-game",
+      initialNow: 0,
+      match: {
+        players: ["0", "1"],
+        config: "not an object",
+      },
+      seed: "seed-1",
+      version: 1,
+    }))).toThrow(/match\.config/);
   });
 
   test("rejects malformed saved replay envelopes", () => {
