@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import type { BridgeHost } from "./host";
+import { TurnCountdown } from "./play-deadline";
 
 // `allow-same-origin` is required: the bundle's dev server serves ES module
 // imports (entry chunk, HMR client, refresh runtime) which the iframe has to
@@ -32,6 +33,12 @@ export interface PlayShellProps {
   iframeAllow?: string;
   className?: string;
   toolbarClassName?: string;
+  /**
+   * When true (default), `<PlayShell>` auto-mounts `<TurnCountdown host={host}>`
+   * inside the toolbar trail. Set to false to suppress (e.g., when the
+   * embedder relocates the countdown elsewhere via `<TurnCountdown>` directly).
+   */
+  showTurnCountdown?: boolean;
 }
 
 export function PlayShell({
@@ -44,6 +51,7 @@ export function PlayShell({
   iframeAllow,
   className,
   toolbarClassName,
+  showTurnCountdown = true,
 }: PlayShellProps) {
   return (
     <div
@@ -60,7 +68,8 @@ export function PlayShell({
       >
         <strong className="text-slate-900 dark:text-slate-100">{gameName}</strong>
         {toolbarLead}
-        <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1">
+        <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-3">
+          {showTurnCountdown ? <TurnCountdown host={host} /> : null}
           {toolbarTrail}
         </div>
       </div>
