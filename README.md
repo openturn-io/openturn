@@ -32,6 +32,35 @@ But we recommend a quick start example below to overview the basic game definiti
 - **Lobby, profiles, and plugins.** Hosted rooms include lobby handoff and bot seat selection. Profiles let games commit replay-safe progression between matches. Plugins can add namespaced state and moves for shared abstractions like chat.
 
 - **Open source with a cloud path.** Run locally, self-host the worker runtime, or publish public games to Openturn Cloud for free. The framework stays plain TypeScript, so the rules are not locked to a view layer or deployment target.
+  - Auth
+  - Serverless game rooms
+  - CDN, storage and db
+  - All handled by cloud with zero infra setup for developers.
+
+## Design Philosophy
+
+Openturn has follow design philosophy in mind:
+
+- determinism
+- inspectability
+- serializability
+- graphability
+- validation
+- worker-safe execution
+
+And our APIs and typescript typing systems are keep evolving and are being consolidated, still at its early stages.
+
+## Comparisons to boardgame.io
+
+Openturn takes inspirations from boardgame.io and boardgamearena.com (no direct code copy though)
+
+But these frameworks are built many years ago using old web standards like redux, plain js, php etc.
+
+Openturn instead:
+
+- Built with typescript from day one
+- An opinionated stricter model that is more coding agents friendly - enabling massive vibe coded games potentials.
+- Clean boundary between different runtimes on different envs: bun/node, browser, cloudflare worker - yes Openturn supports serverless deployment of games on Cloudflare, and Openturn Cloud is built on top of that, making free public games scaling problem easy to manage. You don't need to host a forever running server for one game to handle websocket connections for multiplayer for example.
 
 ## Quickstart
 
@@ -100,6 +129,8 @@ npx skills add openturn-io/openturn
 ```
 
 See the [skill docs](https://openturn.io/docs/agent-skills) for what's covered and how to update.
+
+
 
 ## Learn more
 
