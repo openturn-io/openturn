@@ -272,6 +272,71 @@ describe("bridge host <-> game", () => {
     game.dispose();
   });
 
+  it("deadline: starts as null", () => {
+    const { host, game } = setup(async () => null);
+    expect(host.deadline).toBe(null);
+    host.dispose();
+    game.dispose();
+  });
+
+  it("deadline: receiving openturn:bridge:deadline updates host.deadline and fires event", async () => {
+    const { host, game } = setup(async () => null);
+    const fired: Array<number | null> = [];
+    host.on("deadline-changed", (e) => fired.push(e.deadline));
+
+    gameToHostBus!({
+      kind: "openturn:bridge:deadline",
+      deadline: 1_700_000_000_000,
+    });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(host.deadline).toBe(1_700_000_000_000);
+    expect(fired).toEqual([1_700_000_000_000]);
+
+    host.dispose();
+    game.dispose();
+  });
+
+  it("deadline: receiving the same deadline twice fires the event once", async () => {
+    const { host, game } = setup(async () => null);
+    const fired: Array<number | null> = [];
+    host.on("deadline-changed", (e) => fired.push(e.deadline));
+
+    gameToHostBus!({
+      kind: "openturn:bridge:deadline",
+      deadline: 1_700_000_000_000,
+    });
+    gameToHostBus!({
+      kind: "openturn:bridge:deadline",
+      deadline: 1_700_000_000_000,
+    });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(fired).toEqual([1_700_000_000_000]);
+
+    host.dispose();
+    game.dispose();
+  });
+
+  it("deadline: receiving null after a number clears and fires", async () => {
+    const { host, game } = setup(async () => null);
+    const fired: Array<number | null> = [];
+    host.on("deadline-changed", (e) => fired.push(e.deadline));
+
+    gameToHostBus!({
+      kind: "openturn:bridge:deadline",
+      deadline: 1_700_000_000_000,
+    });
+    gameToHostBus!({ kind: "openturn:bridge:deadline", deadline: null });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(host.deadline).toBe(null);
+    expect(fired).toEqual([1_700_000_000_000, null]);
+
+    host.dispose();
+    game.dispose();
+  });
+
   it("batch stream: no-source when game has not registered a source", async () => {
     const { host, game } = setup(async () => null);
     // No registerBatchSource call.
