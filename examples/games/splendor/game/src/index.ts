@@ -1,4 +1,4 @@
-import { createRng } from "@openturn/core";
+import { createRng, deadline, type ConfigSchema } from "@openturn/core";
 import { defineGame, turn } from "@openturn/gamekit";
 
 import { getCard } from "./data";
@@ -368,6 +368,18 @@ export const splendor = defineGame({
   initialPhase: "play",
   turn: turn.roundRobin(),
 
+  config: {
+    turnTimeoutMs: {
+      type: "number",
+      default: 30_000,
+      min: 5_000,
+      max: 300_000,
+      step: 5_000,
+      label: "Turn time",
+      description: "Per-turn deadline in milliseconds. Players who don't act in time get a random legal action played for them.",
+    },
+  } as const satisfies ConfigSchema,
+
   setup: ({ match, seed }): SplendorState => {
     const seatedPlayers = match.players as readonly SplendorPlayerID[];
     const rng = createRng(seed);
@@ -379,6 +391,26 @@ export const splendor = defineGame({
       label: ({ G, turn: t }) => {
         const seat = G.seatOrder[t.index % G.seatOrder.length];
         return `Player ${seat}'s turn`;
+      },
+      deadline: (ctx) => deadline.after(ctx, ctx.match.config.turnTimeoutMs),
+      onTimeout: (ctx, moves) => {
+        // Random legal action — keeps the match progressing if a player stalls
+        // or disconnects. Mirrors the random bot's pick policy.
+        const G = ctx.G as SplendorState;
+        const playerID = G.seatOrder[ctx.turn.index % G.seatOrder.length] as SplendorPlayerID;
+        const legal = enumerateSplendorLegalActions(G, playerID);
+        if (legal.length === 0) return null;
+        const pick = ctx.rng.pick(legal);
+        // The dispatch surface for `moves` from a phase callback hits a TS
+        // inference limitation today (see gamekit's types.test-d.ts) — TMoves
+        // doesn't propagate from the inline `moves: ({ move }) => ({...})`
+        // factory through to onTimeout's BoundPhaseMoves parameter. The
+        // runtime works correctly; we cast to unblock typing.
+        const dispatch = moves as unknown as Record<
+          string,
+          (args: unknown) => ReturnType<typeof moves[keyof typeof moves]>
+        >;
+        return dispatch[pick.event]!(pick.payload);
       },
     },
   },

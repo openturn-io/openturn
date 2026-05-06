@@ -45,7 +45,12 @@ function SplendorRoom() {
   } else if (room.lobby !== null) {
     body = (
       <section className="grid h-full min-h-0 w-full place-items-center px-6 py-6">
-        <LobbyWithBots lobby={room.lobby} title="Splendor" />
+        <LobbyWithBots
+          lobby={room.lobby}
+          title="Splendor"
+          configUI="auto"
+          configSchema={splendor.config!}
+        />
       </section>
     );
   } else if (room.game !== null) {
