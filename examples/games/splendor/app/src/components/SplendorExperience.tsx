@@ -44,13 +44,15 @@ function SplendorRoom() {
     );
   } else if (room.lobby !== null) {
     body = (
-      <section className="grid h-full min-h-0 w-full place-items-center px-6 py-6">
-        <LobbyWithBots
-          lobby={room.lobby}
-          title="Splendor"
-          configUI="auto"
-          configSchema={splendor.config}
-        />
+      <section className="h-full min-h-0 w-full overflow-y-auto">
+        <div className="flex min-h-full w-full items-center justify-center px-6 py-6">
+          <LobbyWithBots
+            lobby={room.lobby}
+            title="Splendor"
+            configUI="auto"
+            configSchema={splendor.config}
+          />
+        </div>
       </section>
     );
   } else if (room.game !== null) {
