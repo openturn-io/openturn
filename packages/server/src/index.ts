@@ -443,9 +443,18 @@ export async function createRoomRuntime<
     steps: readonly GameStep<ProtocolCompatibleGame<TGame>>[],
   ): Promise<void> {
     if (options.onActionProfileCommit === undefined) return;
+    // De-dupe by actionID within a batch. Synthesized gamekit phase-outcome
+    // steps (e.g. from a `phase.onTimeout` that returns `{ kind: "finish" }`)
+    // share the originating `__timeout` action's actionID, so naive iteration
+    // would fire the same (roomID, actionID) commit twice. The cloud is
+    // already idempotent on that key, but de-duping locally avoids the
+    // wasted round-trip and any race between the two writes.
+    const fired = new Set<string>();
     for (const step of steps) {
       const profile = (step.transition as { profile?: ProfileCommitDeltaMap<GamePlayers<ProtocolCompatibleGame<TGame>>> }).profile;
       if (profile === undefined) continue;
+      if (fired.has(step.event.actionID)) continue;
+      fired.add(step.event.actionID);
       try {
         await options.onActionProfileCommit({
           actionID: step.event.actionID,
@@ -918,9 +927,16 @@ function replayIntoSession<TGame extends AnyGame>(
       // active state's deadline if any.
       continue;
     }
-    const moveResult = session.applyEvent(
+    // Use `applyEventAt` (NOT `applyEvent`) so the recorded `at` flows back
+    // into the rebuilt session. `applyEvent` would stamp `Date.now()` and
+    // hop `meta.now` to the current wall-clock, which would rewrite the
+    // log's timestamps on every DO cold-start and corrupt any time-derived
+    // state (e.g. `state.deadline = ctx => ctx.now + N`). Replays of saved
+    // games do the same in `@openturn/replay`'s materializer.
+    const moveResult = session.applyEventAt(
       action.playerID,
       action.event as never,
+      action.at,
       (action.payload === null ? undefined : structuredClone(action.payload)) as never,
     );
 

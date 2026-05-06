@@ -17,7 +17,19 @@ export function createFrozenMatchStore<TGame extends AnyGame>(
   frozenSnapshot: SessionSnapshot<TGame>,
   frozenBatch: SessionBatch<TGame> | null,
   subscribeToUpdates?: (listener: () => void) => () => void,
+  /**
+   * The original session's `initialNow` (wall-clock at session creation).
+   * Required for `getReplayData()` to produce correctly-timed replay envelopes
+   * — `frozenSnapshot.meta.now` is the wall-clock of the most recent event
+   * after the per-event meta.now advance landed, NOT session creation. When
+   * omitted, falls back to `frozenSnapshot.meta.log[0]?.at ?? meta.now` as
+   * a best-effort approximation; callers that have access to the live
+   * session (inspector wrapper) should pass the real value.
+   */
+  initialNow?: number,
 ): OpenturnMatchStore<TGame> {
+  const resolvedInitialNow =
+    initialNow ?? frozenSnapshot.meta.log[0]?.at ?? frozenSnapshot.meta.now;
   const playerViews = new Map<string, GamePlayerView<TGame>>();
 
   return {
@@ -28,7 +40,7 @@ export function createFrozenMatchStore<TGame extends AnyGame>(
     getReplayData() {
       return {
         actions: frozenSnapshot.meta.log as GameReplayData<TGame, MatchInput<GamePlayers<TGame>>>["actions"],
-        initialNow: frozenSnapshot.meta.now,
+        initialNow: resolvedInitialNow,
         match: frozenSnapshot.meta.match,
         seed: frozenSnapshot.meta.seed,
       };

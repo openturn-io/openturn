@@ -647,3 +647,65 @@ describe("RoomRuntime — DeadlineScheduler integration", () => {
     expect(scheduler.calls.some((c) => c.key === "turn-timeout" && c.at === null)).toBe(true);
   });
 });
+
+describe("RoomRuntime — restore-from-persistence preserves recorded action timestamps", () => {
+  test("replayIntoSession uses applyEventAt so recorded `at` flows back into the rebuilt session", async () => {
+    // Capture the recorded log from a first runtime, then re-create a runtime
+    // with the same persistence record. The rebuilt session's meta.log should
+    // carry the original `at` values (NOT Date.now() at restore time), and
+    // its meta.now should reflect the last recorded event — proving
+    // replayIntoSession went through applyEventAt.
+    const persistence = createInMemoryPersistence();
+    const deployment = defineGameDeployment({
+      deploymentVersion: "v1",
+      schemaVersion: "1",
+      gameKey: "test:restore",
+      game: roomGame,
+    });
+    const first = await createRoomRuntime({
+      deployment,
+      roomID: "room_restore",
+      initialNow: 1_000,
+      persistence,
+      connectedPlayers: ["0", "1"],
+    });
+    const result = await first.handleClientMessage({
+      type: "action",
+      matchID: "room_restore",
+      clientActionID: "ca_1",
+      playerID: "0",
+      event: "place",
+      payload: { index: 0 },
+    });
+    const recordedAt = (result[0]?.message as { steps?: ReadonlyArray<{ event?: { at?: number } }> })
+      .steps?.[0]?.event?.at;
+    expect(typeof recordedAt).toBe("number");
+    expect(recordedAt).not.toBe(1_000);  // applyEvent stamped Date.now()
+
+    // Re-create — the second runtime replays the persisted log via
+    // replayIntoSession, which after the C1 fix uses applyEventAt and
+    // therefore preserves recordedAt rather than restamping with Date.now().
+    const second = await createRoomRuntime({
+      deployment,
+      roomID: "room_restore",
+      initialNow: 9_999_999,  // deliberately divergent — should be ignored when persistence has data
+      persistence,
+      connectedPlayers: [],
+    });
+    const restoredLog = second.getState().snapshot.log;
+    expect(restoredLog.length).toBeGreaterThan(0);
+    expect(restoredLog[0]?.at).toBe(recordedAt);
+  });
+});
+
+function createInMemoryPersistence() {
+  let stored: import("./index").RoomPersistenceRecord | null = null;
+  return {
+    async load() {
+      return stored;
+    },
+    async save(record: import("./index").RoomPersistenceRecord) {
+      stored = record;
+    },
+  };
+}
