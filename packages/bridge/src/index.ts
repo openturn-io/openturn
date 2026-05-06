@@ -72,4 +72,5 @@ export {
   type ResolvedTheme,
   type Theme,
 } from "./theme";
+export { TurnCountdown, useTurnDeadline } from "./play-deadline";
 export type { HostedConnectionDescriptor } from "@openturn/client";
