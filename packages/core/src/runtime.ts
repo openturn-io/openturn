@@ -146,6 +146,23 @@ export const deadline = {
   },
 };
 
+/** Keys for deadlines that runtime hosts may multiplex. */
+export type DeadlineKey = "turn-timeout" | "idle-reap";
+
+/**
+ * Host-injected scheduler interface for wall-clock deadlines. Implementations
+ * own their underlying mechanism (Cloudflare DO `setAlarm`, Node `setTimeout`,
+ * etc.). Core calls `setDeadline(key, at)` after every event handled by the
+ * room runtime; the host fires the appropriate dispatch when wall-clock
+ * passes the registered instant. The return type accommodates both sync
+ * (in-process `setTimeout`) and async (DO `ctx.storage.put` + `setAlarm`)
+ * implementations — callers should `await` the return.
+ */
+export interface DeadlineScheduler {
+  /** Set or replace a named deadline. `at: null` clears it. */
+  setDeadline(key: DeadlineKey, at: number | null): void | Promise<void>;
+}
+
 /**
  * Returns true when `playerID` is the match's host. Returns false when
  * `match.hostPlayerID` is null (single-player, spectating host, etc.) for

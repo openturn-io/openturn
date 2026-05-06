@@ -52,6 +52,8 @@ export {
   resolveRoundRobinTurn,
   resolveTimeValue,
   roundRobin,
+  type DeadlineKey,
+  type DeadlineScheduler,
   type DeterministicRng,
   type RngSnapshot,
   type TimeContext,
