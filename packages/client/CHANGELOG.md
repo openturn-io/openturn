@@ -1,5 +1,14 @@
 # @openturn/client
 
+## 0.8.0
+
+### Patch Changes
+
+- Updated dependencies [056a3d8]
+- Updated dependencies [da70cae]
+  - @openturn/protocol@0.8.0
+  - @openturn/json@0.8.0
+
 ## 0.7.0
 
 ### Patch Changes
