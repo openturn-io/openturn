@@ -3,6 +3,7 @@ import {
   createLocalSession,
   profile,
   type AnyGame,
+  type DeadlineScheduler,
   type GameErrorCode,
   type GameErrorResult,
   type GamePlayerView,
@@ -22,7 +23,7 @@ import {
 } from "@openturn/core";
 import {
   MatchSnapshotSchema,
-  ProtocolActionRecordSchema,
+  ProtocolEventRecordSchema,
   ProtocolHistoryBranchSchema,
   protocolizeGameSnapshot,
   protocolizeGameStep,
@@ -33,10 +34,10 @@ import {
   type MatchID,
   type MatchSnapshot,
   type PlayerViewSnapshot,
-  type ProtocolActionRecord,
   type ProtocolClientMessage,
   type ProtocolErrorCode,
   type ProtocolErrorDetail,
+  type ProtocolEventRecord,
   type ProtocolHistoryBranch,
   type ProtocolValue,
   type ResyncRequest,
@@ -125,7 +126,12 @@ export interface RoomPersistenceRecord<
   checkpoint: CanonicalSnapshot<TGame>;
   deploymentVersion: string;
   initialNow: number;
-  log: readonly ProtocolActionRecord[];
+  /**
+   * Recorded action history. Mostly player-emitted `type: "event"` records;
+   * host-dispatched entries (e.g. the `__timeout` sentinel) appear with
+   * `type: "internal"` + `playerID: null`. Replay handles both shapes.
+   */
+  log: readonly ProtocolEventRecord[];
   match: MatchInput<GamePlayers<TGame>>;
   roomID: MatchID;
   seed: string;
@@ -173,6 +179,19 @@ export interface RoomRuntime<
   handleClientMessage(
     message: ProtocolClientMessage,
   ): Promise<readonly RoomRuntimeEnvelope<TGame>[]>;
+  /**
+   * Idempotent timeout dispatch. Hosts (Cloudflare DO `alarm()`, CLI
+   * `setTimeout`, etc.) call this when their underlying scheduler fires the
+   * `turn-timeout` deadline. The runtime re-checks the active deadline against
+   * `now` (defense-in-depth — `session.fireTimeout` also re-checks), applies a
+   * matching `kind: "timeout"` transition through the session, broadcasts a
+   * standard `batch_applied` envelope to every connected player, and re-arms
+   * the injected `DeadlineScheduler` with the new state's deadline (which may
+   * be `null` if the timeout drove the match to a deadline-less state).
+   * Returns `[]` when no transition fires (no deadline, deadline in the
+   * future, or no matching `kind: "timeout"` rule).
+   */
+  fireTimeout(now?: number): Promise<readonly RoomRuntimeEnvelope<TGame>[]>;
 }
 
 export {
@@ -277,6 +296,15 @@ export interface RoomRuntimeOptions<
   persistence?: RoomPersistence;
   restorePersistedState?: boolean;
   roomID: MatchID;
+  /**
+   * Host-injected wall-clock deadline scheduler. When provided, the runtime
+   * calls `setDeadline("turn-timeout", session.getNextDeadline())` after
+   * construction (post-restore) and after every successful event application,
+   * including `fireTimeout`. Hosts (Cloudflare DO, CLI) own the underlying
+   * timer and dispatch back into the runtime via `fireTimeout(now)` when the
+   * deadline elapses. Optional — runtimes without time-bound rules can omit it.
+   */
+  scheduler?: DeadlineScheduler;
   seed?: string;
 }
 
@@ -377,8 +405,8 @@ export async function createRoomRuntime<
   );
 
   if (saved !== undefined) {
-    const savedLog = (saved.snapshot as { log?: readonly ProtocolActionRecord[] }).log
-      ?? (saved.snapshot as { meta?: { log?: readonly ProtocolActionRecord[] } }).meta?.log
+    const savedLog = (saved.snapshot as { log?: readonly ProtocolEventRecord[] }).log
+      ?? (saved.snapshot as { meta?: { log?: readonly ProtocolEventRecord[] } }).meta?.log
       ?? [];
     replayIntoSession(session, savedLog);
   }
@@ -415,9 +443,18 @@ export async function createRoomRuntime<
     steps: readonly GameStep<ProtocolCompatibleGame<TGame>>[],
   ): Promise<void> {
     if (options.onActionProfileCommit === undefined) return;
+    // De-dupe by actionID within a batch. Synthesized gamekit phase-outcome
+    // steps (e.g. from a `phase.onTimeout` that returns `{ kind: "finish" }`)
+    // share the originating `__timeout` action's actionID, so naive iteration
+    // would fire the same (roomID, actionID) commit twice. The cloud is
+    // already idempotent on that key, but de-duping locally avoids the
+    // wasted round-trip and any race between the two writes.
+    const fired = new Set<string>();
     for (const step of steps) {
       const profile = (step.transition as { profile?: ProfileCommitDeltaMap<GamePlayers<ProtocolCompatibleGame<TGame>>> }).profile;
       if (profile === undefined) continue;
+      if (fired.has(step.event.actionID)) continue;
+      fired.add(step.event.actionID);
       try {
         await options.onActionProfileCommit({
           actionID: step.event.actionID,
@@ -490,6 +527,22 @@ export async function createRoomRuntime<
     });
   };
 
+  /**
+   * Re-arm the host-injected scheduler with the session's current next
+   * deadline. Called once at construction (post-restore) and after every
+   * successful event application — including `fireTimeout` itself. `setDeadline`
+   * is idempotent on the host side; we don't gate on whether the value
+   * changed.
+   */
+  const rearmScheduler = async () => {
+    if (options.scheduler === undefined) return;
+    await options.scheduler.setDeadline("turn-timeout", session.getNextDeadline());
+  };
+
+  // Initial arm — must happen after any restore-from-saved replay so the
+  // scheduled instant reflects the live session, not the empty initial state.
+  await rearmScheduler();
+
   return {
     async connect(playerID) {
       connectedPlayers.add(playerID);
@@ -527,6 +580,63 @@ export async function createRoomRuntime<
           return handleSaveRequest(message);
       }
     },
+    async fireTimeout(now = Date.now()) {
+      // Defense-in-depth idempotency. `session.fireTimeout` re-checks too,
+      // but inspecting here lets us short-circuit broadcast/persist on stale
+      // alarm fires (e.g. an event already advanced past the deadline before
+      // the host's scheduler rang).
+      const deadline = session.getNextDeadline();
+      if (deadline === null || deadline > now) {
+        // Re-arm anyway — host's view may have drifted; harmless if correct.
+        await rearmScheduler();
+        return [];
+      }
+
+      const batch = session.fireTimeout(now);
+
+      // `null` means the session decided this was a no-op (no deadline,
+      // future deadline, no matching `kind: "timeout"` transition, or an
+      // internal error). Re-arm and bail without broadcasting.
+      if (batch === null) {
+        await rearmScheduler();
+        return [];
+      }
+
+      revision += batch.steps.length;
+      // The synthetic timeout actionID minted inside `session.fireTimeout`
+      // is the first step's `event.actionID` (mirrors `handleAction`).
+      branch = {
+        ...branch,
+        headActionID: batch.steps[0]?.event.actionID ?? branch.headActionID,
+      };
+
+      await persist();
+      await emitActionProfileCommits(batch.steps);
+      await maybeSettle();
+      await rearmScheduler();
+
+      // Broadcast the standard `batch_applied` envelope to every connected
+      // player — same wire shape as a player-emitted event. There's no
+      // originating client request, so no `ackClientActionID` is included.
+      const recipients = [...connectedPlayers];
+      return recipients.map((playerID) => ({
+        message: {
+          type: "batch_applied",
+          matchID: options.roomID,
+          revision,
+          branch,
+          snapshot: createPlayerSnapshot(options.roomID, revision, session, options.deployment.game, playerID),
+          steps: createPlayerBatchSteps(
+            options.roomID,
+            revision,
+            batch.steps,
+            options.deployment.game,
+            playerID,
+          ),
+        } satisfies PlayerBatchMessage<ProtocolCompatibleGame<TGame>>,
+        playerID,
+      }));
+    },
   };
 
   async function handleAction(
@@ -554,6 +664,7 @@ export async function createRoomRuntime<
     await persist();
     await emitActionProfileCommits(result.batch.steps);
     await maybeSettle();
+    await rearmScheduler();
 
     const recipients = connectedPlayers.size === 0
       ? [message.playerID]
@@ -804,12 +915,28 @@ function isGameDeployment(value: unknown): value is GameDeployment {
 
 function replayIntoSession<TGame extends AnyGame>(
   session: LocalGameSession<TGame>,
-  actions: readonly ProtocolActionRecord[],
+  actions: readonly ProtocolEventRecord[],
 ) {
   for (const action of actions) {
-    const moveResult = session.applyEvent(
+    if (action.type === "internal") {
+      // Host-dispatched entries (currently only the `__timeout` sentinel)
+      // are re-fired by the host's scheduler when the deadline elapses on
+      // restore — they don't replay through `applyEvent`. Skipping here is
+      // safe because the persisted checkpoint advances `revision` past the
+      // sentinel; the scheduler will re-arm against the (post-timeout)
+      // active state's deadline if any.
+      continue;
+    }
+    // Use `applyEventAt` (NOT `applyEvent`) so the recorded `at` flows back
+    // into the rebuilt session. `applyEvent` would stamp `Date.now()` and
+    // hop `meta.now` to the current wall-clock, which would rewrite the
+    // log's timestamps on every DO cold-start and corrupt any time-derived
+    // state (e.g. `state.deadline = ctx => ctx.now + N`). Replays of saved
+    // games do the same in `@openturn/replay`'s materializer.
+    const moveResult = session.applyEventAt(
       action.playerID,
       action.event as never,
+      action.at,
       (action.payload === null ? undefined : structuredClone(action.payload)) as never,
     );
 
@@ -902,7 +1029,7 @@ const RoomPersistenceRecordSchema = z.object({
   checkpoint: MatchSnapshotSchema,
   deploymentVersion: z.string(),
   initialNow: z.number().finite(),
-  log: ProtocolActionRecordSchema.array(),
+  log: ProtocolEventRecordSchema.array(),
   match: MatchInputSchema,
   roomID: z.string(),
   seed: z.string(),

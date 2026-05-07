@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { defineGame, rejectTransition } from "@openturn/core";
 
@@ -186,6 +186,10 @@ describe("@openturn/react", () => {
           playerID: "1",
           roomID: "room_cloud",
           token: "token_cloud",
+          // Far-future expiry so the bridge skips token refresh (which would
+          // otherwise post a token-refresh-request to our fake parent and
+          // hang the connect() promise waiting 5s for a non-existent reply).
+          tokenExpiresAt: 9_999_999_999,
           websocketURL: "wss://cloud.example/rooms/room_cloud/connect",
         }),
       },
@@ -248,6 +252,186 @@ describe("@openturn/react", () => {
     expect(screen.getByTestId("lobby-min").textContent).toBe("2");
     expect(screen.getByTestId("lobby-max").textContent).toBe("2");
     expect(screen.getByTestId("lobby-seats").textContent).toBe("2");
+  });
+});
+
+describe("useTurnDeadline", () => {
+  // Uses a stable wall-clock so the hook's `Date.now()` reads align with the
+  // game's `deadline: ({ now }) => now + N` resolutions made at session
+  // bootstrap. `vi.setSystemTime` runs BEFORE the test body so the bindings'
+  // initial snapshot embeds a deadline tied to the same instant.
+  const FIXED_NOW = 1_700_000_000_000;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(FIXED_NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("returns null deadline when match has none", () => {
+    const noDeadlineGame = defineGame({
+      playerIDs: MATCH.players,
+      events: { noop: undefined },
+      initial: "play",
+      setup: () => ({}),
+      states: { play: { activePlayers: () => ["0"] } },
+      transitions: [],
+    });
+    const bindings = createOpenturnBindings(noDeadlineGame, {
+      runtime: "local",
+      match: MATCH,
+    });
+
+    const ref = {
+      current: { deadline: null as number | null, remainingMs: -1, isExpired: true },
+    };
+    function Probe() {
+      ref.current = bindings.useTurnDeadline();
+      return null;
+    }
+    const localMatch = bindings.createLocalMatch({ match: MATCH });
+    render(
+      <bindings.OpenturnProvider match={localMatch}>
+        <Probe />
+      </bindings.OpenturnProvider>,
+    );
+
+    expect(ref.current.deadline).toBeNull();
+    expect(ref.current.remainingMs).toBe(0);
+    expect(ref.current.isExpired).toBe(false);
+  });
+
+  test("returns the snapshot's controlMeta.deadline", () => {
+    const deadlineGame = defineGame({
+      playerIDs: MATCH.players,
+      events: { noop: undefined },
+      initial: "play",
+      setup: () => ({}),
+      states: {
+        play: {
+          activePlayers: () => ["0"],
+          deadline: ({ now }) => now + 30_000,
+        },
+      },
+      transitions: [],
+    });
+    const bindings = createOpenturnBindings(deadlineGame, {
+      runtime: "local",
+      match: MATCH,
+    });
+
+    const ref = {
+      current: { deadline: null as number | null, remainingMs: -1, isExpired: true },
+    };
+    function Probe() {
+      ref.current = bindings.useTurnDeadline();
+      return null;
+    }
+    const localMatch = bindings.createLocalMatch({ match: MATCH, now: FIXED_NOW });
+    render(
+      <bindings.OpenturnProvider match={localMatch}>
+        <Probe />
+      </bindings.OpenturnProvider>,
+    );
+
+    expect(ref.current.deadline).toBe(FIXED_NOW + 30_000);
+    expect(ref.current.remainingMs).toBe(30_000);
+    expect(ref.current.isExpired).toBe(false);
+  });
+
+  test("ticks at 1Hz when remainingMs >= 5000", () => {
+    const deadlineGame = defineGame({
+      playerIDs: MATCH.players,
+      events: { noop: undefined },
+      initial: "play",
+      setup: () => ({}),
+      states: {
+        play: {
+          activePlayers: () => ["0"],
+          deadline: ({ now }) => now + 30_000,
+        },
+      },
+      transitions: [],
+    });
+    const bindings = createOpenturnBindings(deadlineGame, {
+      runtime: "local",
+      match: MATCH,
+    });
+
+    const ref = {
+      current: { deadline: null as number | null, remainingMs: -1, isExpired: true },
+    };
+    function Probe() {
+      ref.current = bindings.useTurnDeadline();
+      return null;
+    }
+    const localMatch = bindings.createLocalMatch({ match: MATCH, now: FIXED_NOW });
+    render(
+      <bindings.OpenturnProvider match={localMatch}>
+        <Probe />
+      </bindings.OpenturnProvider>,
+    );
+
+    expect(ref.current.remainingMs).toBe(30_000);
+
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+    expect(ref.current.remainingMs).toBe(29_000);
+
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+    expect(ref.current.remainingMs).toBe(28_000);
+  });
+
+  test("ramps to 10Hz when remainingMs < 5000", () => {
+    const deadlineGame = defineGame({
+      playerIDs: MATCH.players,
+      events: { noop: undefined },
+      initial: "play",
+      setup: () => ({}),
+      states: {
+        play: {
+          activePlayers: () => ["0"],
+          deadline: ({ now }) => now + 4_500,
+        },
+      },
+      transitions: [],
+    });
+    const bindings = createOpenturnBindings(deadlineGame, {
+      runtime: "local",
+      match: MATCH,
+    });
+
+    const ref = {
+      current: { deadline: null as number | null, remainingMs: -1, isExpired: true },
+    };
+    function Probe() {
+      ref.current = bindings.useTurnDeadline();
+      return null;
+    }
+    const localMatch = bindings.createLocalMatch({ match: MATCH, now: FIXED_NOW });
+    render(
+      <bindings.OpenturnProvider match={localMatch}>
+        <Probe />
+      </bindings.OpenturnProvider>,
+    );
+
+    expect(ref.current.remainingMs).toBe(4_500);
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(ref.current.remainingMs).toBe(4_400);
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(ref.current.remainingMs).toBe(4_300);
   });
 });
 
@@ -405,6 +589,235 @@ class MockWebSocket {
     this.sent.push(JSON.parse(payload) as Record<string, unknown>);
   }
 }
+
+describe("OpenturnProvider deadline emission via bridge", () => {
+  beforeEach(() => {
+    MockWebSocket.instances.length = 0;
+    stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
+  });
+
+  function createDeadlineCapturingParent() {
+    const messages: Array<Record<string, unknown>> = [];
+    const parent: Pick<Window, "postMessage"> = {
+      postMessage: (message: unknown) => {
+        if (
+          typeof message === "object"
+          && message !== null
+          && (message as Record<string, unknown>).kind === "openturn:bridge:deadline"
+        ) {
+          messages.push(message as Record<string, unknown>);
+        }
+      },
+    };
+    return { parent, messages };
+  }
+
+  function makeSnapshotMessage(
+    deadline: number | null,
+    revision: number,
+  ): Record<string, unknown> {
+    return {
+      derived: {
+        activePlayers: ["1"],
+        control: null,
+        controlMeta: {
+          deadline,
+          label: "Play",
+          metadata: [],
+          pendingTargets: ["play"],
+        },
+        selectors: {},
+      },
+      G: {
+        cells: [null, null],
+        hands: { "0": ["sun", "moon"], "1": ["storm", "mist"] },
+      },
+      log: [],
+      position: {
+        node: "play",
+        path: ["play"],
+        turn: 1,
+      },
+      matchID: "room_cloud",
+      result: null,
+      revision,
+    };
+  }
+
+  test("OpenturnProvider calls backend.setDeadline when snapshot's controlMeta.deadline changes", async () => {
+    const { parent, messages } = createDeadlineCapturingParent();
+    const cloudGame = makeCloudGame();
+    const cloudBindings = createOpenturnBindings(cloudGame, {
+      runtime: "multiplayer",
+      hosted: {
+        parent,
+        readInit: () => ({
+          scope: "game",
+          userID: "user_cloud",
+          userName: "Cloud",
+          playerID: "1",
+          roomID: "room_cloud",
+          token: "token_cloud",
+          // Far-future expiry so the bridge skips token refresh (which would
+          // otherwise post a token-refresh-request to our fake parent and
+          // hang the connect() promise waiting 5s for a non-existent reply).
+          tokenExpiresAt: 9_999_999_999,
+          websocketURL: "wss://cloud.example/rooms/room_cloud/connect",
+        }),
+      },
+    });
+    const Harness = makeRoomHarness(cloudBindings);
+
+    render(
+      <cloudBindings.OpenturnProvider>
+        <Harness />
+      </cloudBindings.OpenturnProvider>,
+    );
+
+    // Wait for the websocket to be opened (cloud "game" scope auto-connects).
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    // Initial mount: no snapshot yet — emit `null`.
+    expect(messages.map((m) => m.deadline)).toEqual([null]);
+
+    // Open + push a snapshot with deadline T1.
+    const T1 = 1_700_000_000_000;
+    act(() => {
+      MockWebSocket.instances[0]?.emit("open", {});
+      MockWebSocket.instances[0]?.emit("message", {
+        data: JSON.stringify(makeSnapshotMessage(T1, 1)),
+      });
+    });
+
+    await waitFor(() => {
+      expect(messages.map((m) => m.deadline)).toEqual([null, T1]);
+    });
+
+    // Push a snapshot with a different deadline T2.
+    const T2 = T1 + 30_000;
+    act(() => {
+      MockWebSocket.instances[0]?.emit("message", {
+        data: JSON.stringify(makeSnapshotMessage(T2, 2)),
+      });
+    });
+
+    await waitFor(() => {
+      expect(messages.map((m) => m.deadline)).toEqual([null, T1, T2]);
+    });
+  });
+
+  test("OpenturnProvider does not re-call setDeadline when the deadline doesn't change", async () => {
+    const { parent, messages } = createDeadlineCapturingParent();
+    const cloudGame = makeCloudGame();
+    const cloudBindings = createOpenturnBindings(cloudGame, {
+      runtime: "multiplayer",
+      hosted: {
+        parent,
+        readInit: () => ({
+          scope: "game",
+          userID: "user_cloud",
+          userName: "Cloud",
+          playerID: "1",
+          roomID: "room_cloud",
+          token: "token_cloud",
+          // Far-future expiry so the bridge skips token refresh (which would
+          // otherwise post a token-refresh-request to our fake parent and
+          // hang the connect() promise waiting 5s for a non-existent reply).
+          tokenExpiresAt: 9_999_999_999,
+          websocketURL: "wss://cloud.example/rooms/room_cloud/connect",
+        }),
+      },
+    });
+    const Harness = makeRoomHarness(cloudBindings);
+
+    render(
+      <cloudBindings.OpenturnProvider>
+        <Harness />
+      </cloudBindings.OpenturnProvider>,
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    const T1 = 1_700_000_000_000;
+    act(() => {
+      MockWebSocket.instances[0]?.emit("open", {});
+      MockWebSocket.instances[0]?.emit("message", {
+        data: JSON.stringify(makeSnapshotMessage(T1, 1)),
+      });
+    });
+
+    await waitFor(() => {
+      expect(messages.map((m) => m.deadline)).toEqual([null, T1]);
+    });
+
+    // Push another snapshot with the SAME deadline (different revision).
+    act(() => {
+      MockWebSocket.instances[0]?.emit("message", {
+        data: JSON.stringify(makeSnapshotMessage(T1, 2)),
+      });
+    });
+
+    // Bridge-side dedupe (game.setDeadline) suppresses the duplicate emission,
+    // so the messages list is unchanged: still just [null, T1].
+    expect(messages.map((m) => m.deadline)).toEqual([null, T1]);
+  });
+
+  test("OpenturnProvider calls backend.setDeadline(null) on unmount", async () => {
+    const { parent, messages } = createDeadlineCapturingParent();
+    const cloudGame = makeCloudGame();
+    const cloudBindings = createOpenturnBindings(cloudGame, {
+      runtime: "multiplayer",
+      hosted: {
+        parent,
+        readInit: () => ({
+          scope: "game",
+          userID: "user_cloud",
+          userName: "Cloud",
+          playerID: "1",
+          roomID: "room_cloud",
+          token: "token_cloud",
+          // Far-future expiry so the bridge skips token refresh (which would
+          // otherwise post a token-refresh-request to our fake parent and
+          // hang the connect() promise waiting 5s for a non-existent reply).
+          tokenExpiresAt: 9_999_999_999,
+          websocketURL: "wss://cloud.example/rooms/room_cloud/connect",
+        }),
+      },
+    });
+    const Harness = makeRoomHarness(cloudBindings);
+
+    const { unmount } = render(
+      <cloudBindings.OpenturnProvider>
+        <Harness />
+      </cloudBindings.OpenturnProvider>,
+    );
+
+    await waitFor(() => {
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    const T1 = 1_700_000_000_000;
+    act(() => {
+      MockWebSocket.instances[0]?.emit("open", {});
+      MockWebSocket.instances[0]?.emit("message", {
+        data: JSON.stringify(makeSnapshotMessage(T1, 1)),
+      });
+    });
+
+    await waitFor(() => {
+      expect(messages.map((m) => m.deadline)).toEqual([null, T1]);
+    });
+
+    // Unmount: cleanup effect should clear the deadline.
+    unmount();
+    expect(messages.at(-1)?.deadline).toBe(null);
+    expect(messages.map((m) => m.deadline)).toEqual([null, T1, null]);
+  });
+});
 
 afterEach(() => {
   cleanup();

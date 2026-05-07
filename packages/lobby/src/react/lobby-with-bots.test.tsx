@@ -178,7 +178,7 @@ describe("<LobbyWithBots />", () => {
       configValues: { n: 5 },
       setConfig: vi.fn(),
     });
-    render(
+    const { container } = render(
       <LobbyWithBots
         lobby={view}
         configUI="auto"
@@ -186,7 +186,7 @@ describe("<LobbyWithBots />", () => {
       />,
     );
     expect(screen.getByText("Settings")).toBeTruthy();
-    expect(screen.getByLabelText("N")).toBeTruthy();
+    expect(container.querySelector("#n")).not.toBeNull();
   });
 
   test("configUI=none does not render settings section even with schema", () => {
@@ -210,7 +210,7 @@ describe("<LobbyWithBots />", () => {
       configValues: { n: 5 },
       setConfig: vi.fn(),
     });
-    render(
+    const { container } = render(
       <LobbyWithBots
         lobby={view}
         configUI="auto"
@@ -219,6 +219,6 @@ describe("<LobbyWithBots />", () => {
     );
     // The <details> is collapsed by default for non-hosts; expand it to assert.
     fireEvent.click(screen.getByText("Settings"));
-    expect((screen.getByLabelText("N") as HTMLInputElement).disabled).toBe(true);
+    expect((container.querySelector("#n") as HTMLInputElement).disabled).toBe(true);
   });
 });

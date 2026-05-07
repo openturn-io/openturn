@@ -179,3 +179,4 @@ See [How-to: play against bots](/how-to/play-against-bots) for the full local + 
 - [Reference: protocol](/reference/protocol) for the lobby wire protocol.
 - [How-to: play against bots](/how-to/play-against-bots) — wire per-seat bot dropdowns.
 - [How-to: configure match settings](/how-to/configure-match-settings) — host-mutable settings form (turn timer, variant, etc.) that locks into `match.config` at start.
+- [How-to: enforce turn timeouts](/how-to/enforce-turn-timeouts) — server-authoritative deadline enforcement: declare a `phase.deadline`, write an `onTimeout` handler, the framework fires the trigger when wall-clock elapses.

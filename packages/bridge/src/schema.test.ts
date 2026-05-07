@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, test } from "vitest";
 
 import {
   BridgeInitSchema,
+  BridgeMessageSchema,
   decodeBridgeFragment,
   encodeBridgeFragment,
   readBridgeFragmentFromLocation,
@@ -68,4 +69,31 @@ describe("BridgeInit fragment", () => {
     expect(decoded?.roomID).toBe("r_1");
     window.location.hash = "";
   });
+});
+
+test("BridgeMessageSchema parses openturn:bridge:deadline with a number", () => {
+  const result = BridgeMessageSchema.safeParse({
+    kind: "openturn:bridge:deadline",
+    deadline: 1_700_000_000_000,
+  });
+  expect(result.success).toBe(true);
+  if (result.success) {
+    expect(result.data.kind).toBe("openturn:bridge:deadline");
+  }
+});
+
+test("BridgeMessageSchema parses openturn:bridge:deadline with null", () => {
+  const result = BridgeMessageSchema.safeParse({
+    kind: "openturn:bridge:deadline",
+    deadline: null,
+  });
+  expect(result.success).toBe(true);
+});
+
+test("BridgeMessageSchema rejects openturn:bridge:deadline with a string deadline", () => {
+  const result = BridgeMessageSchema.safeParse({
+    kind: "openturn:bridge:deadline",
+    deadline: "soon",
+  });
+  expect(result.success).toBe(false);
 });

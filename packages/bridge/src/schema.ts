@@ -104,6 +104,10 @@ export const BridgeMessageSchema = z.discriminatedUnion("kind", [
     kind: z.literal("openturn:bridge:match-state"),
     matchActive: z.boolean(),
   }),
+  z.object({
+    kind: z.literal("openturn:bridge:deadline"),
+    deadline: z.number().nullable(),
+  }),
 ]);
 export type BridgeMessage = z.infer<typeof BridgeMessageSchema>;
 

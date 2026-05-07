@@ -5,6 +5,8 @@ import {
   defineGame,
   defineProfile,
   rejectTransition,
+  type DeadlineKey,
+  type DeadlineScheduler,
   type ProfileDelta,
 } from "@openturn/core";
 
@@ -518,3 +520,192 @@ describe("@openturn/server", () => {
     ]);
   });
 });
+
+class FakeScheduler implements DeadlineScheduler {
+  public calls: Array<{ key: DeadlineKey; at: number | null }> = [];
+  public setDeadline(key: DeadlineKey, at: number | null): void {
+    this.calls.push({ key, at });
+  }
+}
+
+const deadlineGameWithTimeout = defineGame({
+  playerIDs: MATCH.players,
+  events: { noop: undefined },
+  initial: "play",
+  setup: () => ({}),
+  states: {
+    play: {
+      activePlayers: () => ["0"],
+      deadline: 1_000,
+    },
+    done: { activePlayers: () => [] },
+  },
+  transitions: [
+    { kind: "timeout" as const, from: "play", to: "done", resolve: () => null },
+  ],
+});
+
+const deadlineGameNoDeadline = defineGame({
+  playerIDs: MATCH.players,
+  events: { noop: undefined },
+  initial: "play",
+  setup: () => ({}),
+  states: {
+    play: { activePlayers: () => ["0"] },
+  },
+  transitions: [],
+});
+
+describe("RoomRuntime — DeadlineScheduler integration", () => {
+  test("setDeadline('turn-timeout', X) is called after constructing the runtime", async () => {
+    const scheduler = new FakeScheduler();
+    await createRoomRuntime({
+      deployment: defineGameDeployment({
+        deploymentVersion: "dev",
+        game: deadlineGameWithTimeout,
+        gameKey: "deadline-game",
+        match: MATCH,
+        schemaVersion: "1",
+      }),
+      roomID: "room_deadline_construct",
+      scheduler,
+    });
+    expect(scheduler.calls.some((c) => c.key === "turn-timeout" && c.at === 1_000)).toBe(true);
+  });
+
+  test("setDeadline('turn-timeout', null) is called when no deadline is set", async () => {
+    const scheduler = new FakeScheduler();
+    await createRoomRuntime({
+      deployment: defineGameDeployment({
+        deploymentVersion: "dev",
+        game: deadlineGameNoDeadline,
+        gameKey: "deadline-game-no-deadline",
+        match: MATCH,
+        schemaVersion: "1",
+      }),
+      roomID: "room_deadline_null",
+      scheduler,
+    });
+    expect(scheduler.calls.some((c) => c.key === "turn-timeout" && c.at === null)).toBe(true);
+  });
+
+  test("RoomRuntime.fireTimeout() applies the timeout transition", async () => {
+    const scheduler = new FakeScheduler();
+    const runtime = await createRoomRuntime({
+      deployment: defineGameDeployment({
+        deploymentVersion: "dev",
+        game: deadlineGameWithTimeout,
+        gameKey: "deadline-game",
+        match: MATCH,
+        schemaVersion: "1",
+      }),
+      roomID: "room_deadline_fire",
+      scheduler,
+    });
+    await runtime.fireTimeout(2_000);
+    // The wire-shaped `runtime.getState().snapshot` re-protocolizes the
+    // action log; with the timeout sentinel emitted as a `type: "internal"`
+    // record (matching `ProtocolInternalEventRecordSchema`'s `playerID: null`
+    // shape) the wire shape now round-trips cleanly, so we can assert via
+    // the public state.
+    expect(runtime.getState().snapshot.position.node).toBe("done");
+  });
+
+  test("RoomRuntime.fireTimeout() no-ops when deadline not yet elapsed (idempotency)", async () => {
+    const scheduler = new FakeScheduler();
+    const runtime = await createRoomRuntime({
+      deployment: defineGameDeployment({
+        deploymentVersion: "dev",
+        game: deadlineGameWithTimeout,
+        gameKey: "deadline-game",
+        match: MATCH,
+        schemaVersion: "1",
+      }),
+      roomID: "room_deadline_idem",
+      scheduler,
+    });
+    await runtime.fireTimeout(500); // before deadline
+    expect(runtime.getState().snapshot.position.node).not.toBe("done");
+  });
+
+  test("RoomRuntime.fireTimeout() re-arms scheduler after firing", async () => {
+    const scheduler = new FakeScheduler();
+    const runtime = await createRoomRuntime({
+      deployment: defineGameDeployment({
+        deploymentVersion: "dev",
+        game: deadlineGameWithTimeout,
+        gameKey: "deadline-game",
+        match: MATCH,
+        schemaVersion: "1",
+      }),
+      roomID: "room_deadline_rearm",
+      scheduler,
+    });
+    scheduler.calls = [];
+    await runtime.fireTimeout(2_000);
+    // After firing into "done" (no deadline), scheduler should be cleared with null.
+    expect(scheduler.calls.some((c) => c.key === "turn-timeout" && c.at === null)).toBe(true);
+  });
+});
+
+describe("RoomRuntime — restore-from-persistence preserves recorded action timestamps", () => {
+  test("replayIntoSession uses applyEventAt so recorded `at` flows back into the rebuilt session", async () => {
+    // Capture the recorded log from a first runtime, then re-create a runtime
+    // with the same persistence record. The rebuilt session's meta.log should
+    // carry the original `at` values (NOT Date.now() at restore time), and
+    // its meta.now should reflect the last recorded event — proving
+    // replayIntoSession went through applyEventAt.
+    const persistence = createInMemoryPersistence();
+    const deployment = defineGameDeployment({
+      deploymentVersion: "v1",
+      schemaVersion: "1",
+      gameKey: "test:restore",
+      game: roomGame,
+    });
+    const first = await createRoomRuntime({
+      deployment,
+      roomID: "room_restore",
+      initialNow: 1_000,
+      persistence,
+      connectedPlayers: ["0", "1"],
+    });
+    const result = await first.handleClientMessage({
+      type: "action",
+      matchID: "room_restore",
+      clientActionID: "ca_1",
+      playerID: "0",
+      event: "place",
+      payload: { index: 0 },
+    });
+    const recordedAt = (result[0]?.message as { steps?: ReadonlyArray<{ event?: { at?: number } }> })
+      .steps?.[0]?.event?.at;
+    expect(typeof recordedAt).toBe("number");
+    expect(recordedAt).not.toBe(1_000);  // applyEvent stamped Date.now()
+
+    // Re-create — the second runtime replays the persisted log via
+    // replayIntoSession, which after the C1 fix uses applyEventAt and
+    // therefore preserves recordedAt rather than restamping with Date.now().
+    const second = await createRoomRuntime({
+      deployment,
+      roomID: "room_restore",
+      initialNow: 9_999_999,  // deliberately divergent — should be ignored when persistence has data
+      persistence,
+      connectedPlayers: [],
+    });
+    const restoredLog = second.getState().snapshot.log;
+    expect(restoredLog.length).toBeGreaterThan(0);
+    expect(restoredLog[0]?.at).toBe(recordedAt);
+  });
+});
+
+function createInMemoryPersistence() {
+  let stored: import("./index").RoomPersistenceRecord | null = null;
+  return {
+    async load() {
+      return stored;
+    },
+    async save(record: import("./index").RoomPersistenceRecord) {
+      stored = record;
+    },
+  };
+}

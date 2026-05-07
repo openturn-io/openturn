@@ -150,15 +150,58 @@ export function materializeReplay<TGame extends AnyGame>(
   let revision = 0;
 
   for (const action of options.actions) {
+    // `GameActionRecord.type` is statically `"event"`, but `meta.log` and
+    // saved-replay envelopes also carry host-emitted `"internal"` records
+    // (today: only the `__timeout` sentinel from `session.fireTimeout`). The
+    // widening cast lets the discriminator below narrow at runtime; the
+    // strict type leak is tracked alongside `GameActionRecord` in core.
+    const recordType = (action as { type: "event" | "internal" }).type;
+    if (recordType === "internal") {
+      const internal = action as unknown as {
+        actionID: string;
+        at: number;
+        event: string;
+      };
+      // The only internal record kind today is the `__timeout` sentinel.
+      // Future-proof: skip silently for any other internal record so a
+      // forward-compatible saved replay still materializes through known
+      // events.
+      if (internal.event !== "__timeout") {
+        continue;
+      }
+
+      const batch = session.fireTimeout(internal.at);
+      if (batch === null) {
+        throw new Error(
+          `Failed to replay timeout ${internal.actionID}: session.fireTimeout returned null.`,
+        );
+      }
+
+      for (const step of batch.steps) {
+        revision += 1;
+        frames.push({
+          action: null,
+          playerView: getPlayerViewOrNull(session, options.playerID),
+          revision,
+          snapshot: step.snapshot,
+          step,
+        });
+      }
+      continue;
+    }
+
     const payload = action.payload === null ? undefined : cloneJsonValue(action.payload);
-    const applyEvent = session.applyEvent as (
+    // Pass the recorded `at` so replay determinism holds — live applyEvent
+    // stamps `Date.now()` which would diverge across replay runs.
+    const applyEventAt = session.applyEventAt as (
       playerID: typeof action.playerID,
       event: typeof action.event,
+      at: number,
       payload?: unknown,
     ) => ReturnType<typeof session.applyEvent>;
     const replayResult = payload === undefined
-      ? applyEvent(action.playerID, action.event)
-      : applyEvent(action.playerID, action.event, payload);
+      ? applyEventAt(action.playerID, action.event, action.at)
+      : applyEventAt(action.playerID, action.event, action.at, payload);
 
     if (!replayResult.ok) {
       throw new Error(`Failed to replay action ${action.event}: ${replayResult.error}`);
@@ -522,19 +565,40 @@ function parseActionRecord(
   const object = asObject(value, label);
   const type = asNonEmptyString(object.type, `${label}.type`);
 
-  if (type !== "event") {
-    throw new Error(`${label}.type must be "event".`);
+  if (type === "event") {
+    return {
+      actionID: asNonEmptyString(object.actionID, `${label}.actionID`),
+      at: asFiniteNumber(object.at, `${label}.at`),
+      event: asNonEmptyString(object.event, `${label}.event`),
+      payload: object.payload === undefined ? null : cloneJsonValue(object.payload),
+      playerID: asNonEmptyString(object.playerID, `${label}.playerID`),
+      turn: asFiniteNumber(object.turn, `${label}.turn`),
+      type: "event",
+    };
   }
 
-  return {
-    actionID: asNonEmptyString(object.actionID, `${label}.actionID`),
-    at: asFiniteNumber(object.at, `${label}.at`),
-    event: asNonEmptyString(object.event, `${label}.event`),
-    payload: object.payload === undefined ? null : cloneJsonValue(object.payload),
-    playerID: asNonEmptyString(object.playerID, `${label}.playerID`),
-    turn: asFiniteNumber(object.turn, `${label}.turn`),
-    type: "event",
-  };
+  if (type === "internal") {
+    if (object.playerID !== null) {
+      throw new Error(`${label}.playerID must be null for internal records.`);
+    }
+    // Internal records (currently only the `__timeout` sentinel emitted by
+    // `session.fireTimeout`) carry `playerID: null` and re-fire through the
+    // session's timeout dispatcher in `materializeReplay` — they don't go
+    // through `applyEvent`. The `GameActionRecord` interface in core is the
+    // player-action shape; the cast widens it to also cover internal-record
+    // entries so the saved-replay envelope stays a single homogeneous list.
+    return {
+      actionID: asNonEmptyString(object.actionID, `${label}.actionID`),
+      at: asFiniteNumber(object.at, `${label}.at`),
+      event: asNonEmptyString(object.event, `${label}.event`),
+      payload: object.payload === undefined ? null : cloneJsonValue(object.payload),
+      playerID: null,
+      turn: asFiniteNumber(object.turn, `${label}.turn`),
+      type: "internal",
+    } as unknown as GameActionRecord;
+  }
+
+  throw new Error(`${label}.type must be "event" or "internal".`);
 }
 
 function assertMatchInput(value: unknown, label: string): asserts value is MatchInput<PlayerList> {

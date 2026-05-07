@@ -1,0 +1,227 @@
+---
+title: Enforce turn timeouts
+description: Declare a per-state deadline and have the server fire a trigger when wall-clock elapses. The game decides the response — auto-pass, random move, forfeit, anything you want — through a typed transition handler.
+sidebarTitle: Turn timeouts
+---
+
+When a player runs out of time, the server fires a trigger and your game's transition handler decides what happens. The framework's job is to count the clock authoritatively (so a stalled or malicious client can't hold the room hostage); the response — skip-turn, random move, lose-on-time, anything — is yours to write.
+
+If you haven't already declared a host-configurable timer setting, start with [Configure match settings in the lobby](/how-to/configure-match-settings) — the canonical pattern is `state.deadline = ctx => deadline.after(ctx, ctx.match.config.turnTimeoutMs)`, where `turnTimeoutMs` lives in your game's config schema.
+
+## How it works (one paragraph)
+
+Declare a `deadline` on a state (or `phase` in gamekit). Declare a timeout response — `transition({ kind: "timeout", ... })` in core, or `phase.onTimeout` in gamekit. When the clock passes the deadline, the server fires the trigger; your handler runs; the resulting event lands in the action log; replays reproduce it deterministically.
+
+## Gamekit: `phase.onTimeout`
+
+Most games are gamekit games. The full surface is two fields on a phase:
+
+```ts
+import { defineGame, deadline } from "@openturn/gamekit";
+import type { ConfigSchema } from "@openturn/core";
+
+export const myGame = defineGame({
+  maxPlayers: 2,
+  config: {
+    turnTimeoutMs: { type: "number", default: 30_000, min: 5_000, max: 300_000, label: "Turn time" },
+  } as const satisfies ConfigSchema,
+
+  moves: ({ move }) => ({
+    place: move.exec({
+      args: undefined as { x: number },
+      handler: (ctx, args) => ({ kind: "stay", endTurn: true, patch: { last: args.x } }),
+    }),
+  }),
+
+  phases: {
+    play: {
+      // The clock — same `ctx` your move handlers see.
+      deadline: (ctx) => deadline.after(ctx, ctx.match.config.turnTimeoutMs),
+
+      // The response — same `ctx`, plus the typed `moves` factory object
+      // that move handlers also receive. Returns the same MoveOutcome shape.
+      onTimeout: (ctx, moves) => {
+        // Random legal action — keeps the game progressing.
+        const legal = ctx.legalActions();
+        const pick = legal[Math.floor(ctx.rng() * legal.length)];
+        return moves[pick.name](pick.args);
+      },
+    },
+  },
+
+  setup: () => ({ last: 0 }),
+});
+```
+
+`onTimeout` returns one of the standard move outcomes:
+
+| Return | Meaning |
+|---|---|
+| `moves.<name>(args)` | Trigger an existing move with chosen args |
+| `{ kind: "stay", endTurn?, patch?, ... }` | Mutate state, optionally advance the turn |
+| `{ kind: "goto", phase, ... }` | Move to a different phase |
+| `{ kind: "finish", result }` | End the game |
+| `null` | No-op; the clock is consumed but state doesn't change |
+
+If a phase declares `deadline` but no `onTimeout`, the server fires the trigger and finds nothing to do. The game stalls until something else moves it forward (a player message, a phase change, etc.). This is intentional — there's no "default" timeout behavior for the framework to pick. Either declare `onTimeout`, or don't declare `deadline`.
+
+If a phase declares `onTimeout` but no `deadline`, gamekit throws at definition time — the handler would never fire.
+
+### Conditional behavior
+
+`onTimeout` is just a function; branch on whatever you need:
+
+```ts
+phases: {
+  play: {
+    deadline: (ctx) => {
+      if (ctx.G.turn === 1) return deadline.after(ctx, 60_000);              // first turn: extra time
+      if (ctx.G.scoreLeader >= 90) return deadline.after(ctx, 15_000);       // close to winning: tighter
+      return deadline.after(ctx, ctx.match.config.turnTimeoutMs);
+    },
+    onTimeout: (ctx, moves) => {
+      if (ctx.G.scoreLeader >= ctx.match.config.targetScore - 5) {
+        // Endgame — too high stakes to auto-play, forfeit instead.
+        return moves.resign({ player: ctx.activePlayer, reason: "timeout" });
+      }
+      // Default: auto-play the lowest legal card.
+      const legal = ctx.legalActions().filter((a) => a.name === "play");
+      return moves.play(legal[0].args);
+    },
+  },
+}
+```
+
+### Different phases, different rules
+
+Each phase has its own `(deadline, onTimeout)` pair. You can have a 30-second main turn, a 10-second sub-decision phase, and a no-deadline animation phase in the same game:
+
+```ts
+phases: {
+  selectAction: {
+    deadline: (ctx) => deadline.after(ctx, ctx.match.config.turnTimeoutMs),
+    onTimeout: (ctx, moves) => moves.passTurn(),
+  },
+  selectNoble: {
+    deadline: (ctx) => deadline.after(ctx, 10_000),
+    onTimeout: (ctx, moves) => moves.pickNoble({ id: ctx.G.eligibleNobles[0] }),
+  },
+  endOfRound: {
+    // No `deadline` declared — no timer in this phase.
+  },
+}
+```
+
+## Core: `transition({ kind: "timeout" })`
+
+If you're authoring with raw `@openturn/core`, the equivalent looks like this:
+
+```ts
+import { defineGame, deadline } from "@openturn/core";
+
+defineGame({
+  playerIDs: ["0", "1"],
+  events: { place: defineEvent<{ x: number }>() },
+  initial: "playing",
+  setup: () => ({ last: 0 }),
+  states: {
+    playing: {
+      activePlayers: (ctx) => [ctx.match.players[ctx.position.turn % 2]],
+      deadline: (ctx) => deadline.after(ctx, ctx.match.config.turnTimeoutMs),
+    },
+    "game-over": { activePlayers: () => [] },
+  },
+  transitions: [
+    { event: "place", from: "playing", to: "playing", turn: "increment", resolve: ({ payload }) => ({ G: { last: payload.x } }) },
+    {
+      kind: "timeout",
+      from: "playing",
+      to: "playing",
+      turn: "increment",
+      resolve: (ctx) => {
+        const actions = ctx.legalActions();
+        return actions[Math.floor(ctx.rng() * actions.length)];
+      },
+    },
+  ],
+});
+```
+
+The `kind: "timeout"` discriminator on the transition is what tells the runtime "this is the timeout handler for this state, not an event handler." The `resolve` returns the same shape as event-driven transition resolvers (a typed event input, or `null`).
+
+Definition-time validation rejects:
+
+- Transitions with both `event` and `kind` (use one).
+- Timeout transitions whose `from` or `to` references an unknown state.
+- Multiple timeout transitions from the same `from` source (one per state).
+
+## What happens server-side
+
+You don't have to implement anything on the server. The runtime in `@openturn/server` accepts an injected `DeadlineScheduler` (which the cloud DO worker and CLI dev shell both provide automatically). After every event, the runtime calls `scheduler.setDeadline("turn-timeout", session.getNextDeadline())`. When the clock passes, the host fires `runtime.fireTimeout()`, which:
+
+1. Re-checks the deadline against the current snapshot (idempotent — guards against stale alarms in flight after a player moved fractionally before the deadline).
+2. Looks up the matching `kind: "timeout"` transition with parent-fallback.
+3. Applies it through the same dispatch path a player event uses.
+4. Re-arms the scheduler with the new state's deadline (which may be `null` if the new state has no timer).
+
+In the **cloud DO**, the scheduler persists a `deadlines: { "turn-timeout"?, "idle-reap"? }` record in `ctx.storage` and recomputes `Math.min(...)` for the DO's single `setAlarm` slot. Idle-reap and turn-timeout coexist on the same alarm.
+
+In the **CLI dev shell**, the scheduler tracks one `setTimeout` handle per key in memory. Same interface; different mechanism.
+
+You don't see any of this from the game-author surface — it's just `phase.onTimeout` (or `transition({ kind: "timeout" })`).
+
+## Showing the countdown to players
+
+You don't have to build a clock. The play shell (`<PlayShell>` in `@openturn/bridge`, used by both the CLI dev shell and the cloud play page) auto-mounts a compact `m:ss` countdown in its toolbar. It turns red under 5 seconds and is hidden entirely when no deadline is active. Embedders can suppress the default with `<PlayShell showTurnCountdown={false}>` or relocate it by mounting `<TurnCountdown host={host}>` themselves.
+
+The shell-side countdown reads from a typed bridge protocol message: when your game's `controlMeta.deadline` changes, `<OpenturnProvider>` from `@openturn/react` calls `bridgeGame.setDeadline(deadline)` automatically. The shell receives it via `host.deadline` / `host.on("deadline-changed", ...)` and re-renders. You don't write any of this — declaring `phase.deadline` in your game is enough.
+
+### Custom in-game UI: `useTurnDeadline()`
+
+For richer treatment inside your game iframe — pulse animations, "5 seconds left!" banners, urgent state changes in the layout — `@openturn/react` exports a `useTurnDeadline()` hook:
+
+```tsx
+import { useTurnDeadline } from "@openturn/react";
+
+function UrgentBanner() {
+  const { deadline, remainingMs, isExpired } = useTurnDeadline();
+  if (deadline === null) return null;
+  if (isExpired) return <div className="alert">Time's up — auto-playing!</div>;
+  if (remainingMs < 10_000) {
+    return <div className="pulse">{(remainingMs / 1000).toFixed(1)}s</div>;
+  }
+  return null;
+}
+```
+
+The hook reads `controlMeta.deadline` from `useMatch()`'s current snapshot and updates live: 1 Hz baseline, ramping to 10 Hz when remaining drops under 5 seconds (so the final-seconds display feels smooth without re-rendering every 100 ms during normal play). Each tick recomputes from `Date.now()`, so the value self-corrects after the user backgrounds and refocuses the tab.
+
+Return shape:
+
+| Field | Type | Notes |
+|---|---|---|
+| `deadline` | `number \| null` | Wall-clock instant in ms (server clock), or `null` when no deadline is active |
+| `remainingMs` | `number` | `max(0, deadline - Date.now())`. `0` when `deadline` is null. |
+| `isExpired` | `boolean` | `deadline !== null && remainingMs === 0` |
+
+The shell-side `<PlayShell>` countdown and your in-game hook are independent renderings of the same data — both look at the same wall-clock instant. They can coexist (a chrome-level "0:30" plus a game-level "5s left!" banner).
+
+## Edge cases worth knowing
+
+- **Player disconnects mid-turn.** The clock keeps running. Reconnects with whatever time is left.
+- **Simultaneous-move phases** (multiple `activePlayers`). The deadline is at the phase level; one fire for the whole group. Your `onTimeout` resolver inspects who has and hasn't moved (via the existing control state) and decides per-player handling.
+- **Bots.** Same rules apply. Bots are presumed instant; if one hangs, the timer fires and your handler runs.
+- **Replay determinism.** Timeout-dispatched events land in the action log as normal records (`type: "internal"`, `playerID: null`, `event: "__timeout"`). Replays apply them verbatim — the resolver doesn't re-run, so RNG-based decisions stay deterministic.
+- **Race against player moves.** If the clock fires fractionally after a player advanced state, the runtime's idempotency check catches it: `fireTimeout` re-reads the current deadline, compares to `now`, and no-ops if state already moved.
+
+## When NOT to use this
+
+- **Animation / transition states with no active player.** Just declare `deadline: () => null` (or omit it). The scheduler clears and `<TurnCountdown>` hides.
+- **Pre-deadline notifications and sounds.** The framework doesn't ship browser notifications or alerts. Use `useTurnDeadline()` and trigger your own (e.g. `Notification.requestPermission` + a `useEffect` that fires when `remainingMs` crosses a threshold).
+- **"Time pressure" mechanics within a turn** (e.g., "score more if you act faster"). That's gameplay, not timeout enforcement; track it in `G` state and reference it in your move handlers. Turn timeouts only fire *at* the deadline.
+
+## See also
+
+- [Configure match settings in the lobby](/how-to/configure-match-settings) — the canonical place for `turnTimeoutMs` to come from.
+- [Concepts: turns, phases, and control](/concepts/turns-phases-control) — the underlying `state.deadline` field and `controlMeta` snapshot exposure.
+- [Build a lobby](/how-to/build-a-lobby) — where the host configures the timer before play starts.

@@ -114,7 +114,12 @@ export interface MatchSnapshot<
 > {
   derived: ProtocolDerivedState;
   G: TPublicState;
-  log: readonly ProtocolActionRecord[];
+  /**
+   * External action log. Mostly `type: "event"` records (player-emitted), but
+   * host-dispatched entries like the `__timeout` sentinel surface here as
+   * `type: "internal"` + `playerID: null` so replays can re-run them.
+   */
+  log: readonly ProtocolEventRecord[];
   matchID: MatchID;
   position: ProtocolRuntimeState;
   result: TResult;
@@ -387,7 +392,11 @@ export const ProtocolObservedTransitionSchema = z.object({
 export const MatchSnapshotSchema = z.object({
   derived: ProtocolDerivedStateSchema,
   G: JsonValueSchema,
-  log: z.array(ProtocolActionRecordSchema),
+  // `log` carries the externally-recorded action history. The vast majority of
+  // entries are player-emitted events (`type: "event"`), but host-dispatched
+  // internal events such as the `__timeout` sentinel show up with
+  // `type: "internal"` + `playerID: null` — see `ProtocolEventRecordSchema`.
+  log: z.array(ProtocolEventRecordSchema),
   matchID: z.string(),
   position: ProtocolRuntimeStateSchema,
   result: JsonValueSchema.nullable(),
@@ -546,6 +555,7 @@ export function protocolizeGameActionRecord(action: GameActionRecord): ProtocolA
   });
 }
 
+
 export function protocolizeGameEventRecord(event: GameStep<any>["event"]): ProtocolEventRecord {
   if (event.type === "internal") {
     return ProtocolInternalEventRecordSchema.parse({
@@ -657,7 +667,11 @@ export function protocolizeGameSnapshot<
       selectors: cloneJsonValue(snapshot.derived.selectors),
     },
     G: cloneJsonValue(snapshot.G),
-    log: snapshot.meta.log.map((action) => protocolizeGameActionRecord(action)),
+    // `meta.log` is typed as `GameActionRecord[]` in core but at runtime can
+    // carry host-dispatched `type: "internal"` entries (the `__timeout`
+    // sentinel). `protocolizeGameEventRecord` dispatches on `type` correctly
+    // — see `MatchSnapshotSchema.log` and `ProtocolEventRecordSchema`.
+    log: snapshot.meta.log.map((entry) => protocolizeGameEventRecord(entry as GameStep<any>["event"])),
     position: {
       node: snapshot.position.name,
       path: [...snapshot.position.path],

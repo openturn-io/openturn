@@ -65,6 +65,13 @@ export interface GameBridge {
    * Safe to call repeatedly; duplicate values are coalesced.
    */
   setMatchActive(active: boolean): void;
+  /**
+   * Announce the current turn deadline (wall-clock millis) or null when no
+   * active deadline. The shell's countdown subscribes via
+   * `host.on("deadline-changed", ...)`. Safe to call repeatedly; duplicate
+   * values are coalesced.
+   */
+  setDeadline(deadline: number | null): void;
   dispose(): void;
 }
 
@@ -101,6 +108,7 @@ export function createGameBridge(
   let batchStreamAllowed = true;
   let activeBatchUnsubscribe: (() => void) | null = null;
   let matchActive = init.scope === "game";
+  let lastDeadline: number | null | undefined = undefined;
 
   function stopBatchStream() {
     if (activeBatchUnsubscribe !== null) {
@@ -297,6 +305,14 @@ export function createGameBridge(
       postTo(parent, parentOrigin, {
         kind: "openturn:bridge:match-state",
         matchActive: active,
+      });
+    },
+    setDeadline(deadline) {
+      if (lastDeadline === deadline) return;
+      lastDeadline = deadline;
+      postTo(parent, parentOrigin, {
+        kind: "openturn:bridge:deadline",
+        deadline,
       });
     },
     dispose() {

@@ -43,6 +43,7 @@ export type BridgeHostEventMap = {
   ready: { origin: string };
   "lifecycle-close": Record<string, never>;
   "match-state-changed": { matchActive: boolean };
+  "deadline-changed": { deadline: number | null };
 };
 export type BridgeHostEvent = keyof BridgeHostEventMap;
 
@@ -66,6 +67,13 @@ export interface BridgeHost {
    * Subscribe via `on("match-state-changed", ...)` to react to changes.
    */
   readonly matchActive: boolean;
+  /**
+   * Current turn deadline as a wall-clock millisecond instant (server's clock),
+   * or null when no active deadline. Updated by `openturn:bridge:deadline`
+   * messages from the game iframe. Subscribe via `on("deadline-changed", ...)`
+   * to react.
+   */
+  readonly deadline: number | null;
   /**
    * Notify the game that a shell control was activated. Fired once with
    * `phase: "before"` immediately before the host runs the corresponding
@@ -116,8 +124,10 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
     ready: new Set(),
     "lifecycle-close": new Set(),
     "match-state-changed": new Set(),
+    "deadline-changed": new Set(),
   };
   let matchActive = options.init.scope === "game";
+  let deadline: number | null = null;
 
   const pendingStreamRequests = new Map<
     string,
@@ -253,6 +263,12 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
           emit("match-state-changed", { matchActive });
         }
         return;
+      case "openturn:bridge:deadline":
+        if (deadline !== message.deadline) {
+          deadline = message.deadline;
+          emit("deadline-changed", { deadline });
+        }
+        return;
       default:
         return;
     }
@@ -264,6 +280,9 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
     src,
     get matchActive() {
       return matchActive;
+    },
+    get deadline() {
+      return deadline;
     },
     emitShellControl(control, phase) {
       broadcastToGame({

@@ -1,6 +1,8 @@
 import {
   defineGame as defineCoreGame,
   type AnyGame,
+  type ConfigSchema,
+  type ConfigValuesOf,
   type DeepReadonly,
   type DefaultPlayerIDs,
   type GameDefinition,
@@ -64,6 +66,8 @@ export {
   validateProfileDelta,
   type ApplyProfileCommitInput,
   type ApplyProfileCommitOutput,
+  type ConfigSchema,
+  type ConfigValuesOf,
   type Draft,
   type DraftArray,
   type DraftObject,
@@ -147,15 +151,53 @@ export interface MovePlayerContext<TPlayerID extends string = string> {
   id: TPlayerID;
 }
 
+/**
+ * Gamekit's projection of `MatchInput` for handler contexts: when the game
+ * declares `config: { ... } as const satisfies ConfigSchema`, `TConfigValues`
+ * is the narrow inferred-values shape and `config` is presented as
+ * always-present (the runtime guarantees defaults are filled by
+ * `normalizeMatchInput`). When the game omits `config`, `TConfigValues`
+ * defaults to the loose `Record<string, ReplayValue>` and `config` stays
+ * optional (matching core's `MatchInput`).
+ *
+ * Detection: when the loose default `Record<string, ReplayValue>` is
+ * assignable back to `TConfigValues`, we know `TConfigValues` is the loose
+ * default (or a supertype of it) — keep `config` optional. Otherwise the
+ * caller has narrowed the values shape via a declared schema — promote
+ * `config` to required so `ctx.match.config.X` typechecks without a guard.
+ */
+export type GamekitMatchInput<
+  TPlayers extends PlayerList,
+  TConfigValues,
+> = Record<string, ReplayValue> extends TConfigValues
+  ? MatchInput<TPlayers, ReplayValue, TConfigValues>
+  : Omit<MatchInput<TPlayers, ReplayValue, TConfigValues>, "config"> & { config: TConfigValues };
+
 export interface MovePermissionContext<
   TState extends object,
   TComputed extends Record<string, JsonValue>,
   TPhase extends string = string,
   TPlayers extends readonly PlayerID[] = readonly PlayerID[],
   TProfile extends ReplayValue = ReplayValue,
+  TConfigValues = Record<string, ReplayValue>,
 > {
   C: TComputed;
   G: DeepReadonly<GamekitAuthorState<TState>>;
+  /**
+   * Per-session match input — seated players, host, and locked `config` values
+   * agreed in the lobby. Game code reads `ctx.match.config.X` to thread typed
+   * config-derived values (e.g. turn timeouts) into move handlers and timeout
+   * handlers without round-tripping through state. When the game declares a
+   * `config` schema, `match.config` is typed as required (the runtime fills
+   * defaults via `normalizeMatchInput`); otherwise it stays optional.
+   */
+  match: GamekitMatchInput<TPlayers extends PlayerList ? TPlayers : PlayerList, TConfigValues>;
+  /**
+   * Recorded replay time for this event. Use with `deadline.after(ctx, ...)`
+   * or other deterministic time math. This is not a live wall-clock — it is
+   * the snapshot's recorded `now` for the event being handled.
+   */
+  now: number;
   phase: TPhase;
   player: MovePlayerContext<TPlayers[number]>;
   /**
@@ -170,7 +212,7 @@ export interface MovePermissionContext<
 type GamekitBuiltInNode<TPhase extends string> = TPhase | "__gamekit_finished";
 type GamekitNode<TPhase extends string, TCoreNode extends string = never> = GamekitBuiltInNode<TPhase> | TCoreNode;
 
-type MoveOutcome<
+export type MoveOutcome<
   TState extends object,
   TPhase extends string = string,
   TPlayerID extends string = string,
@@ -232,7 +274,8 @@ export interface MoveRunContext<
   TPlayers extends readonly PlayerID[] = readonly PlayerID[],
   TQueuedEvent extends { kind: string } = AnyQueuedEvent,
   TProfile extends ReplayValue = ReplayValue,
-> extends MovePermissionContext<TState, TComputed, TPhase, TPlayers, TProfile> {
+  TConfigValues = Record<string, ReplayValue>,
+> extends MovePermissionContext<TState, TComputed, TPhase, TPlayers, TProfile, TConfigValues> {
   args: TArgs;
   move: MoveHelpers<TState, TPhase, TPlayers[number], TQueuedEvent>;
   profile: ProfileMutation<TPlayers, TProfile>;
@@ -246,11 +289,12 @@ export interface GamekitMoveDefinition<
   TPlayers extends readonly PlayerID[] = readonly PlayerID[],
   TQueuedEvent extends { kind: string } = AnyQueuedEvent,
   TProfile extends ReplayValue = ReplayValue,
+  TConfigValues = Record<string, ReplayValue>,
 > {
   args?: TArgs;
   phases?: readonly NoInfer<TPhase>[];
   run: (
-    context: MoveRunContext<TState, TComputed, TArgs, TPhase, TPlayers, TQueuedEvent, TProfile>,
+    context: MoveRunContext<TState, TComputed, TArgs, TPhase, TPlayers, TQueuedEvent, TProfile, TConfigValues>,
   ) => MoveOutcome<TState, TPhase, TPlayers[number], TQueuedEvent>;
 }
 
@@ -295,11 +339,12 @@ interface BoundMoveDefinitionFactory<
   TPlayers extends readonly PlayerID[],
   TQueuedEvent extends { kind: string },
   TProfile extends ReplayValue = ReplayValue,
+  TConfigValues = Record<string, ReplayValue>,
 > {
   <TArgs = undefined>(
-    definition: Omit<GamekitMoveDefinition<TState, TComputed, TArgs, TPhase, TPlayers, TQueuedEvent, TProfile>, "args">
+    definition: Omit<GamekitMoveDefinition<TState, TComputed, TArgs, TPhase, TPlayers, TQueuedEvent, TProfile, TConfigValues>, "args">
       & { args?: TArgs },
-  ): GamekitMoveDefinition<TState, TComputed, TArgs, TPhase, TPlayers, TQueuedEvent, TProfile>;
+  ): GamekitMoveDefinition<TState, TComputed, TArgs, TPhase, TPlayers, TQueuedEvent, TProfile, TConfigValues>;
 }
 
 type MoveFactoryInput<
@@ -307,11 +352,12 @@ type MoveFactoryInput<
   TComputed extends ComputedMap<TState, TPhase, TPlayers> | undefined,
   TPhase extends string,
   TPlayers extends readonly PlayerID[],
-  TMoves extends Record<string, GamekitMoveDefinition<TState, any, any, any, TPlayers, AnyQueuedEvent, any>>,
+  TMoves extends Record<string, GamekitMoveDefinition<TState, any, any, any, TPlayers, AnyQueuedEvent, any, any>>,
   TProfile extends ReplayValue = ReplayValue,
+  TConfigValues = Record<string, ReplayValue>,
 > = (
   helpers: {
-    move: BoundMoveDefinitionFactory<TState, ComputedValues<TComputed>, TPhase, TPlayers, AnyQueuedEvent, TProfile>;
+    move: BoundMoveDefinitionFactory<TState, ComputedValues<TComputed>, TPhase, TPlayers, AnyQueuedEvent, TProfile, TConfigValues>;
     queue: QueueFactory<TMoves>;
   },
 ) => TMoves;
@@ -321,18 +367,35 @@ type MovesInput<
   TComputed extends ComputedMap<TState, TPhase, TPlayers> | undefined,
   TPhase extends string,
   TPlayers extends readonly PlayerID[],
-  TMoves extends Record<string, GamekitMoveDefinition<TState, any, any, any, TPlayers, AnyQueuedEvent, any>>,
+  TMoves extends Record<string, GamekitMoveDefinition<TState, any, any, any, TPlayers, AnyQueuedEvent, any, any>>,
   TProfile extends ReplayValue = ReplayValue,
-> = TMoves | MoveFactoryInput<TState, TComputed, TPhase, TPlayers, TMoves, TProfile>;
+  TConfigValues = Record<string, ReplayValue>,
+> = TMoves | MoveFactoryInput<TState, TComputed, TPhase, TPlayers, TMoves, TProfile, TConfigValues>;
 
 type ViewContext<
   TState extends object,
   TComputed extends Record<string, JsonValue>,
   TPhase extends string,
   TPlayers extends readonly PlayerID[],
+  TConfigValues = Record<string, ReplayValue>,
 > = {
   C: TComputed;
   G: DeepReadonly<GamekitAuthorState<TState>>;
+  /**
+   * Per-session match input — seated players, host, and locked `config`
+   * values. Use to read `ctx.match.config.X` from `phase.deadline`,
+   * `phase.label`, `phase.activePlayers`, and `views.player`/`views.public`.
+   * When the game declares a `config` schema, `match.config` is typed as
+   * required (the runtime guarantees defaults are filled); otherwise it
+   * stays optional.
+   */
+  match: GamekitMatchInput<TPlayers extends PlayerList ? TPlayers : PlayerList, TConfigValues>;
+  /**
+   * Recorded replay time for this snapshot. Use with `deadline.after(ctx, ms)`
+   * to express "X milliseconds from now" deterministically. This is not a
+   * live wall-clock.
+   */
+  now: number;
   phase: TPhase;
   turn: TurnContext<TPlayers[number]>;
 };
@@ -346,10 +409,83 @@ export interface GamekitPhaseConfig<
   TComputed extends Record<string, JsonValue> = Record<string, JsonValue>,
   TPhase extends string = string,
   TPlayers extends readonly PlayerID[] = readonly PlayerID[],
+  TMoves extends Record<string, unknown> = Record<string, unknown>,
+  TProfile extends ReplayValue = ReplayValue,
+  TConfigValues = Record<string, ReplayValue>,
 > {
-  activePlayers?: (context: ViewContext<TState, TComputed, TPhase, TPlayers>) => readonly TPlayers[number][];
-  label?: string | ((context: ViewContext<TState, TComputed, TPhase, TPlayers>) => string | null);
+  activePlayers?: (context: ViewContext<TState, TComputed, TPhase, TPlayers, TConfigValues>) => readonly TPlayers[number][];
+  /**
+   * Wall-clock deadline for the phase, in milliseconds since epoch (or `null`
+   * to clear). Returned value is exposed via `controlMeta.deadline` and read
+   * by the host's deadline scheduler. When the deadline elapses, the host
+   * fires `runtime.fireTimeout()`, which dispatches the synthesized timeout
+   * transition built from `onTimeout`.
+   */
+  deadline?:
+    | number
+    | null
+    | ((context: ViewContext<TState, TComputed, TPhase, TPlayers, TConfigValues>) => number | null);
+  label?: string | ((context: ViewContext<TState, TComputed, TPhase, TPlayers, TConfigValues>) => string | null);
+  /**
+   * Author-defined response to a turn-timer expiring while this phase is
+   * active. Mirrors a regular move handler's signature: receives the same
+   * `ctx` shape (sans `args`/`move`/`profile` mutator) plus a typed `moves`
+   * dispatcher whose entries forward args to each declared move's `run`. May
+   * return any `MoveOutcome` (`stay`/`endTurn`/`goto`/`finish`) or `null` to
+   * consume the timeout without mutating state.
+   *
+   * Declaring `onTimeout` without `deadline` is a definition-time error: the
+   * timeout never fires, so the handler is dead code.
+   */
+  onTimeout?: (
+    context: PhaseTimeoutContext<TState, TComputed, TPhase, TPlayers, TProfile, TConfigValues>,
+    moves: BoundPhaseMoves<TState, TPhase, TPlayers, TMoves>,
+  ) => MoveOutcome<TState, TPhase, TPlayers[number], AnyQueuedEvent> | null;
 }
+
+export type PhaseTimeoutContext<
+  TState extends object,
+  TComputed extends Record<string, JsonValue>,
+  TPhase extends string = string,
+  TPlayers extends readonly PlayerID[] = readonly PlayerID[],
+  TProfile extends ReplayValue = ReplayValue,
+  TConfigValues = Record<string, ReplayValue>,
+> = MovePermissionContext<TState, TComputed, TPhase, TPlayers, TProfile, TConfigValues>;
+
+/**
+ * Typed `moves` dispatcher passed to `phase.onTimeout`. Each entry forwards
+ * its declared args to the move's `run`, returning the same `MoveOutcome`
+ * shape regular handlers produce. The synthesized timeout transition pipes
+ * the result through gamekit's existing outcome interpreter, so calling
+ * `moves.X(args)` from `onTimeout` is equivalent to "the active player just
+ * sent move X with these args."
+ */
+export type BoundPhaseMoves<
+  TState extends object,
+  TPhase extends string,
+  TPlayers extends readonly PlayerID[],
+  TMoves extends Record<string, unknown>,
+> = {
+  [TName in keyof TMoves & string]: BoundPhaseMoveDispatcher<
+    TState,
+    TPhase,
+    TPlayers,
+    TMoves[TName]
+  >;
+};
+
+type BoundPhaseMoveDispatcher<
+  TState extends object,
+  TPhase extends string,
+  TPlayers extends readonly PlayerID[],
+  TMove,
+> = MoveArgs<TMove> extends infer TArgs
+  ? [TArgs] extends [undefined]
+    ? () => MoveOutcome<TState, TPhase, TPlayers[number]>
+    : undefined extends TArgs
+      ? (args?: TArgs) => MoveOutcome<TState, TPhase, TPlayers[number]>
+      : (args: TArgs) => MoveOutcome<TState, TPhase, TPlayers[number]>
+  : never;
 
 export interface GamekitViews<
   TState extends object,
@@ -358,9 +494,10 @@ export interface GamekitViews<
   TPlayers extends readonly PlayerID[],
   TPublic,
   TPlayer,
+  TConfigValues = Record<string, ReplayValue>,
 > {
-  player?: (context: ViewContext<TState, TComputed, TPhase, TPlayers>, player: MovePlayerContext<TPlayers[number]>) => TPlayer;
-  public?: (context: ViewContext<TState, TComputed, TPhase, TPlayers>) => TPublic;
+  player?: (context: ViewContext<TState, TComputed, TPhase, TPlayers, TConfigValues>, player: MovePlayerContext<TPlayers[number]>) => TPlayer;
+  public?: (context: ViewContext<TState, TComputed, TPhase, TPlayers, TConfigValues>) => TPublic;
 }
 
 type GamekitCoreRuleContext<TState extends object, TNode extends string, TPlayers extends PlayerList> =
@@ -408,7 +545,7 @@ type GamekitCoreViews<TState extends object, TPlayers extends PlayerList> = {
 
 type GamekitCoreDefinition<
   TState extends object,
-  TMoves extends Record<string, GamekitMoveDefinition<TState, any, any, any, any, AnyQueuedEvent, any>>,
+  TMoves extends Record<string, GamekitMoveDefinition<TState, any, any, any, any, AnyQueuedEvent, any, any>>,
   TPlayers extends PlayerList,
   TPhase extends string,
   TCoreNode extends string = never,
@@ -438,9 +575,60 @@ type GamekitCoreDefinition<
   };
 };
 
+/**
+ * Helpers exposed to the `phases:` callback form. When authors write
+ * `phases: ({ moves }) => ({...})`, the outer `moves` field is the typed
+ * `BoundPhaseMoves` dispatcher. Inside `onTimeout`, a fresh `moves`
+ * parameter (the second arg of the handler signature) shadows the outer
+ * one and is also typed as `BoundPhaseMoves<...>` — that's the dispatcher
+ * authors call to dispatch a move at timeout.
+ *
+ * The reason the outer callback exists: TS resolves the `moves:` field
+ * before evaluating `phases:`'s callback body, so `TMoves` is settled when
+ * the inner `onTimeout` is checked. Writing `phases:` as an object literal
+ * (sibling to `moves:`) can't see `TMoves` because both fields get inferred
+ * simultaneously.
+ */
+export interface PhasesCallbackHelpers<
+  TState extends object,
+  TPhase extends string,
+  TPlayers extends readonly PlayerID[],
+  TMoves extends Record<string, unknown>,
+> {
+  moves: BoundPhaseMoves<TState, TPhase, TPlayers, TMoves>;
+}
+
+/**
+ * Phases definition input — accepts an object literal or a callback that
+ * receives a typed `moves` dispatcher. The callback form gives `onTimeout`'s
+ * `moves` parameter typed dispatchers (TS resolves `moves:` first, then
+ * evaluates `phases:`'s callback body with the resolved `TMoves`). Both
+ * forms preserve `TState` inference from `setup:`.
+ */
+export type PhasesInput<
+  TState extends object,
+  TComputed extends Record<string, JsonValue>,
+  TPhase extends string,
+  TPlayers extends readonly PlayerID[],
+  TMoves extends Record<string, unknown>,
+  TProfile extends ReplayValue,
+  TConfigValues,
+> =
+  | Record<TPhase, GamekitPhaseConfig<TState, TComputed, TPhase, TPlayers, TMoves, TProfile, TConfigValues>>
+  | ((
+      helpers: PhasesCallbackHelpers<NoInfer<TState>, NoInfer<TPhase>, NoInfer<TPlayers>, NoInfer<TMoves>>,
+    ) => Record<NoInfer<TPhase>, GamekitPhaseConfig<NoInfer<TState>, NoInfer<TComputed>, NoInfer<TPhase>, NoInfer<TPlayers>, NoInfer<TMoves>, NoInfer<TProfile>, NoInfer<TConfigValues>>>);
+
+/**
+ * Authored input for `defineGame`. Note: `config` is declared as a plain
+ * optional field here (matching the simple input shape authors expect to
+ * write). The compiled output type (`CoreGameDefinitionFor`) narrows
+ * `config` via a conditional so consumers reading `game.config` see the
+ * precise schema (no `| undefined`) when one was declared.
+ */
 export interface GamekitDefinition<
   TState extends object,
-  TMoves extends Record<string, GamekitMoveDefinition<TState, any, any, any, TPlayers, AnyQueuedEvent, any>>,
+  TMoves extends Record<string, GamekitMoveDefinition<TState, any, any, any, TPlayers, AnyQueuedEvent, any, any>>,
   TPhase extends string = "play",
   TPlayers extends PlayerList = PlayerList,
   TComputed extends ComputedMap<TState, TPhase, TPlayers> | undefined = ComputedMap<TState, TPhase, TPlayers> | undefined,
@@ -448,6 +636,7 @@ export interface GamekitDefinition<
   TPlayer = TPublic,
   TCoreNode extends string = never,
   TProfile extends ReplayValue = ReplayValue,
+  TConfig extends ConfigSchema | undefined = undefined,
 > {
   /**
    * Player pool. Pass `maxPlayers: N` for default IDs `"0",..,"N-1"`, or
@@ -460,6 +649,14 @@ export interface GamekitDefinition<
   /** Lower bound on seated players for `lobby:start` to succeed. Defaults to the player pool size. */
   minPlayers?: number;
   computed?: TComputed;
+  /**
+   * Declarative config schema. Lobby renders a host-mutable settings form from
+   * this; values are locked into `match.config` at game-start. Author with
+   * `as const satisfies ConfigSchema` so enum option literals stay narrow,
+   * then read via `ctx.match.config.X` from move handlers, phase handlers,
+   * and views.
+   */
+  config?: TConfig;
   core?: GamekitCoreDefinition<TState, TMoves, TPlayers, TPhase, TCoreNode>;
   initialPhase?: NoInfer<TPhase>;
   /**
@@ -473,8 +670,18 @@ export interface GamekitDefinition<
     context: GamekitCoreRuleContext<TState, GamekitNode<TPhase, TCoreNode>, TPlayers>,
     playerID: TPlayers[number],
   ) => readonly LegalAction[];
-  moves: MovesInput<TState, TComputed, TPhase, TPlayers, TMoves, TProfile>;
-  phases?: Record<TPhase, GamekitPhaseConfig<TState, ComputedValues<TComputed>, TPhase, TPlayers>>;
+  moves: MovesInput<TState, TComputed, TPhase, TPlayers, TMoves, TProfile, ConfigValuesOf<TConfig>>;
+  /**
+   * Phase configuration. Pass either an object literal (`phases: { play: { ... } }`)
+   * or a callback (`phases: ({ moves }) => ({ play: { onTimeout: (ctx, moves) => moves.X(...) } })`).
+   * The callback form gives `onTimeout`'s `moves` parameter typed dispatchers —
+   * TS resolves `moves:` first, then evaluates the callback with the resolved
+   * `TMoves`. The object-literal form's `onTimeout` `moves` parameter degrades
+   * to a permissive `Record<string, ...>` because TS can't propagate `TMoves`
+   * from a sibling callback field through to a sibling object-literal field
+   * during overload resolution.
+   */
+  phases?: PhasesInput<TState, ComputedValues<TComputed>, TPhase, TPlayers, TMoves, TProfile, ConfigValuesOf<TConfig>>;
   /**
    * Persistent per-player state, hydrated into `match.profiles` before setup and
    * mutated via `profile.commit` after the match terminates. Use gamekit's
@@ -484,7 +691,7 @@ export interface GamekitDefinition<
   profile?: GameProfileConfig<TProfile, TPlayers, GamekitResultState | null>;
   setup: (context: GamekitSetupContext<TPlayers, TProfile>) => TState;
   turn?: TurnPolicy;
-  views?: GamekitViews<TState, ComputedValues<TComputed>, TPhase, TPlayers, TPublic, TPlayer>;
+  views?: GamekitViews<TState, ComputedValues<TComputed>, TPhase, TPlayers, TPublic, TPlayer, ConfigValuesOf<TConfig>>;
 }
 
 export interface GamekitSetupContext<
@@ -503,12 +710,13 @@ export interface GamekitSetupContext<
 
 export type CoreGameDefinitionFor<
   TState extends object,
-  TMoves extends Record<string, GamekitMoveDefinition<any, any, any, any, any, AnyQueuedEvent, any>>,
+  TMoves extends Record<string, GamekitMoveDefinition<any, any, any, any, any, AnyQueuedEvent, any, any>>,
   TPlayers extends PlayerList,
   TPhase extends string,
   TPublic,
   TPlayer,
   TCoreNode extends string = never,
+  TConfig extends ConfigSchema | undefined = undefined,
 > = GameDefinition<
   GamekitState<TState>,
   GamekitEventMap<TMoves>,
@@ -517,7 +725,16 @@ export type CoreGameDefinitionFor<
   GamekitNode<TPhase, TCoreNode>,
   TPublic,
   TPlayer,
-  ReplayValue
+  ReplayValue,
+  readonly GameTransitionConfig<
+    GamekitState<TState>,
+    GamekitEventMap<TMoves>,
+    GamekitResultState,
+    GamekitNode<TPhase, TCoreNode>,
+    TPlayers,
+    ReplayValue
+  >[],
+  TConfig
 >;
 
 export const modifiers = {
@@ -532,7 +749,7 @@ export const turn = {
 };
 
 export function defineMoves<
-  const TMoves extends Record<string, GamekitMoveDefinition<any, any, any, any, any, any, any>>,
+  const TMoves extends Record<string, GamekitMoveDefinition<any, any, any, any, any, any, any, any>>,
 >(moves: TMoves): TMoves {
   return moves;
 }
@@ -628,22 +845,24 @@ function createBoundMoveFactory<
   TPlayers extends readonly PlayerID[],
   TQueuedEvent extends { kind: string },
   TProfile extends ReplayValue = ReplayValue,
->(): BoundMoveDefinitionFactory<TState, TComputed, TPhase, TPlayers, TQueuedEvent, TProfile> {
+  TConfigValues = Record<string, ReplayValue>,
+>(): BoundMoveDefinitionFactory<TState, TComputed, TPhase, TPlayers, TQueuedEvent, TProfile, TConfigValues> {
   return (<TArgs = undefined>(
-    definition: Omit<GamekitMoveDefinition<TState, TComputed, TArgs, TPhase, TPlayers, TQueuedEvent, TProfile>, "args">
+    definition: Omit<GamekitMoveDefinition<TState, TComputed, TArgs, TPhase, TPlayers, TQueuedEvent, TProfile, TConfigValues>, "args">
       & { args?: TArgs },
-  ) => definition as GamekitMoveDefinition<TState, TComputed, TArgs, TPhase, TPlayers, TQueuedEvent, TProfile>) satisfies BoundMoveDefinitionFactory<
+  ) => definition as GamekitMoveDefinition<TState, TComputed, TArgs, TPhase, TPlayers, TQueuedEvent, TProfile, TConfigValues>) satisfies BoundMoveDefinitionFactory<
     TState,
     TComputed,
     TPhase,
     TPlayers,
     TQueuedEvent,
-    TProfile
+    TProfile,
+    TConfigValues
   >;
 }
 
 function createQueueFactory<
-  TMoves extends Record<string, GamekitMoveDefinition<any, any, any, any, any, any, any>>,
+  TMoves extends Record<string, GamekitMoveDefinition<any, any, any, any, any, any, any, any>>,
 >(): QueueFactory<TMoves> {
   return ((kind: string, payload?: unknown) =>
     payload === undefined
@@ -651,10 +870,32 @@ function createQueueFactory<
       : { kind, payload }) as QueueFactory<TMoves>;
 }
 
+/**
+ * Definition-time stub passed to the `phases:` callback's `({ moves })`
+ * helper. Its only job is to settle the `BoundPhaseMoves<TMoves>` type
+ * variable so authors get typed `onTimeout` `moves` parameters. Calling
+ * any entry at definition time is a programming error — the real
+ * dispatcher is constructed inside the synthesized timeout transition's
+ * resolver where a match context exists. Use a Proxy so accidental calls
+ * from outside `onTimeout` fail with a clear message instead of throwing
+ * a confusing `undefined is not a function` error.
+ */
+function createDefinitionTimeMovesStub(): unknown {
+  return new Proxy(Object.create(null) as Record<string, unknown>, {
+    get() {
+      return () => {
+        throw new Error(
+          "gamekit: the `moves` dispatcher exposed to the `phases:` callback is for typing only. Call moves through the second argument of `onTimeout(ctx, moves) => ...` instead.",
+        );
+      };
+    },
+  });
+}
+
 // ---- maxPlayers form (default IDs "0".."N-1"; preferred for unnamed seats) ----
 export function defineGame<
   TState extends object,
-  TMoves extends Record<string, GamekitMoveDefinition<TState, any, any, any, TPlayers, AnyQueuedEvent, any>>,
+  TMoves extends Record<string, GamekitMoveDefinition<TState, any, any, any, TPlayers, AnyQueuedEvent, any, any>>,
   const TMaxPlayers extends number,
   TPhase extends string = "play",
   TPlayers extends PlayerList = DefaultPlayerIDsBoundLocal<TMaxPlayers>,
@@ -663,15 +904,16 @@ export function defineGame<
   TPlayer = TPublic,
   TCoreNode extends string = never,
   TProfile extends ReplayValue = ReplayValue,
+  const TConfig extends ConfigSchema | undefined = undefined,
 >(
-  definition: Omit<GamekitDefinition<TState, TMoves, TPhase, TPlayers, TComputed, TPublic, TPlayer, TCoreNode, TProfile>, "playerIDs" | "maxPlayers">
+  definition: Omit<GamekitDefinition<TState, TMoves, TPhase, TPlayers, TComputed, TPublic, TPlayer, TCoreNode, TProfile, TConfig>, "playerIDs" | "maxPlayers">
     & { maxPlayers: TMaxPlayers }
     & JsonCompatibilityChecks<TState, TPublic, TPlayer>,
-): CoreGameDefinitionFor<TState, TMoves, TPlayers, TPhase, TPublic, TPlayer, TCoreNode>;
+): CoreGameDefinitionFor<TState, TMoves, TPlayers, TPhase, TPublic, TPlayer, TCoreNode, TConfig>;
 // ---- playerIDs form (named seats; opt-in) ----
 export function defineGame<
   TState extends object,
-  TMoves extends Record<string, GamekitMoveDefinition<TState, any, any, any, TPlayers, AnyQueuedEvent, any>>,
+  TMoves extends Record<string, GamekitMoveDefinition<TState, any, any, any, TPlayers, AnyQueuedEvent, any, any>>,
   const TPlayers extends PlayerList,
   TPhase extends string = "play",
   TComputed extends ComputedMap<TState, TPhase, TPlayers> | undefined = ComputedMap<TState, TPhase, TPlayers> | undefined,
@@ -679,11 +921,12 @@ export function defineGame<
   TPlayer = TPublic,
   TCoreNode extends string = never,
   TProfile extends ReplayValue = ReplayValue,
+  const TConfig extends ConfigSchema | undefined = undefined,
 >(
-  definition: Omit<GamekitDefinition<TState, TMoves, TPhase, TPlayers, TComputed, TPublic, TPlayer, TCoreNode, TProfile>, "playerIDs" | "maxPlayers">
+  definition: Omit<GamekitDefinition<TState, TMoves, TPhase, TPlayers, TComputed, TPublic, TPlayer, TCoreNode, TProfile, TConfig>, "playerIDs" | "maxPlayers">
     & { playerIDs: TPlayers }
     & JsonCompatibilityChecks<TState, TPublic, TPlayer>,
-): CoreGameDefinitionFor<TState, TMoves, TPlayers, TPhase, TPublic, TPlayer, TCoreNode>;
+): CoreGameDefinitionFor<TState, TMoves, TPlayers, TPhase, TPublic, TPlayer, TCoreNode, TConfig>;
 // ---- pre-typed form (consumed by `withPlugins(...)` and similar wrappers) ----
 //
 // Accepts a fully-typed `GamekitDefinition` whose `maxPlayers` / `playerIDs`
@@ -693,7 +936,7 @@ export function defineGame<
 // type back up through their own generics.
 export function defineGame<
   TState extends object,
-  TMoves extends Record<string, GamekitMoveDefinition<TState, any, any, any, TPlayers, AnyQueuedEvent, any>>,
+  TMoves extends Record<string, GamekitMoveDefinition<TState, any, any, any, TPlayers, AnyQueuedEvent, any, any>>,
   TPhase extends string = "play",
   TPlayers extends PlayerList = PlayerList,
   TComputed extends ComputedMap<TState, TPhase, TPlayers> | undefined = ComputedMap<TState, TPhase, TPlayers> | undefined,
@@ -701,13 +944,14 @@ export function defineGame<
   TPlayer = TPublic,
   TCoreNode extends string = never,
   TProfile extends ReplayValue = ReplayValue,
+  const TConfig extends ConfigSchema | undefined = undefined,
 >(
-  definition: GamekitDefinition<TState, TMoves, TPhase, TPlayers, TComputed, TPublic, TPlayer, TCoreNode, TProfile>
+  definition: GamekitDefinition<TState, TMoves, TPhase, TPlayers, TComputed, TPublic, TPlayer, TCoreNode, TProfile, TConfig>
     & JsonCompatibilityChecks<TState, TPublic, TPlayer>,
-): CoreGameDefinitionFor<TState, TMoves, TPlayers, TPhase, TPublic, TPlayer, TCoreNode>;
+): CoreGameDefinitionFor<TState, TMoves, TPlayers, TPhase, TPublic, TPlayer, TCoreNode, TConfig>;
 export function defineGame<
   TState extends object,
-  TMoves extends Record<string, GamekitMoveDefinition<TState, any, any, any, TPlayers, AnyQueuedEvent, any>>,
+  TMoves extends Record<string, GamekitMoveDefinition<TState, any, any, any, TPlayers, AnyQueuedEvent, any, any>>,
   TPhase extends string = "play",
   TPlayers extends PlayerList = PlayerList,
   TComputed extends ComputedMap<TState, TPhase, TPlayers> | undefined = ComputedMap<TState, TPhase, TPlayers> | undefined,
@@ -715,10 +959,11 @@ export function defineGame<
   TPlayer = TPublic,
   TCoreNode extends string = never,
   TProfile extends ReplayValue = ReplayValue,
+  const TConfig extends ConfigSchema | undefined = undefined,
 >(
-  definition: GamekitDefinition<TState, TMoves, TPhase, TPlayers, TComputed, TPublic, TPlayer, TCoreNode, TProfile>
+  definition: GamekitDefinition<TState, TMoves, TPhase, TPlayers, TComputed, TPublic, TPlayer, TCoreNode, TProfile, TConfig>
     & JsonCompatibilityChecks<TState, TPublic, TPlayer>,
-): CoreGameDefinitionFor<TState, TMoves, TPlayers, TPhase, TPublic, TPlayer, TCoreNode> {
+): CoreGameDefinitionFor<TState, TMoves, TPlayers, TPhase, TPublic, TPlayer, TCoreNode, TConfig> {
   const capacityInput = definition as unknown as {
     playerIDs?: TPlayers;
     maxPlayers?: number;
@@ -729,14 +974,29 @@ export function defineGame<
   const minPlayers = capacityInput.minPlayers ?? playerIDs.length;
   const moves = typeof definition.moves === "function"
     ? definition.moves({
-      move: createBoundMoveFactory<TState, ComputedValues<TComputed>, TPhase, TPlayers, AnyQueuedEvent, TProfile>(),
+      move: createBoundMoveFactory<TState, ComputedValues<TComputed>, TPhase, TPlayers, AnyQueuedEvent, TProfile, ConfigValuesOf<TConfig>>(),
       queue: createQueueFactory<TMoves>(),
     })
     : definition.moves;
   const turnPolicy = definition.turn ?? turn.roundRobin();
+  // Resolve `phases` once: when authors use the callback form
+  // `phases: ({ moves }) => ({...})`, TS evaluates the callback's body with
+  // the typed `BoundPhaseMoves<TMoves>` settled — that's the whole point of
+  // the callback form (TS resolves `moves:` first, then `phases:`). At
+  // runtime we don't have a real per-match dispatcher yet (those need a
+  // match context), so we pass a definition-time stub that throws if any
+  // entry is invoked. Authors should only call moves through the second
+  // parameter of `onTimeout` (the per-match dispatcher), not through the
+  // outer `({ moves })` helper.
+  const phasesField = definition.phases;
+  const resolvedPhases = typeof phasesField === "function"
+    ? phasesField({
+      moves: createDefinitionTimeMovesStub() as BoundPhaseMoves<TState, TPhase, TPlayers, TMoves>,
+    })
+    : phasesField;
   const phaseNames = resolvePhaseNames({
     ...(definition.initialPhase === undefined ? {} : { initialPhase: definition.initialPhase }),
-    ...(definition.phases === undefined ? {} : { phases: definition.phases }),
+    ...(resolvedPhases === undefined ? {} : { phases: resolvedPhases }),
     moves,
   }) as TPhase[];
   const initialPhase = definition.initialPhase ?? phaseNames[0] ?? ("play" as TPhase);
@@ -752,23 +1012,55 @@ export function defineGame<
   };
 
   for (const phase of phaseNames) {
-    const phaseConfig = definition.phases?.[phase];
-    states[phase] = {
+    const phaseConfig = resolvedPhases?.[phase];
+    if (phaseConfig?.onTimeout !== undefined && phaseConfig.deadline === undefined) {
+      throw new Error(
+        `defineGame: phase "${phase}" declares onTimeout but no deadline; the timeout will never fire. Add a \`deadline\` to the phase or remove \`onTimeout\`.`,
+      );
+    }
+    const phaseState: GameStateConfig<
+      GamekitState<TState>,
+      GamekitNode<TPhase, TCoreNode>,
+      TPlayers,
+      ReplayValue
+    > = {
       activePlayers: (context) => {
         if (phaseConfig?.activePlayers !== undefined) {
-          return phaseConfig.activePlayers(createPhaseContext(definition, turnPolicy, context, phase));
+          return phaseConfig.activePlayers(createPhaseContext<TState, TPhase, TPlayers, TComputed, TCoreNode, ConfigValuesOf<TConfig>>(
+            definition.computed,
+            turnPolicy,
+            context,
+            phase,
+          ));
         }
 
         return [resolveTurn(turnPolicy, context.match.players, context.position.turn).currentPlayer];
       },
       label: (context) => {
         if (typeof phaseConfig?.label === "function") {
-          return phaseConfig.label(createPhaseContext(definition, turnPolicy, context, phase));
+          return phaseConfig.label(createPhaseContext<TState, TPhase, TPlayers, TComputed, TCoreNode, ConfigValuesOf<TConfig>>(
+            definition.computed,
+            turnPolicy,
+            context,
+            phase,
+          ));
         }
 
         return phaseConfig?.label ?? phase;
       },
     };
+    if (phaseConfig?.deadline !== undefined) {
+      const deadline = phaseConfig.deadline;
+      phaseState.deadline = typeof deadline === "function"
+        ? (context) => deadline(createPhaseContext<TState, TPhase, TPlayers, TComputed, TCoreNode, ConfigValuesOf<TConfig>>(
+            definition.computed,
+            turnPolicy,
+            context,
+            phase,
+          ))
+        : deadline;
+    }
+    states[phase] = phaseState;
   }
 
   const transitions: Array<GameTransitionConfig<
@@ -798,9 +1090,11 @@ export function defineGame<
       const computed = computeComputedValues(definition.computed, currentState, phase, turnContext) as ComputedValues<
         TComputed
       >;
-      const permissionContext: MovePermissionContext<TState, ComputedValues<TComputed>, TPhase, TPlayers, TProfile> = {
+      const permissionContext: MovePermissionContext<TState, ComputedValues<TComputed>, TPhase, TPlayers, TProfile, ConfigValuesOf<TConfig>> = {
         C: computed,
         G: currentState,
+        match: context.match as GamekitMatchInput<TPlayers, ConfigValuesOf<TConfig>>,
+        now: context.now,
         phase,
         player: { id: context.playerID as TPlayers[number] },
         profiles: (context.match.profiles ?? {}) as Readonly<Record<TPlayers[number], TProfile>>,
@@ -1013,6 +1307,198 @@ export function defineGame<
     }
   }
 
+  // ---- Synthesize timeout transitions for phases that declare onTimeout ----
+  //
+  // Core only allows ONE `kind: "timeout"` transition per `from` source, with
+  // a fixed `to`. To preserve `onTimeout`'s ergonomic return-any-MoveOutcome
+  // contract (including `finish` which targets `__gamekit_finished`), the
+  // synthesized timeout transition's resolver enqueues a synthetic
+  // `__gamekit_phase_outcome` event whose payload carries the outcome. That
+  // event has its own per-phase event transitions (one per outcome target —
+  // mirroring the per-move stay/endTurn/goto:X/finish fan-out below) which
+  // navigate to the right `to` based on the payload kind. The split keeps the
+  // user-facing `onTimeout` API in MoveOutcome shape while letting core's
+  // single-timeout-per-from invariant stand.
+  const phasesWithTimeout = phaseNames.filter((phase) => resolvedPhases?.[phase]?.onTimeout !== undefined);
+  if (phasesWithTimeout.length > 0) {
+    const TIMEOUT_OUTCOME_EVENT = "__gamekit_phase_outcome";
+    eventShapes[TIMEOUT_OUTCOME_EVENT] = null;
+
+    const matchesOutcome = (
+      payload: ReplayValue,
+      predicate: (outcome: MoveOutcome<TState, TPhase, TPlayers[number], GamekitQueuedEvent<TMoves>>) => boolean,
+    ): MoveOutcome<TState, TPhase, TPlayers[number], GamekitQueuedEvent<TMoves>> | null => {
+      if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return null;
+      const outcome = payload as unknown as MoveOutcome<TState, TPhase, TPlayers[number], GamekitQueuedEvent<TMoves>>;
+      return predicate(outcome) ? outcome : null;
+    };
+
+    for (const phase of phasesWithTimeout) {
+      const phaseConfig = resolvedPhases![phase]!;
+
+      // Synthetic outcome-application transitions, fanned out per outcome
+      // target. Each resolver is null-guarded so only the matching kind/target
+      // pair fires.
+      transitions.push(
+        {
+          event: TIMEOUT_OUTCOME_EVENT,
+          from: phase,
+          label: `__timeout:${phase}:stay`,
+          resolve: (context) => {
+            const outcome = matchesOutcome(
+              context.event.payload as ReplayValue,
+              (o) => o.kind === "stay" || (o.kind === "goto" && o.phase === phase && o.endTurn !== true),
+            );
+            if (outcome === null) return null;
+            return createTransitionResult(context.G, outcome);
+          },
+          to: phase,
+          turn: "preserve",
+        },
+        {
+          event: TIMEOUT_OUTCOME_EVENT,
+          from: phase,
+          label: `__timeout:${phase}:end_turn`,
+          resolve: (context) => {
+            const outcome = matchesOutcome(
+              context.event.payload as ReplayValue,
+              (o) => o.kind === "endTurn" || (o.kind === "goto" && o.phase === phase && o.endTurn === true),
+            );
+            if (outcome === null) return null;
+            return createTransitionResult(context.G, outcome, "increment");
+          },
+          to: phase,
+          turn: "increment",
+        },
+      );
+
+      for (const targetPhase of phaseNames) {
+        if (targetPhase === phase) continue;
+        transitions.push(
+          {
+            event: TIMEOUT_OUTCOME_EVENT,
+            from: phase,
+            label: `__timeout:${phase}:goto:${targetPhase}`,
+            resolve: (context) => {
+              const outcome = matchesOutcome(
+                context.event.payload as ReplayValue,
+                (o) => o.kind === "goto" && o.phase === targetPhase && o.endTurn !== true,
+              );
+              if (outcome === null) return null;
+              return createTransitionResult(context.G, outcome);
+            },
+            to: targetPhase,
+            turn: "preserve",
+          },
+          {
+            event: TIMEOUT_OUTCOME_EVENT,
+            from: phase,
+            label: `__timeout:${phase}:goto:${targetPhase}:end_turn`,
+            resolve: (context) => {
+              const outcome = matchesOutcome(
+                context.event.payload as ReplayValue,
+                (o) => o.kind === "goto" && o.phase === targetPhase && o.endTurn === true,
+              );
+              if (outcome === null) return null;
+              return createTransitionResult(context.G, outcome, "increment");
+            },
+            to: targetPhase,
+            turn: "increment",
+          },
+        );
+      }
+
+      transitions.push({
+        event: TIMEOUT_OUTCOME_EVENT,
+        from: phase,
+        label: `__timeout:${phase}:finish`,
+        resolve: (context) => {
+          const outcome = matchesOutcome(
+            context.event.payload as ReplayValue,
+            (o) => o.kind === "finish",
+          );
+          if (outcome === null) return null;
+          return createTransitionResult(context.G, outcome, "increment");
+        },
+        to: "__gamekit_finished",
+        turn: "increment",
+      });
+
+      // The single timeout transition that fires when the phase deadline
+      // elapses. Its resolver invokes `phaseConfig.onTimeout`, builds the
+      // bound-moves dispatcher (which calls each move's `run` directly), and
+      // enqueues the resulting outcome as a `__gamekit_phase_outcome` event so
+      // the synthetic event transitions above pick it up and navigate.
+      transitions.push({
+        kind: "timeout",
+        from: phase,
+        label: `__timeout:${phase}`,
+        resolve: (context) => {
+          const turnContext = resolveTurn(turnPolicy, context.match.players, context.position.turn);
+          const currentState = stripInternalState(context.G);
+          const computed = computeComputedValues(definition.computed, currentState, phase, turnContext) as ComputedValues<
+            TComputed
+          >;
+          const permissionContext: MovePermissionContext<TState, ComputedValues<TComputed>, TPhase, TPlayers, TProfile, ConfigValuesOf<TConfig>> = {
+            C: computed,
+            G: currentState,
+            match: context.match as GamekitMatchInput<TPlayers, ConfigValuesOf<TConfig>>,
+            now: context.now,
+            phase,
+            // The active player snapshot: round-robin gives us a single seat;
+            // simultaneous-move phases get whatever the turn policy yields here
+            // (parallel resolvers can re-derive activePlayers via `phaseConfig`).
+            player: { id: turnContext.currentPlayer as TPlayers[number] },
+            profiles: (context.match.profiles ?? {}) as Readonly<Record<TPlayers[number], TProfile>>,
+            rng: context.rng,
+            turn: turnContext,
+          };
+
+          const moveHelpers = createMoveHelpers<TState, TPhase, TPlayers[number], GamekitQueuedEvent<TMoves>>();
+          const boundMoves: Record<string, (args?: unknown) => unknown> = {};
+          for (const [name, moveDef] of Object.entries(moves)) {
+            boundMoves[name] = (args?: unknown) =>
+              moveDef.run({
+                ...permissionContext,
+                args,
+                move: moveHelpers,
+                profile: profile.bind(
+                  (context.match.profiles ?? {}) as PlayerRecord<TPlayers, TProfile>,
+                ),
+              } as never);
+          }
+
+          const outcome = phaseConfig.onTimeout!(
+            permissionContext,
+            boundMoves as never,
+          );
+
+          if (outcome === null) return null;
+
+          // Enqueue the outcome as a synthetic event. The timeout transition
+          // itself contributes no state change (G is untouched, position loops
+          // back to `phase`); the enqueued event carries all navigation.
+          return {
+            G: context.G as GamekitState<TState>,
+            enqueue: [{
+              kind: TIMEOUT_OUTCOME_EVENT,
+              payload: outcome as unknown as ReplayValue,
+            }],
+          };
+        },
+        to: phase,
+        turn: "preserve",
+      } as GameTransitionConfig<
+        GamekitState<TState>,
+        GamekitEventMap<TMoves>,
+        GamekitResultState,
+        GamekitNode<TPhase, TCoreNode>,
+        TPlayers,
+        ReplayValue
+      >);
+    }
+  }
+
   const selectors = {
     ...(definition.core?.selectors === undefined
       ? {}
@@ -1046,7 +1532,11 @@ export function defineGame<
         return coreViews.player(context, playerID) as TPlayer;
       }
 
-      const viewContext = createViewContext(definition, turnPolicy, context);
+      const viewContext = createViewContext<TState, TPhase, TPlayers, TComputed, TCoreNode, ConfigValuesOf<TConfig>>(
+        definition.computed,
+        turnPolicy,
+        context,
+      );
 
       if (definition.views?.player === undefined) {
         return stripInternalState(context.G) as TPlayer;
@@ -1059,7 +1549,11 @@ export function defineGame<
         return coreViews.public(context) as TPublic;
       }
 
-      const viewContext = createViewContext(definition, turnPolicy, context);
+      const viewContext = createViewContext<TState, TPhase, TPlayers, TComputed, TCoreNode, ConfigValuesOf<TConfig>>(
+        definition.computed,
+        turnPolicy,
+        context,
+      );
 
       if (definition.views?.public === undefined) {
         return stripInternalState(context.G) as TPublic;
@@ -1084,6 +1578,7 @@ export function defineGame<
     minPlayers,
     ...(wrappedLegalActions === undefined ? {} : { legalActions: wrappedLegalActions }),
     ...(definition.profile === undefined ? {} : { profile: definition.profile }),
+    ...(definition.config === undefined ? {} : { config: definition.config }),
     selectors,
     setup,
     states: {
@@ -1097,7 +1592,7 @@ export function defineGame<
       ...(definition.core?.transitions ?? []),
     ],
     views,
-  } as never) as CoreGameDefinitionFor<TState, TMoves, TPlayers, TPhase, TPublic, TPlayer, TCoreNode>;
+  } as never) as unknown as CoreGameDefinitionFor<TState, TMoves, TPlayers, TPhase, TPublic, TPlayer, TCoreNode, TConfig>;
 }
 
 function wrapCoreSelectors<TState extends object, TPlayers extends PlayerList, TNode extends string>(
@@ -1292,52 +1787,53 @@ function createMoveHelpers<
 
 function createViewContext<
   TState extends object,
-  TMoves extends Record<string, GamekitMoveDefinition<TState, any, any, any, any, any, any>>,
   TPhase extends string,
   TPlayers extends PlayerList,
   TComputed extends ComputedMap<TState, TPhase, TPlayers> | undefined,
-  TPublic,
-  TPlayer,
   TCoreNode extends string = never,
-  TProfile extends ReplayValue = ReplayValue,
+  TConfigValues = Record<string, ReplayValue>,
 >(
-  definition: GamekitDefinition<TState, TMoves, TPhase, TPlayers, TComputed, TPublic, TPlayer, TCoreNode, TProfile>,
+  computed: TComputed | undefined,
   turnPolicy: TurnPolicy,
   context: GameRuleContext<GamekitState<TState>, GamekitNode<TPhase, TCoreNode>, TPlayers, ReplayValue>,
-): ViewContext<TState, ComputedValues<TComputed>, TPhase, TPlayers> {
-  return createPhaseContext(definition, turnPolicy, context, context.position.name as TPhase);
+): ViewContext<TState, ComputedValues<TComputed>, TPhase, TPlayers, TConfigValues> {
+  return createPhaseContext<TState, TPhase, TPlayers, TComputed, TCoreNode, TConfigValues>(
+    computed,
+    turnPolicy,
+    context,
+    context.position.name as TPhase,
+  );
 }
 
 function createPhaseContext<
   TState extends object,
-  TMoves extends Record<string, GamekitMoveDefinition<TState, any, any, any, any, any, any>>,
   TPhase extends string,
   TPlayers extends PlayerList,
   TComputed extends ComputedMap<TState, TPhase, TPlayers> | undefined,
-  TPublic,
-  TPlayer,
   TCoreNode extends string = never,
-  TProfile extends ReplayValue = ReplayValue,
+  TConfigValues = Record<string, ReplayValue>,
 >(
-  definition: GamekitDefinition<TState, TMoves, TPhase, TPlayers, TComputed, TPublic, TPlayer, TCoreNode, TProfile>,
+  computed: TComputed | undefined,
   turnPolicy: TurnPolicy,
   context: Pick<
     GameRuleContext<GamekitState<TState>, GamekitNode<TPhase, TCoreNode>, TPlayers, ReplayValue>,
-    "G" | "match" | "position"
+    "G" | "match" | "now" | "position"
   >,
   phase: TPhase,
-): ViewContext<TState, ComputedValues<TComputed>, TPhase, TPlayers> {
+): ViewContext<TState, ComputedValues<TComputed>, TPhase, TPlayers, TConfigValues> {
   const turnContext = resolveTurn(turnPolicy, context.match.players, context.position.turn);
   const state = stripInternalState(context.G);
 
   return {
     C: computeComputedValues(
-      definition.computed,
+      computed as ComputedMap<TState, TPhase, TPlayers> | undefined,
       state,
       phase,
       turnContext,
     ) as ComputedValues<TComputed>,
     G: state,
+    match: context.match as GamekitMatchInput<TPlayers, TConfigValues>,
+    now: context.now,
     phase,
     turn: turnContext,
   };
@@ -1363,8 +1859,8 @@ function stripStateContext<TState extends object, TNode extends string, TPlayers
 
 function resolvePhaseNames(definition: {
   initialPhase?: string;
-  moves: Record<string, GamekitMoveDefinition<any, any, any, any, any, any, any>>;
-  phases?: Record<string, GamekitPhaseConfig<any, any, any, any>>;
+  moves: Record<string, GamekitMoveDefinition<any, any, any, any, any, any, any, any>>;
+  phases?: Record<string, GamekitPhaseConfig<any, any, any, any, any, any, any>>;
 }): readonly string[] {
   const explicitPhases = definition.phases === undefined ? [] : Object.keys(definition.phases);
   const movePhases = Object.values(definition.moves).flatMap((move) =>

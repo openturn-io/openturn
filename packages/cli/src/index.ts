@@ -57,7 +57,7 @@ import {
   type SavedGamePayload,
 } from "@openturn/server";
 import type { ProtocolClientMessage } from "@openturn/protocol";
-import type { ConfigSchema, ReplayValue } from "@openturn/core";
+import type { ConfigSchema, DeadlineKey, DeadlineScheduler, ReplayValue } from "@openturn/core";
 
 import { DEFAULT_CLOUD_URL, cloudDeploy, loadCloudAuth, saveCloudAuth } from "./cloud";
 import { startDevBundleServer, type DevBundleServer } from "./dev-bundle";
@@ -197,6 +197,43 @@ const authVerificationsTable = sqliteTable("verification", {
   updatedAt: integer("updatedAt", { mode: "timestamp_ms" }).notNull(),
   value: text("value").notNull(),
 });
+
+/**
+ * `DeadlineScheduler` for the CLI dev shell. The CLI runs as a single
+ * process (Node/Bun) so we use one in-memory `setTimeout` handle per
+ * `DeadlineKey` rather than the cloud DO's persisted-`setAlarm` slot.
+ *
+ * `setDeadline(key, at)` cancels any prior handle for `key` (so callers
+ * can re-arm safely after every event), then arms a fresh `setTimeout`
+ * for `max(0, at - Date.now())` ms. `setDeadline(key, null)` clears
+ * without re-arming. When the timer elapses we delete the handle from
+ * the map *before* dispatching so the dispatch callback is free to call
+ * `setDeadline(key, ...)` again from inside the same tick (e.g. a
+ * `fireTimeout` whose transition advances the session into a new
+ * deadline-bearing state and re-arms via the runtime's post-event
+ * scheduler call).
+ */
+export class CliScheduler implements DeadlineScheduler {
+  #handles = new Map<DeadlineKey, ReturnType<typeof setTimeout>>();
+  #onDispatch: (key: DeadlineKey) => void | Promise<void>;
+
+  constructor(onDispatch: (key: DeadlineKey) => void | Promise<void>) {
+    this.#onDispatch = onDispatch;
+  }
+
+  setDeadline(key: DeadlineKey, at: number | null): void {
+    const existing = this.#handles.get(key);
+    if (existing !== undefined) clearTimeout(existing);
+    this.#handles.delete(key);
+    if (at === null) return;
+    const ms = Math.max(0, at - Date.now());
+    const handle = setTimeout(() => {
+      this.#handles.delete(key);
+      void this.#onDispatch(key);
+    }, ms);
+    this.#handles.set(key, handle);
+  }
+}
 
 export interface LocalDevServerOptions {
   /**
@@ -486,6 +523,7 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
 
       if (options.iframe !== undefined) {
         if (request.method === "GET" && (requestURL.pathname === "/" || requestURL.pathname === `/play/${options.iframe.deploymentID}`)) {
+          const setCookies = await primeAnonymousSessionCookie(request);
           return htmlResponse(createLocalPlayShell({
             bundleURL: options.iframe.bundleURL,
             deploymentID: options.iframe.deploymentID,
@@ -494,7 +532,7 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
             ...(options.iframe.shellControls === undefined
               ? {}
               : { shellControls: options.iframe.shellControls }),
-          }));
+          }), setCookies);
         }
 
         if (request.method === "GET" && requestURL.pathname === "/__openturn/play-app/main.js") {
@@ -516,6 +554,7 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
         const wantsShell = staticOptions.shell !== false;
         if (request.method === "GET" && (requestURL.pathname === "/" || requestURL.pathname === `/play/${staticOptions.deploymentID}`)) {
           if (wantsShell) {
+            const setCookies = await primeAnonymousSessionCookie(request);
             return htmlResponse(createLocalPlayShell({
               deploymentID: staticOptions.deploymentID,
               gameName: staticOptions.gameName,
@@ -523,7 +562,7 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
               ...(staticOptions.shellControls === undefined
                 ? {}
                 : { shellControls: staticOptions.shellControls }),
-            }));
+            }), setCookies);
           }
           return fileResponse(resolve(staticOptions.outDir, "index.html"), "text/html; charset=utf-8");
         }
@@ -1501,7 +1540,30 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
       };
       const startNow = Date.now();
       const startSeed = `${ws.data.roomID}:seed`;
-      const startedRuntime = await createRoomRuntime({
+      // Scheduler ↔ runtime form a reference cycle: the runtime calls
+      // `scheduler.setDeadline(...)` after every event, and the scheduler's
+      // dispatch callback calls `runtime.fireTimeout(...)`. We assign the
+      // scheduler before `await createRoomRuntime` so the option object can
+      // reference it, and capture the runtime in a closure-mutable binding
+      // that the dispatch callback dereferences lazily.
+      // Note (idle-reap): the cloud DO multiplexes "turn-timeout" and
+      // "idle-reap" on a single setAlarm slot. The CLI dev shell currently
+      // has no idle-reap mechanism — sockets stay open until the dev
+      // process exits. If a future slice adds CLI idle-reap to mirror the
+      // cloud DO, plumb it through the same scheduler here. For now the
+      // dispatch callback only handles "turn-timeout".
+      const roomIDForStart = ws.data.roomID;
+      let startedRuntime: RoomRuntime;
+      const startedScheduler = new CliScheduler(async (key) => {
+        if (key === "turn-timeout") {
+          if (startedRuntime === undefined) return;
+          const envelopes = await startedRuntime.fireTimeout();
+          broadcastDeliveries(roomIDForStart, envelopes);
+          await tickBotDriver(roomIDForStart, startedRuntime);
+        }
+        // "idle-reap": no-op in the CLI dev shell. See comment above.
+      });
+      startedRuntime = await createRoomRuntime({
         deployment: deploymentWithMatch(startMatch as GameDeployment["match"]),
         initialNow: startNow,
         onSaveRequest: saveHandler,
@@ -1511,6 +1573,7 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
         // the runtime must reflect the seated subset and resolved hostPlayerID.
         restorePersistedState: false,
         roomID: ws.data.roomID,
+        scheduler: startedScheduler,
         seed: startSeed,
       });
       roomRuntimes.set(ws.data.roomID, Promise.resolve(startedRuntime));
@@ -1796,6 +1859,28 @@ export async function startLocalDevServer(options: LocalDevServerOptions): Promi
     }
 
     return handler(session);
+  }
+
+  // When serving the play-shell HTML, ensure the response carries a valid
+  // anonymous session cookie. If the request already presents one, no-op.
+  // Otherwise drive better-auth's anonymous sign-in handler and return its
+  // Set-Cookie strings so the caller can attach them to the HTML response.
+  // This eliminates the client-side probe-then-mint dance that previously
+  // produced visible 401s on `/api/dev/me` during shell boot.
+  async function primeAnonymousSessionCookie(request: Request): Promise<readonly string[]> {
+    if (auth === null) return [];
+    const existing = await auth.api.getSession({ headers: request.headers }).catch(() => null);
+    if (existing !== null) return [];
+    const signInResponse = await auth
+      .handler(
+        new Request(new URL("/api/auth/sign-in/anonymous", url), {
+          headers: request.headers,
+          method: "POST",
+        }),
+      )
+      .catch(() => null);
+    if (signInResponse === null) return [];
+    return signInResponse.headers.getSetCookie();
   }
 
   async function getSession(request: Request) {
@@ -2931,12 +3016,10 @@ function resolveAssetPath(rootDir: string, relativePath: string): string | null 
   return candidate;
 }
 
-function htmlResponse(html: string): Response {
-  return new Response(html, {
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-    },
-  });
+function htmlResponse(html: string, setCookies: readonly string[] = []): Response {
+  const headers = new Headers({ "Content-Type": "text/html; charset=utf-8" });
+  for (const cookie of setCookies) headers.append("Set-Cookie", cookie);
+  return new Response(html, { headers });
 }
 
 

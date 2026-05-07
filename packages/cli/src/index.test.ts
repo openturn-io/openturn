@@ -3,7 +3,7 @@ import { createServer } from "node:net";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 
 import { defineGame } from "@openturn/core";
 import { loadOpenturnProjectDeployment } from "@openturn/deploy";
@@ -11,7 +11,7 @@ import { defineGameDeployment } from "@openturn/server";
 
 import { resolveCloudPlayURL } from "./cloud";
 import { startDevBundleServer } from "./dev-bundle";
-import { createOpenturnProject, removeDatabaseFile, startLocalDevServer } from "./index";
+import { CliScheduler, createOpenturnProject, removeDatabaseFile, startLocalDevServer } from "./index";
 
 const DEFAULT_MATCH = {
   players: ["0", "1"] as const,
@@ -926,6 +926,49 @@ describe("@openturn/cli", () => {
     }
   });
 
+  test("primes an anonymous session cookie on the play-shell HTML response", async () => {
+    const databasePath = createDatabasePath("primes-session-cookie");
+    const server = await startLocalDevServer({
+      dbPath: databasePath,
+      deployment,
+      iframe: {
+        bundleURL: "http://localhost:4999",
+        deploymentID: "dev",
+        gameName: "Local Game",
+      },
+      port: createTestPort(),
+    });
+
+    try {
+      const firstResponse = await fetch(`${server.url}/play/dev`);
+      expect(firstResponse.status).toBe(200);
+      const firstSetCookies = firstResponse.headers.getSetCookie();
+      expect(firstSetCookies.length).toBeGreaterThan(0);
+      // discard body; we only care about the Set-Cookie header on the boot response
+      await firstResponse.text();
+
+      const sessionCookie = firstSetCookies
+        .map((value) => value.split(";")[0]!)
+        .join("; ");
+
+      const secondResponse = await fetch(`${server.url}/play/dev`, {
+        headers: { cookie: sessionCookie },
+      });
+      expect(secondResponse.status).toBe(200);
+      expect(secondResponse.headers.getSetCookie().length).toBe(0);
+      await secondResponse.text();
+
+      // confirm the primed cookie actually authenticates against /api/dev/me
+      const meResponse = await fetch(`${server.url}/api/dev/me`, {
+        headers: { cookie: sessionCookie },
+      });
+      expect(meResponse.status).toBe(200);
+    } finally {
+      await server.stop();
+      removeDatabaseFile(databasePath);
+    }
+  });
+
   test("creates missing parent directories for sqlite database paths", async () => {
     const databasePath = createNestedDatabasePath("creates-missing-parent-directories");
     const server = await startLocalDevServer({
@@ -1123,6 +1166,55 @@ describe("startDevBundleServer", () => {
       await multiplayerBundle.stop();
       rmSync(projectDir, { force: true, recursive: true });
     }
+  });
+});
+
+describe("CliScheduler", () => {
+  // bun:test does not ship a vitest-style fake timer. The tests below use
+  // real `setTimeout` with short delays — the absolute values are tiny so
+  // wall-clock variance does not cause flakes, and the assertions only check
+  // ordering / dispatch rather than exact timing.
+  test("dispatches when deadline elapses", async () => {
+    const onDispatch = mock(() => {});
+    const scheduler = new CliScheduler(onDispatch);
+    scheduler.setDeadline("turn-timeout", Date.now() + 20);
+    await Bun.sleep(60);
+    expect(onDispatch).toHaveBeenCalledTimes(1);
+    expect(onDispatch).toHaveBeenCalledWith("turn-timeout");
+  });
+
+  test("setDeadline replaces an existing handle for the same key", async () => {
+    const onDispatch = mock(() => {});
+    const scheduler = new CliScheduler(onDispatch);
+    scheduler.setDeadline("turn-timeout", Date.now() + 20);
+    scheduler.setDeadline("turn-timeout", Date.now() + 120);
+    await Bun.sleep(60);
+    expect(onDispatch).not.toHaveBeenCalled();
+    await Bun.sleep(120);
+    expect(onDispatch).toHaveBeenCalledTimes(1);
+    expect(onDispatch).toHaveBeenCalledWith("turn-timeout");
+  });
+
+  test("setDeadline(key, null) clears a pending handle", async () => {
+    const onDispatch = mock(() => {});
+    const scheduler = new CliScheduler(onDispatch);
+    scheduler.setDeadline("turn-timeout", Date.now() + 20);
+    scheduler.setDeadline("turn-timeout", null);
+    await Bun.sleep(60);
+    expect(onDispatch).not.toHaveBeenCalled();
+  });
+
+  test("multiple keys fire independently", async () => {
+    const fired: string[] = [];
+    const scheduler = new CliScheduler((key) => {
+      fired.push(key);
+    });
+    scheduler.setDeadline("turn-timeout", Date.now() + 20);
+    scheduler.setDeadline("idle-reap", Date.now() + 80);
+    await Bun.sleep(50);
+    expect(fired).toEqual(["turn-timeout"]);
+    await Bun.sleep(80);
+    expect(fired).toEqual(["turn-timeout", "idle-reap"]);
   });
 });
 

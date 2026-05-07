@@ -6,7 +6,13 @@ import {
   resolveBotMapFromSeats,
   type BotRegistryShape,
 } from "./bot-driver";
-import type { AnyGame, ConfigSchema, PlayerID } from "@openturn/core";
+import type {
+  AnyGame,
+  ConfigSchema,
+  DeadlineKey,
+  DeadlineScheduler,
+  PlayerID,
+} from "@openturn/core";
 import {
   isLobbyClientMessageText,
   parseLobbyClientMessageText,
@@ -122,8 +128,46 @@ interface InitMeta {
 const PERSISTENCE_KEY = "persistence:v1";
 const META_KEY = "meta:v1";
 const LOBBY_KEY = "lobby:v1";
+const DEADLINES_KEY = "deadlines:v1";
 const DEFAULT_IDLE_REAP_MS = 30 * 60 * 1_000;
 const DEFAULT_GAME_TTL_SECONDS = 60 * 10;
+
+type StoredDeadlines = Partial<Record<DeadlineKey, number>>;
+
+/**
+ * Pick the earliest pending deadline across all keys. Returns `null` when
+ * the record is empty so callers can `deleteAlarm()` instead of arming.
+ */
+function nextDeadline(stored: StoredDeadlines): number | null {
+  const values = Object.values(stored).filter(
+    (value): value is number => typeof value === "number",
+  );
+  return values.length === 0 ? null : Math.min(...values);
+}
+
+/**
+ * `DeadlineScheduler` implementation backed by the DO's single `setAlarm`
+ * slot. We persist a `StoredDeadlines` record under `DEADLINES_KEY` and
+ * always re-arm `setAlarm` to the `min()` of pending entries — the
+ * `alarm()` handler dispatches each elapsed key in turn.
+ */
+class DurableObjectScheduler implements DeadlineScheduler {
+  constructor(private readonly ctx: DurableObjectState) {}
+
+  async setDeadline(key: DeadlineKey, at: number | null): Promise<void> {
+    const stored = (await this.ctx.storage.get<StoredDeadlines>(DEADLINES_KEY)) ?? {};
+    if (at === null) delete stored[key];
+    else stored[key] = at;
+    await this.ctx.storage.put(DEADLINES_KEY, stored);
+
+    const next = nextDeadline(stored);
+    if (next === null) {
+      await this.ctx.storage.deleteAlarm();
+    } else {
+      await this.ctx.storage.setAlarm(next);
+    }
+  }
+}
 
 /**
  * Extract the bot catalog from `game.bots` (set via `attachBots(game, registry)`
@@ -216,6 +260,12 @@ export function createGameWorker<TGame extends AnyGame>(
      * persistence + broadcast follow the same path as a human's move.
      */
     #botDriver: BotDriver<AnyGame> | null = null;
+    /**
+     * Multi-key scheduler over the DO's single `setAlarm` slot. Multiplexes
+     * `turn-timeout` and `idle-reap` deadlines: each `setDeadline()` call
+     * persists the keyed deadline and re-arms `setAlarm` to the minimum.
+     */
+    readonly #scheduler: DurableObjectScheduler = new DurableObjectScheduler(this.ctx);
 
     async fetch(request: Request): Promise<Response> {
       const url = new URL(request.url);
@@ -269,7 +319,7 @@ export function createGameWorker<TGame extends AnyGame>(
         playerID: attachment.playerID,
       });
 
-      await this.scheduleIdleReap();
+      await this.#scheduler.setDeadline("idle-reap", Date.now() + idleReapMs);
     }
 
     async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {
@@ -279,13 +329,53 @@ export function createGameWorker<TGame extends AnyGame>(
     }
 
     async alarm(): Promise<void> {
-      const sockets = this.ctx.getWebSockets();
+      const now = Date.now();
+      // Forward-compat: a DO rehydrated before this deploy has no
+      // `DEADLINES_KEY`; `?? {}` produces an empty record, no dispatch
+      // fires, and `setAlarm` is not re-armed until the next event
+      // populates the record. In-flight legacy `setAlarm` timers from the
+      // old single-slot idle-reap scheduler fire once into this handler,
+      // see an empty record, and exit cleanly.
+      const stored = (await this.ctx.storage.get<StoredDeadlines>(DEADLINES_KEY)) ?? {};
 
-      if (sockets.length > 0) {
-        await this.scheduleIdleReap();
-        return;
+      const elapsed: DeadlineKey[] = [];
+      for (const [key, at] of Object.entries(stored) as Array<[DeadlineKey, number]>) {
+        if (at <= now) {
+          elapsed.push(key);
+          delete stored[key];
+        }
+      }
+      await this.ctx.storage.put(DEADLINES_KEY, stored);
+
+      for (const key of elapsed) {
+        if (key === "idle-reap") {
+          await this.handleIdleReap();
+        } else if (key === "turn-timeout") {
+          if (this.#runtime !== null) await this.#runtime.fireTimeout(now);
+        }
       }
 
+      // Re-arm in case dispatch added new deadlines (e.g. `fireTimeout`
+      // advanced the session into a new state with its own deadline, which
+      // the runtime would have already pushed into the scheduler).
+      const refreshed = (await this.ctx.storage.get<StoredDeadlines>(DEADLINES_KEY)) ?? {};
+      const next = nextDeadline(refreshed);
+      if (next !== null) await this.ctx.storage.setAlarm(next);
+    }
+
+    /**
+     * Idle-reap dispatch. Preserves the pre-multiplex semantic: if there
+     * are still live web sockets, treat the alarm as a re-arm trigger;
+     * otherwise wipe DO storage and drop in-memory state. The DO instance
+     * itself is recycled by the runtime — next `fetch` will rehydrate
+     * from a clean slate.
+     */
+    private async handleIdleReap(): Promise<void> {
+      const sockets = this.ctx.getWebSockets();
+      if (sockets.length > 0) {
+        await this.#scheduler.setDeadline("idle-reap", Date.now() + idleReapMs);
+        return;
+      }
       await this.ctx.storage.deleteAll();
       this.#runtime = null;
       this.#lobby = null;
@@ -470,7 +560,7 @@ export function createGameWorker<TGame extends AnyGame>(
           lobby.buildStateMessage(meta.roomID, this.liveLobbyUserIDs(meta.roomID)),
         );
         this.broadcastLobbyState(meta, lobby);
-        await this.scheduleIdleReap();
+        await this.#scheduler.setDeadline("idle-reap", Date.now() + idleReapMs);
         return new Response(null, { status: 101, webSocket: clientSocket });
       }
 
@@ -521,7 +611,7 @@ export function createGameWorker<TGame extends AnyGame>(
         });
       }
 
-      await this.scheduleIdleReap();
+      await this.#scheduler.setDeadline("idle-reap", Date.now() + idleReapMs);
 
       return new Response(null, { status: 101, webSocket: clientSocket });
     }
@@ -670,7 +760,7 @@ export function createGameWorker<TGame extends AnyGame>(
 
       const drop = lobby.dropUser(attachment.userID);
       if (!drop.changed) {
-        await this.scheduleIdleReap();
+        await this.#scheduler.setDeadline("idle-reap", Date.now() + idleReapMs);
         return;
       }
 
@@ -682,7 +772,7 @@ export function createGameWorker<TGame extends AnyGame>(
       } else {
         this.broadcastLobbyState(meta, lobby);
       }
-      await this.scheduleIdleReap();
+      await this.#scheduler.setDeadline("idle-reap", Date.now() + idleReapMs);
     }
 
     private async handleStart(
@@ -812,7 +902,7 @@ export function createGameWorker<TGame extends AnyGame>(
         await this.tickBotDriver(meta, runtime);
       }
 
-      await this.scheduleIdleReap();
+      await this.#scheduler.setDeadline("idle-reap", Date.now() + idleReapMs);
     }
 
     /**
@@ -962,13 +1052,7 @@ export function createGameWorker<TGame extends AnyGame>(
       // currently active.
       await this.ensureBotDriver(meta);
       await this.tickBotDriver(meta, runtime);
-      await this.scheduleIdleReap();
-    }
-
-    private async scheduleIdleReap(): Promise<void> {
-      try {
-        await this.ctx.storage.setAlarm(Date.now() + idleReapMs);
-      } catch {}
+      await this.#scheduler.setDeadline("idle-reap", Date.now() + idleReapMs);
     }
 
     private broadcastGamePresence(
@@ -1242,6 +1326,7 @@ export function createGameWorker<TGame extends AnyGame>(
           initialNow: meta.initialNow,
           persistence,
           roomID: meta.roomID,
+          scheduler: this.#scheduler,
           ...(cloudConfigured
             ? {
                 onActionProfileCommit: async (input) => {

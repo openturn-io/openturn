@@ -62,7 +62,8 @@
               "how-to/model-hidden-info",
               "how-to/handle-simultaneous-moves",
               "how-to/persist-player-state",
-              "how-to/configure-match-settings"
+              "how-to/configure-match-settings",
+              "how-to/enforce-turn-timeouts"
             ]
           },
           {

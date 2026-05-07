@@ -36,13 +36,6 @@ export {
   type BridgeHostTokenRefreshResult,
 } from "./host";
 export {
-  createDevTransport,
-  type AnonymousSession,
-  type DevTransport,
-  type DevTransportOptions,
-  type DevLobbySnapshot,
-} from "./dev-transport";
-export {
   describeRoomStatus,
   extractRoomID,
   snapshotToBridgeInit,
@@ -79,4 +72,5 @@ export {
   type ResolvedTheme,
   type Theme,
 } from "./theme";
+export { TurnCountdown, useTurnDeadline } from "./play-deadline";
 export type { HostedConnectionDescriptor } from "@openturn/client";

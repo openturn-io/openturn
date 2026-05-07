@@ -10,8 +10,6 @@ import {
   type SaveRoomResult,
 } from "@openturn/bridge";
 
-const SESSION_KEY = "openturn.dev.play-token";
-
 interface DevAdapterInput {
   deploymentID: string;
   gameName: string;
@@ -43,48 +41,6 @@ interface DevLobbySnapshotJSON {
 export function createDevPlayShellAdapter(input: DevAdapterInput): PlayShellAdapter {
   const { deploymentID, gameName, bundleBase, multiplayer, shellControls } = input;
   const resolvedBundleURL = new URL(bundleBase, window.location.href).toString();
-
-  async function sessionToken(): Promise<string | null> {
-    const stored = sessionStorage.getItem(SESSION_KEY);
-    if (stored !== null) {
-      const probe = await fetch("/api/dev/me", {
-        headers: { authorization: `Bearer ${stored}` },
-      }).catch(() => null);
-      if (probe?.ok === true) return stored;
-      sessionStorage.removeItem(SESSION_KEY);
-    }
-    const probeNoAuth = await fetch("/api/dev/me").catch(() => null);
-    if (probeNoAuth?.ok === true) return null;
-    try {
-      const session = await requestJSON<{ token: string }>("/api/dev/session/anonymous", {
-        method: "POST",
-      });
-      sessionStorage.setItem(SESSION_KEY, session.token);
-      return session.token;
-    } catch (caught) {
-      const err = caught as { status?: number; payload?: { code?: string } };
-      if (
-        err.status === 400 &&
-        err.payload?.code === "ANONYMOUS_USERS_CANNOT_SIGN_IN_AGAIN_ANONYMOUSLY"
-      ) {
-        return null;
-      }
-      throw caught;
-    }
-  }
-
-  async function authorized<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const token = await sessionToken();
-    try {
-      return await requestJSON<T>(path, withAuth(init, token));
-    } catch (caught) {
-      const err = caught as { status?: number };
-      if (err.status !== 401 || token === null) throw caught;
-      sessionStorage.removeItem(SESSION_KEY);
-    }
-    const fresh = await sessionToken();
-    return await requestJSON<T>(path, withAuth(init, fresh));
-  }
 
   function snapshotFromDev(snap: DevLobbySnapshotJSON): PlayRoomSnapshot {
     const out: PlayRoomSnapshot = {
@@ -146,7 +102,7 @@ export function createDevPlayShellAdapter(input: DevAdapterInput): PlayShellAdap
     },
     async createRoom(): Promise<PlayRoomResult> {
       try {
-        const snap = await authorized<DevLobbySnapshotJSON>("/api/dev/rooms", { method: "POST" });
+        const snap = await requestJSON<DevLobbySnapshotJSON>("/api/dev/rooms", { method: "POST" });
         return { status: "ok", snapshot: snapshotFromDev(snap) };
       } catch (caught) {
         return mapError(caught);
@@ -154,7 +110,7 @@ export function createDevPlayShellAdapter(input: DevAdapterInput): PlayShellAdap
     },
     async joinRoom(roomID): Promise<PlayRoomResult> {
       try {
-        const snap = await authorized<DevLobbySnapshotJSON>(
+        const snap = await requestJSON<DevLobbySnapshotJSON>(
           `/api/dev/rooms/${encodeURIComponent(roomID)}/lobby-token`,
           { method: "POST" },
         );
@@ -165,7 +121,7 @@ export function createDevPlayShellAdapter(input: DevAdapterInput): PlayShellAdap
     },
     async refreshToken(_ctx: BridgeHostTokenContext): Promise<BridgeHostTokenRefreshResult | null> {
       try {
-        const refreshed = await authorized<DevLobbySnapshotJSON>(
+        const refreshed = await requestJSON<DevLobbySnapshotJSON>(
           `/api/dev/rooms/${encodeURIComponent(_ctx.roomID)}/lobby-token`,
           { method: "POST" },
         );
@@ -179,13 +135,9 @@ export function createDevPlayShellAdapter(input: DevAdapterInput): PlayShellAdap
     },
     async createRoomFromSave(bytes): Promise<PlayRoomResult> {
       try {
-        const token = await sessionToken();
         const uploadResponse = await fetch("/api/dev/saves", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/octet-stream",
-            ...(token === null ? {} : { authorization: `Bearer ${token}` }),
-          },
+          headers: { "Content-Type": "application/octet-stream" },
           body: new Blob([new Uint8Array(bytes)], { type: "application/octet-stream" }),
         });
         const uploadBody = (await uploadResponse.json().catch(() => null)) as
@@ -197,7 +149,7 @@ export function createDevPlayShellAdapter(input: DevAdapterInput): PlayShellAdap
             reason: uploadBody?.error ?? `upload failed (${uploadResponse.status})`,
           };
         }
-        const newRoom = await authorized<DevLobbySnapshotJSON>(
+        const newRoom = await requestJSON<DevLobbySnapshotJSON>(
           `/api/dev/saves/${encodeURIComponent(uploadBody.saveID)}/new-room`,
           { method: "POST" },
         );
@@ -208,7 +160,7 @@ export function createDevPlayShellAdapter(input: DevAdapterInput): PlayShellAdap
     },
     async saveCurrentRoom(roomID): Promise<SaveRoomResult> {
       try {
-        const result = await authorized<{ saveID: string; downloadURL?: string }>(
+        const result = await requestJSON<{ saveID: string; downloadURL?: string }>(
           `/api/dev/rooms/${encodeURIComponent(roomID)}/save`,
           { method: "POST" },
         );
@@ -233,7 +185,7 @@ export function createDevPlayShellAdapter(input: DevAdapterInput): PlayShellAdap
     },
     async resetRoom(roomID) {
       try {
-        await authorized(`/api/dev/rooms/${encodeURIComponent(roomID)}/reset`, { method: "POST" });
+        await requestJSON(`/api/dev/rooms/${encodeURIComponent(roomID)}/reset`, { method: "POST" });
         return { status: "ok" };
       } catch (caught) {
         return mapRoomActionError(caught);
@@ -241,7 +193,7 @@ export function createDevPlayShellAdapter(input: DevAdapterInput): PlayShellAdap
     },
     async returnToLobby(roomID) {
       try {
-        await authorized(`/api/dev/rooms/${encodeURIComponent(roomID)}/return-to-lobby`, {
+        await requestJSON(`/api/dev/rooms/${encodeURIComponent(roomID)}/return-to-lobby`, {
           method: "POST",
         });
         return { status: "ok" };
@@ -251,7 +203,7 @@ export function createDevPlayShellAdapter(input: DevAdapterInput): PlayShellAdap
     },
     async pollPresence(roomID, signal): Promise<PresenceSnapshot | null> {
       try {
-        const raw = await authorized<DevPresenceJSON>(
+        const raw = await requestJSON<DevPresenceJSON>(
           `/api/dev/rooms/${encodeURIComponent(roomID)}/presence`,
           { signal },
         );
@@ -263,6 +215,11 @@ export function createDevPlayShellAdapter(input: DevAdapterInput): PlayShellAdap
   } satisfies PlayShellAdapter;
 }
 
+// All `/api/dev/*` requests rely on the better-auth session cookie that the
+// server primes on the play-shell HTML response. fetch sends same-origin
+// cookies by default, so no header plumbing is required here. A 401 means the
+// cookie expired or was cleared mid-session — reload to let the server
+// re-prime, then bubble the error so `mapError` can surface "unauthorized".
 async function requestJSON<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, init);
   const payload = (await response.json().catch(() => null)) as
@@ -274,19 +231,12 @@ async function requestJSON<T>(path: string, init: RequestInit = {}): Promise<T> 
     ) as Error & { status?: number; payload?: unknown };
     error.status = response.status;
     error.payload = payload;
+    if (response.status === 401 && typeof window !== "undefined") {
+      window.location.reload();
+    }
     throw error;
   }
   return payload as T;
-}
-
-function withAuth(init: RequestInit, token: string | null): RequestInit {
-  return {
-    ...init,
-    headers: {
-      ...(init.headers ?? {}),
-      ...(token === null ? {} : { authorization: `Bearer ${token}` }),
-    },
-  };
 }
 
 interface DevPresenceJSON {

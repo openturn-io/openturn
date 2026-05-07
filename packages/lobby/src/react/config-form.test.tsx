@@ -8,7 +8,7 @@ import { ConfigForm } from "./config-form";
 describe("<ConfigForm />", () => {
   test("renders a number field with min/max as a slider", () => {
     const onChange = vi.fn();
-    render(
+    const { container } = render(
       <ConfigForm
         schema={{ n: { type: "number", default: 5, min: 0, max: 10, label: "N" } }}
         values={{ n: 5 }}
@@ -16,13 +16,16 @@ describe("<ConfigForm />", () => {
         onChange={onChange}
       />,
     );
-    const input = screen.getByLabelText("N") as HTMLInputElement;
+    // The label wraps both the field name and a value-display span; query by
+    // the input's id directly for robustness against label restructuring.
+    const input = container.querySelector("#n") as HTMLInputElement;
+    expect(input).not.toBeNull();
     expect(input.type).toBe("range");
     expect(input.value).toBe("5");
   });
 
   test("renders a number field without min/max as a stepper", () => {
-    render(
+    const { container } = render(
       <ConfigForm
         schema={{ n: { type: "number", default: 5, label: "N" } }}
         values={{ n: 5 }}
@@ -30,7 +33,8 @@ describe("<ConfigForm />", () => {
         onChange={vi.fn()}
       />,
     );
-    const input = screen.getByLabelText("N") as HTMLInputElement;
+    const input = container.querySelector("#n") as HTMLInputElement;
+    expect(input).not.toBeNull();
     expect(input.type).toBe("number");
   });
 
@@ -94,7 +98,7 @@ describe("<ConfigForm />", () => {
   });
 
   test("disabled prop disables all inputs", () => {
-    render(
+    const { container } = render(
       <ConfigForm
         schema={{
           n: { type: "number", default: 1, label: "N" },
@@ -105,13 +109,13 @@ describe("<ConfigForm />", () => {
         onChange={vi.fn()}
       />,
     );
-    expect((screen.getByLabelText("N") as HTMLInputElement).disabled).toBe(true);
-    expect((screen.getByLabelText("B") as HTMLInputElement).disabled).toBe(true);
+    expect((container.querySelector("#n") as HTMLInputElement).disabled).toBe(true);
+    expect((container.querySelector("#b") as HTMLInputElement).disabled).toBe(true);
   });
 
   test("calls onChange with field key + new value on edit", () => {
     const onChange = vi.fn();
-    render(
+    const { container } = render(
       <ConfigForm
         schema={{ n: { type: "number", default: 5, min: 0, max: 10, label: "N" } }}
         values={{ n: 5 }}
@@ -119,7 +123,7 @@ describe("<ConfigForm />", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.change(screen.getByLabelText("N"), { target: { value: "8" } });
+    fireEvent.change(container.querySelector("#n") as HTMLInputElement, { target: { value: "8" } });
     expect(onChange).toHaveBeenCalledWith("n", 8);
   });
 

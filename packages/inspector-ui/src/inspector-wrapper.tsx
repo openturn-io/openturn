@@ -255,11 +255,17 @@ function InspectorRuntime<TGame extends AnyGame>({
       ? getLiveMatchStore().subscribe
       : undefined;
 
+    // Thread the original session's `initialNow` through so the frozen
+    // store's `getReplayData()` returns a correctly-timed replay envelope.
+    // `frozenSnapshot.meta.now` is the wall-clock of the most recent event
+    // after the per-event meta.now advance landed, NOT session creation.
+    const liveInitialNow = getLiveMatchStore?.().getReplayData().initialNow;
     return createFrozenMatchStore(
       game,
       currentReplayFrame.snapshot as ReturnType<OpenturnMatchStore<TGame>["getSnapshot"]>,
       replayBatch,
       subscribeToUpdates,
+      liveInitialNow,
     );
   }, [active, canReturnToLive, currentReplayFrame, game, getLiveMatchStore, replayTimeline.frames, state.mode]);
 
