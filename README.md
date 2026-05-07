@@ -11,7 +11,28 @@ Check out this ready-to-play Splendor board game example: https://openturn.io/ga
 
 Its source code is available at https://github.com/openturn-io/openturn/tree/main/examples/games/splendor
 
-But we recommend a quick start example below to overview the basic game definition APIs.
+But we recommend a quick glance at a game definition example below to overview the basic game definition APIs.
+
+```ts
+import { defineGame, move } from "@openturn/gamekit";
+
+export const game = defineGame({
+  maxPlayers: 2,
+  setup: () => ({ value: 0 }),
+  moves: {
+    increment: move({
+      run({ G, move, player }) {
+        const value = G.value + 1;
+        if (value >= 5) return move.finish({ winner: player.id }, { value });
+        return move.endTurn({ value });
+      },
+    }),
+  },
+  views: {
+    public: ({ G, turn }) => ({ value: G.value, currentPlayer: turn.currentPlayer }),
+  },
+});
+```
 
 ## Why Openturn
 
