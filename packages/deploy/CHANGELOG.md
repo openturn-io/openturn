@@ -1,5 +1,20 @@
 # @openturn/deploy
 
+## 0.8.0
+
+### Patch Changes
+
+- Updated dependencies [ba64788]
+- Updated dependencies [ba64788]
+- Updated dependencies [a62cd82]
+- Updated dependencies [056a3d8]
+- Updated dependencies [da70cae]
+  - @openturn/core@0.8.0
+  - @openturn/server@0.8.0
+  - @openturn/protocol@0.8.0
+  - @openturn/json@0.8.0
+  - @openturn/manifest@0.8.0
+
 ## 0.7.0
 
 ### Patch Changes
