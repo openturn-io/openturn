@@ -1,5 +1,12 @@
 # @openturn/client
 
+## 0.8.1
+
+### Patch Changes
+
+- @openturn/json@0.8.1
+- @openturn/protocol@0.8.1
+
 ## 0.8.0
 
 ### Patch Changes

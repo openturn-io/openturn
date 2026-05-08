@@ -1,5 +1,18 @@
 # @openturn/react
 
+## 0.8.1
+
+### Patch Changes
+
+- @openturn/bot@0.8.1
+- @openturn/bridge@0.8.1
+- @openturn/client@0.8.1
+- @openturn/core@0.8.1
+- @openturn/inspector@0.8.1
+- @openturn/lobby@0.8.1
+- @openturn/protocol@0.8.1
+- @openturn/replay@0.8.1
+
 ## 0.8.0
 
 ### Minor Changes

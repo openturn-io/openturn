@@ -1,5 +1,13 @@
 # @openturn/bot
 
+## 0.8.1
+
+### Patch Changes
+
+- @openturn/client@0.8.1
+- @openturn/core@0.8.1
+- @openturn/json@0.8.1
+
 ## 0.8.0
 
 ### Patch Changes
