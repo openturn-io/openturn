@@ -2334,10 +2334,9 @@ export function createOpenturnProject(options: {
 
   const slug = slugify(basename(projectDir)) || "openturn-game";
   const gameName = toTitleCase(slug);
-  const openturnVersion = resolveCreatedProjectOpenturnVersion();
   const packageJson = createProjectPackageJson({
     name: slug,
-    openturnVersion,
+    openturnVersion: resolveCreatedProjectOpenturnVersion(),
   });
 
   mkdirSync(join(projectDir, "app"), { recursive: true });
@@ -2785,32 +2784,14 @@ function createTemplateMetadataSource(input: {
 }
 
 function resolveCreatedProjectOpenturnVersion(): string {
-  return findOpenturnWorkspaceRoot(process.cwd()) === null ? "latest" : "workspace:*";
-}
-
-function findOpenturnWorkspaceRoot(start: string): string | null {
-  let current = resolve(start);
-
-  while (true) {
-    const packageJsonPath = join(current, "package.json");
-
-    if (existsSync(packageJsonPath) && existsSync(join(current, "packages", "core", "package.json"))) {
-      try {
-        const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as { name?: unknown };
-
-        if (packageJson.name === "openturn") {
-          return current;
-        }
-      } catch {}
-    }
-
-    const parent = dirname(current);
-    if (parent === current) {
-      return null;
-    }
-
-    current = parent;
+  // The @openturn/* packages are released together via changesets, so the
+  // CLI's own version is the right pin for the sibling packages it scaffolds.
+  const packageJsonPath = resolve(import.meta.dir, "..", "package.json");
+  const { version } = JSON.parse(readFileSync(packageJsonPath, "utf8")) as { version?: unknown };
+  if (typeof version !== "string" || version.length === 0) {
+    throw new Error(`Cannot determine @openturn/cli version from ${packageJsonPath}`);
   }
+  return `^${version}`;
 }
 
 function toDisplayPath(path: string): string {

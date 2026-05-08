@@ -124,8 +124,12 @@ const botDeployment = defineGameDeployment({
 });
 
 describe("createOpenturnProject", () => {
-  test("creates the default local template with workspace dependencies", () => {
+  test("creates the default local template pinned to the CLI's own version with a caret range", () => {
     const projectDir = createScaffoldTarget("local-template");
+    const cliVersion = (JSON.parse(
+      readFileSync(resolve(import.meta.dir, "..", "package.json"), "utf8"),
+    ) as { version: string }).version;
+    const expectedRange = `^${cliVersion}`;
 
     try {
       const result = createOpenturnProject({ projectDir });
@@ -136,10 +140,10 @@ describe("createOpenturnProject", () => {
       };
 
       expect(result.template).toBe("local");
-      expect(packageJson.dependencies["@openturn/core"]).toBe("workspace:*");
-      expect(packageJson.dependencies["@openturn/gamekit"]).toBe("workspace:*");
-      expect(packageJson.dependencies["@openturn/react"]).toBe("workspace:*");
-      expect(packageJson.devDependencies["@openturn/cli"]).toBe("workspace:*");
+      expect(packageJson.dependencies["@openturn/core"]).toBe(expectedRange);
+      expect(packageJson.dependencies["@openturn/gamekit"]).toBe(expectedRange);
+      expect(packageJson.dependencies["@openturn/react"]).toBe(expectedRange);
+      expect(packageJson.devDependencies["@openturn/cli"]).toBe(expectedRange);
       expect(packageJson.devDependencies.tailwindcss).toBeDefined();
       expect(packageJson.devDependencies["@tailwindcss/vite"]).toBeDefined();
       expect(packageJson.scripts).toMatchObject({
