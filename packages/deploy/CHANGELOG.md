@@ -1,5 +1,16 @@
 # @openturn/deploy
 
+## 0.8.1
+
+### Patch Changes
+
+- Updated dependencies [ce2d094]
+  - @openturn/server@0.8.1
+  - @openturn/core@0.8.1
+  - @openturn/json@0.8.1
+  - @openturn/manifest@0.8.1
+  - @openturn/protocol@0.8.1
+
 ## 0.8.0
 
 ### Patch Changes

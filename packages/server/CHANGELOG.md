@@ -1,5 +1,15 @@
 # @openturn/server
 
+## 0.8.1
+
+### Patch Changes
+
+- ce2d094: Fix Cloudflare Worker turn-timeout alarms so cold Durable Object wakes rehydrate the game runtime, broadcast timeout deliveries, tick bots, and arm initial turn deadlines from lobby start time.
+  - @openturn/bot@0.8.1
+  - @openturn/core@0.8.1
+  - @openturn/json@0.8.1
+  - @openturn/protocol@0.8.1
+
 ## 0.8.0
 
 ### Minor Changes
