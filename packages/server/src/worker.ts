@@ -351,7 +351,25 @@ export function createGameWorker<TGame extends AnyGame>(
         if (key === "idle-reap") {
           await this.handleIdleReap();
         } else if (key === "turn-timeout") {
-          if (this.#runtime !== null) await this.#runtime.fireTimeout(now);
+          // Cloudflare evicts the DO instance between alarms while
+          // WebSockets are hibernated, so `#runtime` is typically null when
+          // alarm() wakes us up cold. Rehydrate from storage before
+          // dispatching — otherwise the dispatch silently no-ops, the
+          // deadline (already deleted above) is gone, and the bottom
+          // re-arm sees no pending deadlines, wedging the match. Skip if
+          // the room never advanced past the lobby (no game runtime to
+          // dispatch into; turn-timeout deadlines should not exist there).
+          const meta = await this.ctx.storage.get<InitMeta>(META_KEY);
+          if (meta === undefined || meta.activePlayerIDs === null) continue;
+          const runtime = this.#runtime ?? await this.getOrCreateRuntime(meta);
+          const envelopes = await runtime.fireTimeout(now);
+          // Broadcast to connected players and let the bot driver react —
+          // mirrors the CLI scheduler dispatch and the human-action path
+          // in `handleGameMessage` so a timeout-induced phase change is
+          // visible to clients and any newly-active bot seat moves.
+          this.broadcastGameDeliveries(meta.roomID, envelopes);
+          await this.ensureBotDriver(meta);
+          await this.tickBotDriver(meta, runtime);
         }
       }
 
@@ -379,6 +397,7 @@ export function createGameWorker<TGame extends AnyGame>(
       await this.ctx.storage.deleteAll();
       this.#runtime = null;
       this.#lobby = null;
+      this.#botDriver = null;
     }
 
     private async handleBootstrap(request: Request): Promise<Response> {
@@ -800,8 +819,19 @@ export function createGameWorker<TGame extends AnyGame>(
         .slice()
         .sort((a, b) => a.seatIndex - b.seatIndex)
         .map((a) => a.playerID);
+      // Reset `initialNow` to match-start wall-clock. `meta.initialNow` was
+      // first written when `ensureMeta` ran on the earliest lobby WS connect
+      // (or bootstrap), which can be many minutes/hours before `lobby:start`
+      // actually fires. The runtime built below threads `meta.initialNow`
+      // into `session.now`; the game's `setup()` and initial state's
+      // `deadline` (typically `ctx.now + turnTimeoutMs`) are computed
+      // against that. Without this reset, a lobby that sat open longer than
+      // `turnTimeoutMs` would arm an already-elapsed turn-timeout alarm and
+      // fire it the instant the runtime was constructed. Mirrors the CLI
+      // dev shell which uses `Date.now()` at `lobby:start` directly.
       meta = {
         ...meta,
+        initialNow: Date.now(),
         activePlayerIDs,
         hostPlayerID: startResult.hostPlayerID,
         config: startResult.config?.values ?? null,
@@ -890,15 +920,24 @@ export function createGameWorker<TGame extends AnyGame>(
 
       this.closeAllLobbySockets(4010, "lobby_transition");
 
-      // Bot dispatch lifecycle. If `lobby:start` minted any bot seat
-      // assignments, wire the bot driver now and fire the first tick — this
-      // covers games where seat 0 is bot-controlled (the bot must move
-      // before any human dispatch happens).
+      // Construct the runtime eagerly at `lobby:start` for ALL games (not
+      // just those with bots). This arms the initial state's turn-timeout
+      // alarm against `Date.now()` at lobby:start instead of waiting for
+      // the first game-socket connect — otherwise a slow first connect
+      // (network/UX delay > `turnTimeoutMs`) would cause the same
+      // already-elapsed-deadline immediate-fire that meta.initialNow drift
+      // used to cause. Mirrors the CLI dev shell at
+      // `cli/src/index.ts:1566`. Bot wiring layers on top of the same
+      // construction call.
       const registry = (erasedDeployment.game as { bots?: BotRegistryShape<AnyGame> }).bots;
       const botMap = resolveBotMap(registry, startResult.assignments);
       if (botMap !== null) {
         this.#botDriver = new BotDriver({ game: erasedDeployment.game, bots: botMap });
-        const runtime = await this.getOrCreateRuntime(meta);
+      }
+      const runtime = await this.getOrCreateRuntime(meta);
+      if (botMap !== null) {
+        // Games where seat 0 is bot-controlled: the bot must move before
+        // any human dispatch happens, so kick the driver once now.
         await this.tickBotDriver(meta, runtime);
       }
 
