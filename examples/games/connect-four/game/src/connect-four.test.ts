@@ -1,7 +1,9 @@
+import { createLocalSession } from "@openturn/core";
 import { describe, expect, test } from "bun:test";
 
-import { lowestEmptyRow } from "./board";
-import type { Board } from "./index";
+import { findWinningLine, lowestEmptyRow, withDisc } from "./board";
+import { connectFour } from "./index";
+import type { Board, DropDiscArgs, Mark } from "./index";
 
 function emptyBoard(): Board {
   return Array.from({ length: 6 }, () => Array(7).fill(null));
@@ -32,8 +34,6 @@ describe("lowestEmptyRow", () => {
   });
 });
 
-import { withDisc } from "./board";
-
 describe("withDisc", () => {
   test("places a disc at (r, c) and returns a new array (immutable)", () => {
     const before = emptyBoard();
@@ -52,8 +52,6 @@ describe("withDisc", () => {
     expect(after[3]![0]).toBeNull();
   });
 });
-
-import { findWinningLine } from "./board";
 
 describe("findWinningLine", () => {
   test("vertical 4-in-a-row through (2, 3) for player 0", () => {
@@ -140,10 +138,6 @@ describe("findWinningLine", () => {
     expect(findWinningLine(board, 5, 0)).toBeNull();
   });
 });
-
-import { createLocalSession } from "@openturn/core";
-import { connectFour } from "./index";
-import type { DropDiscArgs, Mark } from "./index";
 
 const connectFourMatch = { players: connectFour.playerIDs };
 
@@ -240,14 +234,17 @@ describe("dropDisc — win detection", () => {
 
   test("\\ diagonal win for player 0", () => {
     const session = createLocalSession(connectFour, { match: connectFourMatch });
+    // Closes the \ line on cells (2,1) (3,2) (4,3) (5,4) — all player 0.
+    // Supporting fillers stack underneath in cols 1, 2, 3, plus parking in col 6
+    // to consume P0's extra discs without creating an earlier win.
     play(session, [
-      ["0", 0], ["1", 1],
-      ["0", 1], ["1", 2],
+      ["0", 4], ["1", 3],
       ["0", 3], ["1", 2],
-      ["0", 2], ["1", 5],
-      ["0", 3], ["1", 6],
-      ["0", 3], ["1", 5],
-      ["0", 3],
+      ["0", 6], ["1", 2],
+      ["0", 2], ["1", 1],
+      ["0", 6], ["1", 1],
+      ["0", 6], ["1", 1],
+      ["0", 1],
     ]);
     expect(session.getResult()).toEqual({ winner: "0" });
   });

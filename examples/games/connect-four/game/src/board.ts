@@ -3,8 +3,8 @@ import type { Board, Cell, Mark } from "./index";
 type ReadonlyBoard = ReadonlyArray<ReadonlyArray<Cell>>;
 
 /**
- * Returns the row index (0-5) where a disc dropped into `col` would land.
- * Returns -1 when the column is full. board[0] is the top row.
+ * Returns the row index (0..ROWS-1) where a disc dropped into `col` would
+ * land, or -1 if the column is full. board[0] is the top row.
  */
 export function lowestEmptyRow(board: ReadonlyBoard, col: number): number {
   for (let r = board.length - 1; r >= 0; r -= 1) {
@@ -14,8 +14,8 @@ export function lowestEmptyRow(board: ReadonlyBoard, col: number): number {
 }
 
 /**
- * Returns a new board with `mark` placed at (r, c). The other rows are
- * reference-shared; only the row at `r` is rebuilt.
+ * Returns a new board with `mark` placed at (r, c). Other rows are
+ * deep-copied; modifying the result does not affect the input.
  */
 export function withDisc(board: ReadonlyBoard, r: number, c: number, mark: Mark): Board {
   return board.map((row, rowIndex) =>
