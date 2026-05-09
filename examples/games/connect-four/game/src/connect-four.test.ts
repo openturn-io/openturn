@@ -143,6 +143,7 @@ describe("findWinningLine", () => {
 
 import { createLocalSession } from "@openturn/core";
 import { connectFour } from "./index";
+import type { DropDiscArgs, Mark } from "./index";
 
 const connectFourMatch = { players: connectFour.playerIDs };
 
@@ -262,5 +263,32 @@ describe("dropDisc — win detection", () => {
       ["0", 3],
     ]);
     expect(session.getResult()).toEqual({ winner: "0" });
+  });
+});
+
+describe("legalActions", () => {
+  test("enumerates all 7 columns at game start for the active player", () => {
+    const session = createLocalSession(connectFour, { match: connectFourMatch });
+    const actions = connectFour.legalActions!(session.getState() as never, "0" as never);
+    expect(actions).toHaveLength(7);
+    expect(actions.map((a) => (a.payload as DropDiscArgs).col).sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+  });
+
+  test("returns empty for the non-active player", () => {
+    const session = createLocalSession(connectFour, { match: connectFourMatch });
+    const actions = connectFour.legalActions!(session.getState() as never, "1" as never);
+    expect(actions).toEqual([]);
+  });
+
+  test("excludes a column once it's been filled to the top", () => {
+    const session = createLocalSession(connectFour, { match: connectFourMatch });
+    for (let i = 0; i < 6; i += 1) {
+      const player = i % 2 === 0 ? "0" : "1";
+      session.applyEvent(player, "dropDisc", { col: 0 });
+    }
+    // Now whoever's active should not have col 0 in their legal actions.
+    const active = session.getState().derived.activePlayers[0]! as Mark;
+    const actions = connectFour.legalActions!(session.getState() as never, active as never);
+    expect(actions.map((a) => (a.payload as DropDiscArgs).col)).not.toContain(0);
   });
 });
