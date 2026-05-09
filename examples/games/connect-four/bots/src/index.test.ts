@@ -185,3 +185,27 @@ describe("heuristicBot vs randomBot integration", () => {
     expect(losses).toBeLessThanOrEqual(1);
   }, 60_000);
 });
+
+import { makeMinimaxBot } from "./minimax";
+
+describe("minimaxBot — tactical correctness", () => {
+  const bot = makeMinimaxBot({ depth: 4, budgetMs: 5_000 });
+
+  test("plays an immediate vertical win", async () => {
+    let board = emptyBoard();
+    board = withDisc(board, lowestEmptyRow(board, 3), 3, "0");
+    board = withDisc(board, lowestEmptyRow(board, 3), 3, "0");
+    board = withDisc(board, lowestEmptyRow(board, 3), 3, "0");
+    const action = await decide(bot, board, "0");
+    expect((action.payload as DropDiscArgs).col).toBe(3);
+  });
+
+  test("blocks an opponent's vertical 3-in-a-row", async () => {
+    let board = emptyBoard();
+    board = withDisc(board, lowestEmptyRow(board, 4), 4, "1");
+    board = withDisc(board, lowestEmptyRow(board, 4), 4, "1");
+    board = withDisc(board, lowestEmptyRow(board, 4), 4, "1");
+    const action = await decide(bot, board, "0");
+    expect((action.payload as DropDiscArgs).col).toBe(4);
+  });
+});
