@@ -43,6 +43,15 @@
         "@openturn/gamekit": "workspace:*",
       },
     },
+    "examples/games/connect-four/bots": {
+      "name": "@openturn/example-connect-four-bots",
+      "dependencies": {
+        "@openturn/bot": "workspace:*",
+        "@openturn/core": "workspace:*",
+        "@openturn/example-connect-four-game": "workspace:*",
+        "@openturn/lobby": "workspace:*",
+      },
+    },
     "examples/games/connect-four/game": {
       "name": "@openturn/example-connect-four-game",
       "version": "0.0.0",
@@ -340,12 +349,12 @@
       "name": "@openturn/bot",
       "version": "0.8.1",
       "dependencies": {
-        "@openturn/client": "^0.6.1",
-        "@openturn/core": "^0.6.1",
-        "@openturn/json": "^0.6.1",
+        "@openturn/client": "^0.8.1",
+        "@openturn/core": "^0.8.1",
+        "@openturn/json": "^0.8.1",
       },
       "devDependencies": {
-        "@openturn/gamekit": "^0.6.1",
+        "@openturn/gamekit": "^0.8.1",
       },
     },
     "packages/bridge": {
@@ -411,8 +420,8 @@
       "name": "@openturn/client",
       "version": "0.8.1",
       "dependencies": {
-        "@openturn/json": "^0.6.1",
-        "@openturn/protocol": "^0.6.1",
+        "@openturn/json": "^0.8.1",
+        "@openturn/protocol": "^0.8.1",
       },
     },
     "packages/core": {
@@ -515,14 +524,14 @@
       "name": "@openturn/lobby",
       "version": "0.8.1",
       "dependencies": {
-        "@openturn/bot": "^0.6.1",
-        "@openturn/client": "^0.6.1",
-        "@openturn/core": "^0.6.1",
-        "@openturn/protocol": "^0.6.1",
-        "@openturn/server": "^0.6.1",
+        "@openturn/bot": "^0.8.1",
+        "@openturn/client": "^0.8.1",
+        "@openturn/core": "^0.8.1",
+        "@openturn/protocol": "^0.8.1",
+        "@openturn/server": "^0.8.1",
       },
       "devDependencies": {
-        "@openturn/gamekit": "^0.6.1",
+        "@openturn/gamekit": "^0.8.1",
         "@testing-library/react": "^16.3.0",
         "@types/react": "^19.2.0",
         "jsdom": "^29.0.1",
@@ -572,8 +581,8 @@
       "name": "@openturn/protocol",
       "version": "0.8.1",
       "dependencies": {
-        "@openturn/core": "^0.6.1",
-        "@openturn/json": "^0.6.1",
+        "@openturn/core": "^0.8.1",
+        "@openturn/json": "^0.8.1",
         "zod": "^4.1.12",
       },
     },
@@ -616,15 +625,15 @@
       "name": "@openturn/server",
       "version": "0.8.1",
       "dependencies": {
-        "@openturn/bot": "^0.6.1",
-        "@openturn/core": "^0.6.1",
-        "@openturn/json": "^0.6.1",
-        "@openturn/protocol": "^0.6.1",
+        "@openturn/bot": "^0.8.1",
+        "@openturn/core": "^0.8.1",
+        "@openturn/json": "^0.8.1",
+        "@openturn/protocol": "^0.8.1",
         "zod": "^4.1.12",
       },
       "devDependencies": {
         "@cloudflare/workers-types": "^4.20260417.1",
-        "@openturn/gamekit": "^0.6.1",
+        "@openturn/gamekit": "^0.8.1",
       },
     },
   },
@@ -928,6 +937,8 @@
     "@openturn/example-battleship-game": ["@openturn/example-battleship-game@workspace:examples/games/battleship/game"],
 
     "@openturn/example-card-discovery-game": ["@openturn/example-card-discovery-game@workspace:examples/using-profiles/card-discovery/game"],
+
+    "@openturn/example-connect-four-bots": ["@openturn/example-connect-four-bots@workspace:examples/games/connect-four/bots"],
 
     "@openturn/example-connect-four-game": ["@openturn/example-connect-four-game@workspace:examples/games/connect-four/game"],
 
