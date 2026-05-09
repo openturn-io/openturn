@@ -1,6 +1,6 @@
 {
   "name": "@openturn/server",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "type": "module",
   "openturn": {
     "runtime": "worker"
@@ -18,15 +18,15 @@
     "prepack": "node ../../scripts/prepack.mjs"
   },
   "dependencies": {
-    "@openturn/bot": "^0.8.1",
-    "@openturn/core": "^0.8.1",
-    "@openturn/json": "^0.8.1",
-    "@openturn/protocol": "^0.8.1",
+    "@openturn/bot": "^0.8.2",
+    "@openturn/core": "^0.8.2",
+    "@openturn/json": "^0.8.2",
+    "@openturn/protocol": "^0.8.2",
     "zod": "^4.1.12"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260417.1",
-    "@openturn/gamekit": "^0.8.1"
+    "@openturn/gamekit": "^0.8.2"
   },
   "license": "Apache-2.0",
   "repository": {

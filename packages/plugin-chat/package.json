@@ -1,6 +1,6 @@
 {
   "name": "@openturn/plugin-chat",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "type": "module",
   "openturn": {
     "runtime": "browser"
@@ -18,9 +18,9 @@
     "prepack": "node ../../scripts/prepack.mjs"
   },
   "dependencies": {
-    "@openturn/core": "^0.8.1",
-    "@openturn/gamekit": "^0.8.1",
-    "@openturn/plugins": "^0.8.1"
+    "@openturn/core": "^0.8.2",
+    "@openturn/gamekit": "^0.8.2",
+    "@openturn/plugins": "^0.8.2"
   },
   "peerDependencies": {
     "react": "^19.2.0",
