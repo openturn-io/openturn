@@ -43,6 +43,14 @@
         "@openturn/gamekit": "workspace:*",
       },
     },
+    "examples/games/connect-four/game": {
+      "name": "@openturn/example-connect-four-game",
+      "version": "0.0.0",
+      "dependencies": {
+        "@openturn/core": "workspace:*",
+        "@openturn/gamekit": "workspace:*",
+      },
+    },
     "examples/games/pig-dice/cli": {
       "name": "@openturn/example-pig-dice-cli",
       "dependencies": {
@@ -330,7 +338,7 @@
     },
     "packages/bot": {
       "name": "@openturn/bot",
-      "version": "0.6.1",
+      "version": "0.8.1",
       "dependencies": {
         "@openturn/client": "^0.6.1",
         "@openturn/core": "^0.6.1",
@@ -342,7 +350,7 @@
     },
     "packages/bridge": {
       "name": "@openturn/bridge",
-      "version": "0.6.1",
+      "version": "0.8.1",
       "dependencies": {
         "@openturn/client": "^0.6.1",
         "@openturn/json": "^0.6.1",
@@ -367,7 +375,7 @@
     },
     "packages/cli": {
       "name": "@openturn/cli",
-      "version": "0.6.1",
+      "version": "0.8.1",
       "bin": {
         "openturn": "./src/index.ts",
       },
@@ -401,7 +409,7 @@
     },
     "packages/client": {
       "name": "@openturn/client",
-      "version": "0.6.1",
+      "version": "0.8.1",
       "dependencies": {
         "@openturn/json": "^0.6.1",
         "@openturn/protocol": "^0.6.1",
@@ -409,14 +417,14 @@
     },
     "packages/core": {
       "name": "@openturn/core",
-      "version": "0.6.1",
+      "version": "0.8.1",
       "dependencies": {
-        "@openturn/json": "^0.6.1",
+        "@openturn/json": "^0.8.1",
       },
     },
     "packages/deploy": {
       "name": "@openturn/deploy",
-      "version": "0.6.1",
+      "version": "0.8.1",
       "dependencies": {
         "@openturn/core": "^0.6.1",
         "@openturn/json": "^0.6.1",
@@ -440,15 +448,15 @@
     },
     "packages/gamekit": {
       "name": "@openturn/gamekit",
-      "version": "0.6.1",
+      "version": "0.8.1",
       "dependencies": {
-        "@openturn/core": "^0.6.1",
-        "@openturn/json": "^0.6.1",
+        "@openturn/core": "^0.8.1",
+        "@openturn/json": "^0.8.1",
       },
     },
     "packages/inspector": {
       "name": "@openturn/inspector",
-      "version": "0.6.1",
+      "version": "0.8.1",
       "dependencies": {
         "@openturn/core": "^0.6.1",
         "@openturn/protocol": "^0.6.1",
@@ -460,7 +468,7 @@
     },
     "packages/inspector-ui": {
       "name": "@openturn/inspector-ui",
-      "version": "0.6.1",
+      "version": "0.8.1",
       "dependencies": {
         "@openturn/bridge": "^0.6.1",
         "@openturn/core": "^0.6.1",
@@ -498,14 +506,14 @@
     },
     "packages/json": {
       "name": "@openturn/json",
-      "version": "0.6.1",
+      "version": "0.8.1",
       "dependencies": {
         "zod": "^4.1.12",
       },
     },
     "packages/lobby": {
       "name": "@openturn/lobby",
-      "version": "0.6.1",
+      "version": "0.8.1",
       "dependencies": {
         "@openturn/bot": "^0.6.1",
         "@openturn/client": "^0.6.1",
@@ -526,14 +534,14 @@
     },
     "packages/manifest": {
       "name": "@openturn/manifest",
-      "version": "0.6.1",
+      "version": "0.8.1",
       "dependencies": {
         "zod": "^4.1.12",
       },
     },
     "packages/plugin-chat": {
       "name": "@openturn/plugin-chat",
-      "version": "0.6.1",
+      "version": "0.8.1",
       "dependencies": {
         "@openturn/core": "^0.5.0",
         "@openturn/gamekit": "^0.5.0",
@@ -553,7 +561,7 @@
     },
     "packages/plugins": {
       "name": "@openturn/plugins",
-      "version": "0.6.1",
+      "version": "0.8.1",
       "dependencies": {
         "@openturn/core": "^0.5.0",
         "@openturn/gamekit": "^0.5.0",
@@ -562,7 +570,7 @@
     },
     "packages/protocol": {
       "name": "@openturn/protocol",
-      "version": "0.6.1",
+      "version": "0.8.1",
       "dependencies": {
         "@openturn/core": "^0.6.1",
         "@openturn/json": "^0.6.1",
@@ -571,7 +579,7 @@
     },
     "packages/react": {
       "name": "@openturn/react",
-      "version": "0.6.1",
+      "version": "0.8.1",
       "dependencies": {
         "@openturn/bot": "^0.6.1",
         "@openturn/bridge": "^0.6.1",
@@ -595,7 +603,7 @@
     },
     "packages/replay": {
       "name": "@openturn/replay",
-      "version": "0.6.1",
+      "version": "0.8.1",
       "dependencies": {
         "@openturn/core": "^0.6.1",
         "@openturn/json": "^0.6.1",
@@ -606,7 +614,7 @@
     },
     "packages/server": {
       "name": "@openturn/server",
-      "version": "0.6.1",
+      "version": "0.8.1",
       "dependencies": {
         "@openturn/bot": "^0.6.1",
         "@openturn/core": "^0.6.1",
@@ -920,6 +928,8 @@
     "@openturn/example-battleship-game": ["@openturn/example-battleship-game@workspace:examples/games/battleship/game"],
 
     "@openturn/example-card-discovery-game": ["@openturn/example-card-discovery-game@workspace:examples/using-profiles/card-discovery/game"],
+
+    "@openturn/example-connect-four-game": ["@openturn/example-connect-four-game@workspace:examples/games/connect-four/game"],
 
     "@openturn/example-paper-scissors-rock-app": ["@openturn/example-paper-scissors-rock-app@workspace:examples/simultaneous-moves/paper-scissors-rock/app"],
 
