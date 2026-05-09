@@ -10,3 +10,13 @@ export function lowestEmptyRow(board: Board, col: number): number {
   }
   return -1;
 }
+
+/**
+ * Returns a new board with `mark` placed at (r, c). The other rows are
+ * reference-shared; only the row at `r` is rebuilt.
+ */
+export function withDisc(board: Board, r: number, c: number, mark: Mark): Board {
+  return board.map((row, rowIndex) =>
+    rowIndex === r ? row.map((cell, colIndex) => (colIndex === c ? mark : cell)) : row,
+  );
+}

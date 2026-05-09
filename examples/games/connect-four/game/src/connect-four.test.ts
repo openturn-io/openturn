@@ -31,3 +31,24 @@ describe("lowestEmptyRow", () => {
     expect(lowestEmptyRow(board, 1)).toBe(-1);
   });
 });
+
+import { withDisc } from "./board";
+
+describe("withDisc", () => {
+  test("places a disc at (r, c) and returns a new array (immutable)", () => {
+    const before = emptyBoard();
+    const after = withDisc(before, 5, 3, "0");
+    expect(after[5]![3]).toBe("0");
+    expect(before[5]![3]).toBeNull();
+    expect(after).not.toBe(before);
+  });
+
+  test("preserves other cells exactly", () => {
+    const before = emptyBoard();
+    before[5]![0] = "1";
+    const after = withDisc(before, 4, 0, "0");
+    expect(after[5]![0]).toBe("1");
+    expect(after[4]![0]).toBe("0");
+    expect(after[3]![0]).toBeNull();
+  });
+});
