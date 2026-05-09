@@ -14,7 +14,7 @@ export type SidebarProps = {
   turn: number;
   moves: number;
   isOver: boolean;
-  onNewMatch: () => void;
+  onNewMatch?: () => void;
 };
 
 export function Sidebar({ seats, turn, moves, isOver, onNewMatch }: SidebarProps): React.ReactElement {
@@ -33,7 +33,7 @@ export function Sidebar({ seats, turn, moves, isOver, onNewMatch }: SidebarProps
           <span className="tabular-nums">{moves}</span>
         </div>
       </div>
-      {isOver && (
+      {isOver && onNewMatch !== undefined && (
         <button
           type="button"
           onClick={onNewMatch}

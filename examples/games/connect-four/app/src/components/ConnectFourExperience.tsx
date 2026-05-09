@@ -1,306 +1,140 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
-import {
-  enumerateLegalActions,
-  forkRng,
-  simulate,
-  type Bot,
-  type LegalAction,
-} from "@openturn/bot";
-import {
-  connectFourBotRegistry,
-  connectFourWithBots,
-} from "@openturn/example-connect-four-bots";
 import {
   connectFour,
+  type Board,
   type Mark,
 } from "@openturn/example-connect-four-game";
-import {
-  LobbyWithBots,
-  buildLobbyView,
-  useLocalLobbyChannel,
-} from "@openturn/lobby/react";
-import { findBot } from "@openturn/lobby/registry";
+import type { HostedRoomState } from "@openturn/react";
+import { LobbyWithBots } from "@openturn/lobby/react";
 
-import { OpenturnProvider, connectFourMatch, useMatch } from "../lib/bindings";
+import { OpenturnProvider, useRoom } from "../lib/bindings";
 import { Match } from "./Match";
-
-const HOST_USER_ID = "local-host";
 
 interface ResultLike { winner?: string; draw?: boolean }
 
-type Phase = "lobby" | "game";
-
-interface BotMap {
-  [playerID: string]: string | undefined;
-}
+type HostedMatch = NonNullable<HostedRoomState<typeof connectFour>["game"]>;
 
 export function ConnectFourExperience(): React.ReactElement {
-  const [matchKey, setMatchKey] = useState(0);
   return (
     <OpenturnProvider>
-      <LocalLobbyMatch
-        key={matchKey}
-        onRestart={() => setMatchKey((current) => current + 1)}
-      />
+      <ConnectFourRoom />
     </OpenturnProvider>
   );
 }
 
-function LocalLobbyMatch({ onRestart }: { onRestart: () => void }): ReactNode {
-  const [phase, setPhase] = useState<Phase>("lobby");
-  const [botMap, setBotMap] = useState<BotMap>({});
-  const match = useMatch();
-  if (match.mode !== "local") {
-    throw new Error("ConnectFourExperience requires a local match.");
+function ConnectFourRoom(): ReactNode {
+  const room = useRoom();
+
+  if (room.phase === "missing_backend") {
+    return (
+      <main className="grid min-h-screen place-items-center bg-slate-50 px-6 text-slate-950">
+        <p className="max-w-prose rounded-2xl border border-slate-200 bg-white p-6 text-sm">
+          Hosted backend config is missing. Open this deployment through the play
+          shell at <code className="rounded bg-slate-100 px-1">/play/&lt;deployment&gt;</code>.
+        </p>
+      </main>
+    );
   }
-  const matchState = match.state;
 
-  const channel = useLocalLobbyChannel({
-    game: connectFourWithBots,
-    match: connectFourMatch,
-    hostUserID: HOST_USER_ID,
-    hostUserName: "You",
-    registry: connectFourBotRegistry,
-    onTransitionToGame: ({ assignments }) => {
-      const nextBotMap: BotMap = {};
-      for (const a of assignments) {
-        if (a.kind === "bot" && a.botID !== null) nextBotMap[a.playerID] = a.botID;
-      }
-      // Reset the matchStore so the new game starts from a clean log.
-      matchState.reset();
-      setBotMap(nextBotMap);
-      setPhase("game");
-    },
-  });
-
-  const view = useMemo(
-    () =>
-      buildLobbyView({
-        channel,
-        userID: HOST_USER_ID,
-        capacityFallback: connectFourWithBots.playerIDs.length,
-        minPlayersFallback: connectFourWithBots.minPlayers,
-        hostUserIDFallback: HOST_USER_ID,
-      }),
-    [channel],
-  );
-
-  if (phase === "lobby") {
+  if (room.lobby !== null) {
     return (
       <main className="min-h-screen bg-slate-50 text-slate-950">
         <div className="mx-auto max-w-5xl px-6 py-8">
-          <LobbyWithBots lobby={view} title="Connect Four" />
+          <LobbyWithBots lobby={room.lobby} title="Connect Four" />
         </div>
       </main>
     );
   }
 
-  return <GameRunner botMap={botMap} onRestart={onRestart} />;
+  if (room.game !== null) {
+    return <ConnectFourHostedGame match={room.game} />;
+  }
+
+  return (
+    <main className="grid min-h-screen place-items-center bg-slate-50 text-slate-950">
+      <p className="text-sm text-slate-500">
+        {room.phase === "connecting" ? "Connecting to the room…" : "Loading…"}
+      </p>
+    </main>
+  );
 }
 
-function GameRunner({
-  botMap,
-  onRestart,
-}: {
-  botMap: BotMap;
-  onRestart: () => void;
-}): ReactNode {
-  const match = useMatch();
-  if (match.mode !== "local") {
-    throw new Error("GameRunner requires a local match.");
+function ConnectFourHostedGame({ match }: { match: HostedMatch }): ReactNode {
+  const snapshot = match.snapshot;
+  if (snapshot === null) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-slate-50 text-slate-950">
+        <p className="text-sm text-slate-500">Syncing match…</p>
+      </main>
+    );
   }
-  const { dispatch, snapshot, getPlayerView } = match.state;
 
-  useBotDriver({
-    botMap,
-    snapshot: snapshot as never,
-    dispatch: dispatch as never,
-    getPlayerView: getPlayerView as never,
-  });
+  const view = snapshot.G as unknown as
+    | { board: Board; lastMove: { col: number; row: number; player: Mark } | null }
+    | null;
+  if (view === null) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-slate-50 text-slate-950">
+        <p className="text-sm text-slate-500">Syncing match…</p>
+      </main>
+    );
+  }
 
-  const board = snapshot.G.board;
-  const lastMove = snapshot.G.lastMove;
-  const result = snapshot.meta.result as ResultLike | null;
-  const isOver = result !== null;
+  const board = view.board;
+  const lastMove = view.lastMove;
+  const result = match.result as ResultLike | null;
+  const isOver = match.isFinished;
   const active = (snapshot.derived.activePlayers[0] ?? "0") as Mark;
   const moves = snapshot.position.turn ?? 0;
   const turn = Math.floor(moves / 2) + 1;
 
-  const localActive = active in botMap ? null : active;
+  const me = match.playerID as Mark | null;
+  const isMyTurn = !isOver && me !== null && match.isActivePlayer;
+  const activeMark = isMyTurn ? me : null;
+
+  const seatLabel = (mark: Mark): string => (me === mark ? "You" : mark === "0" ? "Red" : "Yellow");
+  const seatRole = (mark: Mark): string => {
+    if (isOver) {
+      if (result?.draw === true) return "Draw";
+      return result?.winner === mark ? "Won" : "Lost";
+    }
+    if (active !== mark) return "Waiting";
+    return me === mark ? "Your turn" : "Thinking…";
+  };
+
   const seats: readonly [
     { mark: Mark; name: string; role: string; active: boolean },
     { mark: Mark; name: string; role: string; active: boolean },
   ] = [
-    {
-      mark: "0",
-      name: botMap["0"] ? `Bot · ${botMap["0"]}` : "You",
-      role: isOver
-        ? result!.winner === "0"
-          ? "Won"
-          : result!.draw
-            ? "Draw"
-            : "Lost"
-        : active === "0"
-          ? botMap["0"]
-            ? "Thinking…"
-            : "Your turn"
-          : "Waiting",
-      active: !isOver && active === "0",
-    },
-    {
-      mark: "1",
-      name: botMap["1"] ? `Bot · ${botMap["1"]}` : "You",
-      role: isOver
-        ? result!.winner === "1"
-          ? "Won"
-          : result!.draw
-            ? "Draw"
-            : "Lost"
-        : active === "1"
-          ? botMap["1"]
-            ? "Thinking…"
-            : "Your turn"
-          : "Waiting",
-      active: !isOver && active === "1",
-    },
+    { mark: "0", name: seatLabel("0"), role: seatRole("0"), active: !isOver && active === "0" },
+    { mark: "1", name: seatLabel("1"), role: seatRole("1"), active: !isOver && active === "1" },
   ];
 
   const status = isOver
-    ? result!.draw
+    ? result?.draw === true
       ? "Draw"
-      : result!.winner === "0"
+      : result?.winner === "0"
         ? "Red wins"
         : "Yellow wins"
-    : active in botMap
-      ? `${active === "0" ? "Red" : "Yellow"} is thinking…`
-      : "Your turn — drop into a column";
+    : isMyTurn
+      ? "Your turn — drop into a column"
+      : `${active === "0" ? "Red" : "Yellow"} is thinking…`;
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-950">
       <Match
         board={board}
         lastMove={lastMove}
-        activeMark={localActive}
-        canPlay={!isOver && localActive !== null}
-        onDrop={(col) => dispatch.dropDisc(active, { col })}
+        activeMark={activeMark}
+        canPlay={isMyTurn}
+        onDrop={(col) => { void match.dispatch.dropDisc({ col }); }}
         status={status}
         seats={seats}
         turn={turn}
         moves={moves}
         isOver={isOver}
-        onNewMatch={onRestart}
       />
     </main>
   );
-}
-
-// Bot-driver internals work with whatever the matchStore exposes; the
-// public types from `@openturn/react` are tightly bound to the game generic
-// and don't simplify the call-site. Use a permissive shape here and cast at
-// the call site — the matchStore-bound dispatch is the one source of truth.
-interface BotDriverSnapshot {
-  meta: { result: { winner?: string; draw?: boolean } | null; rng: { draws: number; seed: string; state: number } };
-  derived: { activePlayers: readonly string[] };
-  position: { turn: number };
-}
-interface BotDriverOptions {
-  botMap: BotMap;
-  snapshot: BotDriverSnapshot;
-  dispatch: Record<string, (playerID: string, payload: unknown) => unknown>;
-  getPlayerView: (playerID: string) => unknown;
-}
-
-/**
- * Drives bot seats by re-running on every snapshot change: when the active
- * seat is bot-controlled, run `bot.decide(...)` and dispatch the chosen
- * action through the matchStore. Re-entering after every dispatch covers
- * bot-vs-bot chains as well as bot-then-human handoffs.
- */
-function useBotDriver({ botMap, snapshot, dispatch, getPlayerView }: BotDriverOptions): void {
-  const inflightTurnRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (snapshot.meta.result !== null) {
-      inflightTurnRef.current = null;
-      return;
-    }
-    const active = snapshot.derived.activePlayers as readonly string[];
-    const botSeat = active.find((p) => botMap[p] !== undefined);
-    if (botSeat === undefined) {
-      inflightTurnRef.current = null;
-      return;
-    }
-    const botID = botMap[botSeat]!;
-    const descriptor = findBot(connectFourBotRegistry, botID);
-    if (descriptor === null) return;
-
-    const turn = snapshot.position.turn;
-    if (inflightTurnRef.current === turn) return;
-    inflightTurnRef.current = turn;
-
-    const abort = new AbortController();
-    let cancelled = false;
-
-    void (async () => {
-      try {
-        const action = await runBotDecision({
-          bot: descriptor.bot,
-          playerID: botSeat,
-          snapshot,
-          view: getPlayerView(botSeat),
-          signal: abort.signal,
-        });
-        if (cancelled) return;
-        const handler = dispatch[action.event];
-        if (typeof handler === "function") {
-          handler(botSeat, action.payload);
-        }
-      } catch {
-        // Bot threw; the next snapshot change will retry.
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      abort.abort();
-    };
-  }, [botMap, snapshot, dispatch, getPlayerView]);
-}
-
-async function runBotDecision({
-  bot,
-  playerID,
-  snapshot,
-  view,
-  signal,
-}: {
-  bot: Bot<typeof connectFour>;
-  playerID: string;
-  snapshot: BotDriverSnapshot;
-  view: unknown;
-  signal: AbortSignal;
-}): Promise<LegalAction> {
-  const legalActions = enumerateLegalActions(
-    connectFour,
-    snapshot as never,
-    view as never,
-    playerID as never,
-    bot,
-  );
-  const rng = forkRng(snapshot.meta.rng, bot.name, playerID, snapshot.position.turn);
-  const deadline = {
-    remainingMs: () => bot.thinkingBudgetMs ?? 5_000,
-    expired: () => false,
-  };
-  return bot.decide({
-    playerID: playerID as never,
-    view: view as never,
-    snapshot: snapshot as never,
-    legalActions,
-    rng,
-    deadline,
-    signal,
-    simulate: (action) => simulate(connectFour, snapshot as never, playerID as never, action),
-  });
 }

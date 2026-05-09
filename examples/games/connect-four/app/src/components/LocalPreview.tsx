@@ -1,9 +1,30 @@
+import { useMemo } from "react";
 import type { Mark } from "@openturn/example-connect-four-game";
 
-import { OpenturnProvider, useMatch } from "../lib/bindings";
+import { OpenturnProvider, createLocalMatch, useMatch } from "../lib/bindings";
 import { Match } from "./Match";
 
 interface ResultLike { winner?: string; draw?: boolean }
+
+// Local-mode preview — no lobby, no websocket. Both seats sit at this browser
+// tab. Wired only when the URL includes `?preview=local`. Uses the shared
+// multiplayer bindings with an explicit `match` prop on OpenturnProvider —
+// which forces local mode for just this subtree without spawning a second
+// bindings instance (which the per-game cache in `createOpenturnBindings`
+// would silently swallow).
+export function LocalPreview(): React.ReactElement {
+  const matchStore = useMemo(
+    () => createLocalMatch({ match: { players: ["0", "1"] } }),
+    [],
+  );
+  return (
+    <OpenturnProvider match={matchStore}>
+      <main className="min-h-screen bg-slate-50 text-slate-950">
+        <PreviewBoard />
+      </main>
+    </OpenturnProvider>
+  );
+}
 
 function PreviewBoard(): React.ReactElement {
   const view = useMatch();
@@ -43,15 +64,5 @@ function PreviewBoard(): React.ReactElement {
       isOver={isOver}
       onNewMatch={reset}
     />
-  );
-}
-
-export function LocalPreview(): React.ReactElement {
-  return (
-    <OpenturnProvider>
-      <main className="min-h-screen bg-slate-50 text-slate-950">
-        <PreviewBoard />
-      </main>
-    </OpenturnProvider>
   );
 }

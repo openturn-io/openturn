@@ -15,7 +15,7 @@ export type MatchProps = {
   turn: number;
   moves: number;
   isOver: boolean;
-  onNewMatch: () => void;
+  onNewMatch?: () => void;
 };
 
 export function Match(props: MatchProps): React.ReactElement {
@@ -45,7 +45,7 @@ export function Match(props: MatchProps): React.ReactElement {
           turn={props.turn}
           moves={props.moves}
           isOver={props.isOver}
-          onNewMatch={props.onNewMatch}
+          {...(props.onNewMatch !== undefined ? { onNewMatch: props.onNewMatch } : {})}
         />
       </div>
     </div>
