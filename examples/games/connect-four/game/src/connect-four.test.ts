@@ -206,3 +206,61 @@ describe("dropDisc — rejections", () => {
     expect(result.ok).toBe(false);
   });
 });
+
+describe("dropDisc — win detection", () => {
+  function play(session: ReturnType<typeof createLocalSession>, moves: ReadonlyArray<readonly [Mark, number]>): void {
+    for (const [player, col] of moves) {
+      const result = session.applyEvent(player, "dropDisc", { col });
+      if (!result.ok) throw new Error(`unexpected reject: ${JSON.stringify(result)}`);
+    }
+  }
+
+  test("vertical win for player 0 — 4 reds in column 3", () => {
+    const session = createLocalSession(connectFour, { match: connectFourMatch });
+    play(session, [
+      ["0", 3], ["1", 4],
+      ["0", 3], ["1", 4],
+      ["0", 3], ["1", 4],
+      ["0", 3],
+    ]);
+    expect(session.getResult()).toEqual({ winner: "0" });
+  });
+
+  test("horizontal win for player 1 — 4 yellows in row 5", () => {
+    const session = createLocalSession(connectFour, { match: connectFourMatch });
+    play(session, [
+      ["0", 0], ["1", 1],
+      ["0", 0], ["1", 2],
+      ["0", 0], ["1", 3],
+      ["0", 1], ["1", 4],
+    ]);
+    expect(session.getResult()).toEqual({ winner: "1" });
+  });
+
+  test("\\ diagonal win for player 0", () => {
+    const session = createLocalSession(connectFour, { match: connectFourMatch });
+    play(session, [
+      ["0", 0], ["1", 1],
+      ["0", 1], ["1", 2],
+      ["0", 3], ["1", 2],
+      ["0", 2], ["1", 5],
+      ["0", 3], ["1", 6],
+      ["0", 3], ["1", 5],
+      ["0", 3],
+    ]);
+    expect(session.getResult()).toEqual({ winner: "0" });
+  });
+
+  test("/ diagonal win for player 0", () => {
+    const session = createLocalSession(connectFour, { match: connectFourMatch });
+    play(session, [
+      ["0", 5], ["1", 1],
+      ["0", 0], ["1", 2],
+      ["0", 1], ["1", 2],
+      ["0", 2], ["1", 3],
+      ["0", 3], ["1", 3],
+      ["0", 3],
+    ]);
+    expect(session.getResult()).toEqual({ winner: "0" });
+  });
+});
