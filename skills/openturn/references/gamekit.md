@@ -85,12 +85,15 @@ For custom turn order, drop to `core` (see `core.md`).
 
 ## Common mistakes
 
+- **`InvalidGameDefinitionError: State "__gamekit_finished" is unreachable from "play"`** — at definition time. Cause: every move only returns `move.endTurn`/`move.stay`/`move.goto`; nothing reaches `move.finish`. Fix: at least one move (or one branch) must end the match via `move.finish({ winner } | { draw: true })`. Even a placeholder TDD scaffold needs a terminal path; the validator runs before any test does.
+- **`playerIDs: ["0", "1"]` without `as const`** — TS infers `string[]` and downstream `playerID` types widen to `string`. Always declare `playerIDs: ["0", "1"] as const`. The `defineGame` types are tied to the literal tuple.
 - Mutating `G` (`G.scores[id] += 1`). Always spread: `{ ...G.scores, [id]: (G.scores[id] ?? 0) + 1 }`.
 - Returning bare `G` from a move instead of a `move.*` outcome.
 - Putting `Date`, `Map`, `Set`, or class instances in `G`. Use plain JSON shapes only.
 - Using `Math.random` / `Date.now` inside a move (replays diverge). Use `ctx.rng` — see `randomness.md`.
 - Modeling intra-turn state as a phase. Use `G` for that; phases are for rule changes.
 - Trying to use `move.continue` (doesn't exist). Use `move.stay`.
+- Reading `derived` inside a view (it's only on rule contexts). Views expose computed values as `C` — see `views.md`.
 
 ## See also
 

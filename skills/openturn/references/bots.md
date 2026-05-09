@@ -148,7 +148,7 @@ export const minimaxBot = defineBot<typeof ticTacToe>({
 
 `simulate` is unavailable on hosted clients (returns `{ ok: false, reason: "simulate_unavailable_for_host" }`). Search bots run as local processes — CLI driver, server-side sidecar — where the full snapshot is reachable. See `examples/games/tic-tac-toe/bots/` for `random` and `minimax`, and `examples/games/splendor/bots/` for a `random`/`greedy`/`strategic` tier on a 2–4 player game (the `greedy` bot there is the canonical heuristic example).
 
-## Attaching bots
+## Attaching bots — non-React drivers (CLI, tests, scripts)
 
 ```ts
 import { attachLocalBots } from "@openturn/bot";
@@ -180,6 +180,42 @@ detachAll();
 `whenIdle(playerID)` waits for any in-flight `decide` for that seat to settle. The bot watches the snapshot autonomously — never call `decide` yourself.
 
 For a single seat, `attachLocalBot({ session, game, playerID, bot })` returns `{ runner, session, bus }`. To bind multiple bots one-by-one, pass the returned `bus` into subsequent calls so every host hears every dispatch — or just use `attachLocalBots`.
+
+## Attaching bots — React UIs
+
+The `while (true)` loop above works for CLI drivers and `bun:test` integration tests. **It does not work for React UIs.** A React component cannot block on `whenIdle`; it must re-render reactively as the snapshot changes.
+
+Three patterns from `play-against-bots.mdx`, ranked from most to least common:
+
+- **Pattern C — `createOpenturnBindings` + manual `useBotDriver`** — the canonical React pattern. Use `createOpenturnBindings(game, { runtime: "local", match })` for reactive `useMatch()`, then add a `useEffect` keyed on `snapshot` that runs `bot.decide(...)` and dispatches the result via `dispatch.eventName(seatID, payload)`. **Always start with this.** Reference: [`examples/games/tic-tac-toe/app/src/components/LocalLobbyTicTacToe.tsx`](https://github.com/openturn-io/openturn/tree/main/openturn/examples/games/tic-tac-toe/app/src/components/LocalLobbyTicTacToe.tsx).
+- **Pattern A — `useBotAttachOnTransition` from `@openturn/lobby/react`** — convenient, but **only correct if you wrap the raw session in your own external store** (e.g. `useSyncExternalStore` against an explicit subscribe handle). Naive use produces an unresponsive UI: `applyEvent` mutates the session but no React re-render fires. Don't pick this unless you've explicitly built the reactivity wrapper.
+- **Pattern B — `createLocalBotSupervisor` from `@openturn/lobby/supervisor`** — non-React, in-process. Same role as `attachLocalBots` but ships with the lobby package's wiring contract. Use in CLI tools that need lobby integration.
+
+For the wider React reactivity contract (auto-wrap differences between `runtime: "local"` and `runtime: "multiplayer"`, the `useMatch` API, the `OpenturnProvider` mount), see SKILL.md "App layer essentials".
+
+## View-only bots (when `simulate` isn't available)
+
+Hosted clients return `simulate(...) === { ok: false, reason: "simulate_unavailable_for_host" }` because the full server-side snapshot isn't reachable. If you want one bot binary that runs in any topology — local in-process, hosted sidecar, in-DO — write the search to operate on the **public board view** rather than the engine snapshot. The view is what every player sees and is always available.
+
+This works for any perfect-information game (Connect Four, Othello, Hex). For hidden-info games, `simulate` remains the only correct path; restrict those bots to local hosts.
+
+```ts
+// View-only minimax sketch for a 2-player perfect-info game.
+export function makeMinimaxBot({ depth }: { depth: number }) {
+  return defineBot<typeof game>({
+    name: `minimax-d${depth}`,
+    decide({ view, playerID, deadline, legalActions, rng }) {
+      const best = searchAlphaBeta(view.board, playerID, depth, deadline);
+      return best ?? rng.pick(legalActions);   // fallback if budget aborts before depth-1 completes
+    },
+  });
+}
+// `searchAlphaBeta` reconstructs candidate boards by calling your game's
+// pure helpers (e.g. `withDisc(board, row, col, mark)`) on the view —
+// no `simulate`, no snapshot dependency.
+```
+
+Determinism property worth testing: two `decide` calls on the same `view` and the same forked `rng` (same seat, same turn) must return the same action. This catches accidental clock or `Math.random` reads inside the search.
 
 ## Hosted topology
 

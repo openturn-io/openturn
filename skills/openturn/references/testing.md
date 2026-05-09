@@ -29,6 +29,8 @@ test("rolling above one keeps the turn", () => {
 
 `applyEvent(playerID, eventName, payload)` returns `{ ok: true, ... }` on success. Always assert `.ok === true` before reading `getState()` — otherwise a rejected event leaves `G` unchanged and your downstream assertions read pre-move state, producing confusing "expected 5, got 0" failures with no hint that the dispatch was the culprit.
 
+> **Gotcha — the auto-injected `__gamekit` field.** After `setup`, `getState().G` includes a `__gamekit: { result: null }` field that gamekit injects to track terminal status. Full-equality assertions (`expect(state.G).toEqual({ ... })`) must include it, or they fail with a confusing "extra property" diff. Prefer **partial assertions** on the fields you actually care about (`expect(state.G.board[5][3]).toBe("0")`) rather than `toEqual` on the full `G`. If you do need a full-state assertion, see `examples/games/pig-dice/game/src/pig-dice.test.ts` — it includes `__gamekit: { result: null }` explicitly.
+
 ## A rejected-move test
 
 ```ts
