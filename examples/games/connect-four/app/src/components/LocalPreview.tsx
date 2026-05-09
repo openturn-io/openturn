@@ -1,13 +1,7 @@
-import { createOpenturnBindings } from "@openturn/react";
 import type { Mark } from "@openturn/example-connect-four-game";
-import { connectFour } from "@openturn/example-connect-four-game";
 
+import { OpenturnProvider, useMatch } from "../lib/bindings";
 import { Match } from "./Match";
-
-const { OpenturnProvider, useMatch } = createOpenturnBindings(connectFour, {
-  runtime: "local",
-  match: { players: connectFour.playerIDs },
-});
 
 interface ResultLike { winner?: string; draw?: boolean }
 
