@@ -292,3 +292,40 @@ describe("legalActions", () => {
     expect(actions.map((a) => (a.payload as DropDiscArgs).col)).not.toContain(0);
   });
 });
+
+describe("dropDisc — draw", () => {
+  test("filling the board without a 4-in-a-row finishes with draw: true", () => {
+    const session = createLocalSession(connectFour, { match: connectFourMatch });
+
+    // A scripted 42-move sequence that fills the board without any 4-in-a-row.
+    // (Found via brute-force search over a deterministic seeded RNG.)
+    const script: ReadonlyArray<readonly [Mark, number]> = [
+      ["0", 3], ["1", 3], ["0", 3], ["1", 5], ["0", 5], ["1", 0],
+      ["0", 0], ["1", 5], ["0", 0], ["1", 6], ["0", 0], ["1", 3],
+      ["0", 6], ["1", 2], ["0", 6], ["1", 2], ["0", 2], ["1", 4],
+      ["0", 6], ["1", 0], ["0", 2], ["1", 6], ["0", 4], ["1", 5],
+      ["0", 1], ["1", 2], ["0", 5], ["1", 5], ["0", 1], ["1", 0],
+      ["0", 3], ["1", 1], ["0", 1], ["1", 3], ["0", 6], ["1", 1],
+      ["0", 2], ["1", 1], ["0", 4], ["1", 4], ["0", 4], ["1", 4],
+    ];
+
+    for (const [player, col] of script) {
+      const r = session.applyEvent(player, "dropDisc", { col });
+      // If the script produces an early win/draw or invalid, fail informatively.
+      if (!r.ok) {
+        const result = session.getResult();
+        if (result !== null && result !== undefined) {
+          throw new Error(`script ended early with result ${JSON.stringify(result)}`);
+        }
+        throw new Error(`unexpected reject ${JSON.stringify(r)}`);
+      }
+    }
+
+    const result = session.getResult();
+    expect(result).not.toBeNull();
+    if (result !== null && "winner" in (result ?? {})) {
+      throw new Error(`script produced winner ${JSON.stringify(result)} — adjust the move order`);
+    }
+    expect(result).toEqual({ draw: true });
+  });
+});
