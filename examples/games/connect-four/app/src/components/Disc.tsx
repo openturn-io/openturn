@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 
-import { LAST_MOVE_HALO } from "@/lib/halo";
-import { cn } from "@/lib/utils";
+import { LAST_MOVE_HALO } from "../lib/halo";
+import { cn } from "../lib/utils";
 
 export type DiscProps = {
   mark: "0" | "1" | null;

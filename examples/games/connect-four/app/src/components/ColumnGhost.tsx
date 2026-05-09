@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import { cn } from "../lib/utils";
 
 export type ColumnGhostProps = {
   /** Hovered column index, or null when no column is hovered. */

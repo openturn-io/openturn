@@ -1,6 +1,6 @@
 import type { Mark } from "@openturn/example-connect-four-game";
 
-import { cn } from "@/lib/utils";
+import { cn } from "../lib/utils";
 
 export type PlayerCardProps = {
   mark: Mark;

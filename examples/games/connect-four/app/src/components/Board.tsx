@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Board as BoardType, Mark } from "@openturn/example-connect-four-game";
 
-import { cn } from "@/lib/utils";
+import { cn } from "../lib/utils";
 import { ColumnGhost } from "./ColumnGhost";
 import { Disc } from "./Disc";
 
