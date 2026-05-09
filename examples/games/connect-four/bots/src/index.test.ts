@@ -139,3 +139,49 @@ describe("heuristicBot — center bias", () => {
     expect((action.payload as DropDiscArgs).col).toBe(3);
   });
 });
+
+import { attachLocalBots, type Bot } from "@openturn/bot";
+import { createLocalSession } from "@openturn/core";
+
+const connectFourMatch = { players: connectFour.playerIDs };
+
+interface ResultLike {
+  winner?: string;
+  draw?: boolean;
+}
+
+async function playToCompletion(
+  rawSession: ReturnType<typeof createLocalSession<typeof connectFour, typeof connectFourMatch>>,
+  bots: { "0": Bot<typeof connectFour>; "1": Bot<typeof connectFour> },
+): Promise<ResultLike | null> {
+  const { session, isBot, whenIdle, detachAll } = attachLocalBots({
+    session: rawSession,
+    game: connectFour,
+    bots,
+  });
+
+  for (let step = 0; step < 60; step += 1) {
+    const snap = session.getState();
+    const result = snap.meta.result as ResultLike | null;
+    if (result !== null && result !== undefined) break;
+    const active = snap.derived.activePlayers[0]!;
+    if (isBot(active)) await whenIdle(active);
+  }
+
+  const final = session.getState().meta.result as ResultLike | null;
+  detachAll();
+  return final;
+}
+
+describe("heuristicBot vs randomBot integration", () => {
+  test("heuristic wins or draws every match across 20 games", async () => {
+    let losses = 0;
+    for (let i = 0; i < 20; i += 1) {
+      const session = createLocalSession(connectFour, { match: connectFourMatch, seed: `heur-rand-${i}` });
+      const result = await playToCompletion(session, { "0": heuristicBot, "1": randomBot });
+      if (result?.winner === "1") losses += 1;
+    }
+    // Heuristic should rarely if ever lose to random over 20 games.
+    expect(losses).toBeLessThanOrEqual(1);
+  }, 60_000);
+});
