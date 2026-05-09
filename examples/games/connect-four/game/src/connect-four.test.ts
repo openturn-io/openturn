@@ -157,3 +157,28 @@ describe("connectFour setup", () => {
     expect(state.derived.activePlayers).toEqual(["0"]);
   });
 });
+
+describe("dropDisc — happy path", () => {
+  test("drops on an empty column, lands at row 5, ends the turn", () => {
+    const session = createLocalSession(connectFour, { match: connectFourMatch });
+    const result = session.applyEvent("0", "dropDisc", { col: 3 });
+    expect(result.ok).toBe(true);
+
+    const state = session.getState();
+    expect(state.G.board[5]![3]).toBe("0");
+    expect(state.G.board[4]![3]).toBeNull();
+    expect(state.G.lastMove).toEqual({ col: 3, row: 5, player: "0" });
+    expect(state.derived.activePlayers).toEqual(["1"]);
+  });
+
+  test("two consecutive drops in the same column stack 0 then 1", () => {
+    const session = createLocalSession(connectFour, { match: connectFourMatch });
+    session.applyEvent("0", "dropDisc", { col: 3 });
+    session.applyEvent("1", "dropDisc", { col: 3 });
+    const state = session.getState();
+    expect(state.G.board[5]![3]).toBe("0");
+    expect(state.G.board[4]![3]).toBe("1");
+    expect(state.G.lastMove).toEqual({ col: 3, row: 4, player: "1" });
+    expect(state.derived.activePlayers).toEqual(["0"]);
+  });
+});
