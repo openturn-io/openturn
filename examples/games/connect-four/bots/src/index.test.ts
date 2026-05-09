@@ -209,3 +209,34 @@ describe("minimaxBot — tactical correctness", () => {
     expect((action.payload as DropDiscArgs).col).toBe(4);
   });
 });
+
+describe("minimaxBot — deadline", () => {
+  test("returns within ~75ms when budgetMs is 50", async () => {
+    const bot = makeMinimaxBot({ depth: 8, budgetMs: 50 });
+    const board = emptyBoard();
+    const start = performance.now();
+
+    let expired = false;
+    const deadline = {
+      remainingMs: () => Math.max(0, 50 - (performance.now() - start)),
+      expired: () => {
+        if (!expired && performance.now() - start >= 50) expired = true;
+        return expired;
+      },
+    };
+
+    const rng = createRng("deadline");
+    await bot.decide({
+      playerID: "0" as never,
+      view: viewFor(board, "0") as never,
+      snapshot: { G: { board, lastMove: null }, derived: { activePlayers: ["0"] } } as never,
+      legalActions: legalForBoard(board),
+      rng,
+      deadline,
+      signal: new AbortController().signal,
+      simulate: () => { throw new Error("must not be called"); },
+    });
+    const elapsed = performance.now() - start;
+    expect(elapsed).toBeLessThan(150);
+  });
+});
