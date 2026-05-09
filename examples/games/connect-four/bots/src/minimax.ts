@@ -6,10 +6,12 @@ import {
   findWinningLine,
   lowestEmptyRow,
   withDisc,
-  type Board,
+  type Cell,
   type DropDiscArgs,
   type Mark,
 } from "@openturn/example-connect-four-game";
+
+type ReadonlyBoard = ReadonlyArray<ReadonlyArray<Cell>>;
 
 const COL_ORDER = [3, 2, 4, 1, 5, 0, 6] as const;
 const WIN_SCORE = 1_000_000;
@@ -19,7 +21,7 @@ function opponentOf(me: Mark): Mark {
 }
 
 /** Count how many lines of 4 cells in the board contain `count` of `mark` and 0 of the opponent. */
-function countOpenLines(board: Board, mark: Mark, count: number): number {
+function countOpenLines(board: ReadonlyBoard, mark: Mark, count: number): number {
   const opp = opponentOf(mark);
   let total = 0;
   const directions: ReadonlyArray<readonly [number, number]> = [
@@ -45,7 +47,7 @@ function countOpenLines(board: Board, mark: Mark, count: number): number {
   return total;
 }
 
-function evaluate(board: Board, me: Mark): number {
+function evaluate(board: ReadonlyBoard, me: Mark): number {
   const opp = opponentOf(me);
   const my3 = countOpenLines(board, me, 3);
   const my2 = countOpenLines(board, me, 2);
@@ -63,12 +65,12 @@ interface DeadlineLike {
   expired: () => boolean;
 }
 
-function legalCols(board: Board): number[] {
+function legalCols(board: ReadonlyBoard): number[] {
   return COL_ORDER.filter((c) => board[0]![c] === null);
 }
 
 function alphabeta(
-  board: Board,
+  board: ReadonlyBoard,
   toMove: Mark,
   me: Mark,
   depth: number,
@@ -107,7 +109,7 @@ function alphabeta(
   return best;
 }
 
-function searchAtDepth(board: Board, me: Mark, depth: number, deadline: DeadlineLike): SearchResult | null {
+function searchAtDepth(board: ReadonlyBoard, me: Mark, depth: number, deadline: DeadlineLike): SearchResult | null {
   const cols = legalCols(board);
   if (cols.length === 0) return null;
   let bestCol = cols[0]!;

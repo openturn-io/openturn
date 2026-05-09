@@ -240,3 +240,16 @@ describe("minimaxBot — deadline", () => {
     expect(elapsed).toBeLessThan(150);
   });
 });
+
+import { connectFourBotRegistry, connectFourWithBots } from "./index";
+
+describe("connectFourBotRegistry", () => {
+  test("declares random, heuristic, minimax in that order", () => {
+    const ids = connectFourBotRegistry.entries.map((b) => b.botID);
+    expect(ids).toEqual(["random", "heuristic", "minimax"]);
+  });
+
+  test("connectFourWithBots exposes bots on game.bots", () => {
+    expect((connectFourWithBots as { bots?: unknown }).bots).toBe(connectFourBotRegistry);
+  });
+});

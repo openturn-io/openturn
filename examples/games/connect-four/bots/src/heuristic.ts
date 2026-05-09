@@ -4,10 +4,12 @@ import {
   findWinningLine,
   lowestEmptyRow,
   withDisc,
-  type Board,
+  type Cell,
   type DropDiscArgs,
   type Mark,
 } from "@openturn/example-connect-four-game";
+
+type ReadonlyBoard = ReadonlyArray<ReadonlyArray<Cell>>;
 
 const CENTER_BIAS = [3, 4, 5, 7, 5, 4, 3] as const;
 
@@ -15,14 +17,14 @@ function opponentOf(me: Mark): Mark {
   return me === "0" ? "1" : "0";
 }
 
-function wouldWin(board: Board, col: number, mark: Mark): boolean {
+function wouldWin(board: ReadonlyBoard, col: number, mark: Mark): boolean {
   const row = lowestEmptyRow(board, col);
   if (row < 0) return false;
   const next = withDisc(board, row, col, mark);
   return findWinningLine(next, row, col) !== null;
 }
 
-function scoreForCol(board: Board, col: number, me: Mark): number {
+function scoreForCol(board: ReadonlyBoard, col: number, me: Mark): number {
   if (wouldWin(board, col, me)) return Number.POSITIVE_INFINITY;
   if (wouldWin(board, col, opponentOf(me))) return 10_000;
   return CENTER_BIAS[col] ?? 0;
