@@ -1,5 +1,14 @@
 import "../src/styles.css";
 
+import { ConnectFourExperience } from "../src/components/ConnectFourExperience";
+import { LocalPreview } from "../src/components/LocalPreview";
+
 export default function Page() {
-  return <main className="min-h-screen bg-slate-50 grid place-items-center text-slate-600">Connect Four — initializing</main>;
+  if (
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("preview") === "local"
+  ) {
+    return <LocalPreview />;
+  }
+  return <ConnectFourExperience />;
 }
