@@ -140,3 +140,20 @@ describe("findWinningLine", () => {
     expect(findWinningLine(board, 5, 0)).toBeNull();
   });
 });
+
+import { createLocalSession } from "@openturn/core";
+import { connectFour } from "./index";
+
+const connectFourMatch = { players: connectFour.playerIDs };
+
+describe("connectFour setup", () => {
+  test("starts with an empty 6x7 board, no last move, player 0 active", () => {
+    const session = createLocalSession(connectFour, { match: connectFourMatch });
+    const state = session.getState();
+    expect(state.G.board).toEqual(
+      Array.from({ length: 6 }, () => Array(7).fill(null)),
+    );
+    expect(state.G.lastMove).toBeNull();
+    expect(state.derived.activePlayers).toEqual(["0"]);
+  });
+});
