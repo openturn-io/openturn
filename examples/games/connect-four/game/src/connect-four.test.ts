@@ -182,3 +182,27 @@ describe("dropDisc — happy path", () => {
     expect(state.derived.activePlayers).toEqual(["0"]);
   });
 });
+
+describe("dropDisc — rejections", () => {
+  test("drop into a full column returns invalid_event with column_full reason", () => {
+    const session = createLocalSession(connectFour, { match: connectFourMatch });
+    // Stack 6 alternating discs in column 0.
+    for (let i = 0; i < 6; i += 1) {
+      const player = i % 2 === 0 ? "0" : "1";
+      session.applyEvent(player, "dropDisc", { col: 0 });
+    }
+    const result = session.applyEvent("0", "dropDisc", { col: 0 });
+    expect(result).toEqual({
+      details: { col: 0 },
+      error: "invalid_event",
+      ok: false,
+      reason: "column_full",
+    });
+  });
+
+  test("drop by the wrong player is rejected as not-active", () => {
+    const session = createLocalSession(connectFour, { match: connectFourMatch });
+    const result = session.applyEvent("1", "dropDisc", { col: 3 });
+    expect(result.ok).toBe(false);
+  });
+});
