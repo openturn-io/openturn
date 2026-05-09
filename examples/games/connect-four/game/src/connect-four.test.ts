@@ -52,3 +52,91 @@ describe("withDisc", () => {
     expect(after[3]![0]).toBeNull();
   });
 });
+
+import { findWinningLine } from "./board";
+
+describe("findWinningLine", () => {
+  test("vertical 4-in-a-row through (2, 3) for player 0", () => {
+    const board = emptyBoard();
+    board[2]![3] = "0";
+    board[3]![3] = "0";
+    board[4]![3] = "0";
+    board[5]![3] = "0";
+    const line = findWinningLine(board, 2, 3);
+    expect(line).toEqual([
+      { row: 2, col: 3 },
+      { row: 3, col: 3 },
+      { row: 4, col: 3 },
+      { row: 5, col: 3 },
+    ]);
+  });
+
+  test("horizontal 4-in-a-row through (5, 3) for player 1", () => {
+    const board = emptyBoard();
+    board[5]![1] = "1";
+    board[5]![2] = "1";
+    board[5]![3] = "1";
+    board[5]![4] = "1";
+    const line = findWinningLine(board, 5, 3);
+    expect(line).toEqual([
+      { row: 5, col: 1 },
+      { row: 5, col: 2 },
+      { row: 5, col: 3 },
+      { row: 5, col: 4 },
+    ]);
+  });
+
+  test("\\ diagonal win through (3, 3)", () => {
+    const board = emptyBoard();
+    board[2]![2] = "0";
+    board[3]![3] = "0";
+    board[4]![4] = "0";
+    board[5]![5] = "0";
+    const line = findWinningLine(board, 3, 3);
+    expect(line).toEqual([
+      { row: 2, col: 2 },
+      { row: 3, col: 3 },
+      { row: 4, col: 4 },
+      { row: 5, col: 5 },
+    ]);
+  });
+
+  test("/ diagonal win through (3, 3)", () => {
+    const board = emptyBoard();
+    board[5]![1] = "1";
+    board[4]![2] = "1";
+    board[3]![3] = "1";
+    board[2]![4] = "1";
+    const line = findWinningLine(board, 3, 3);
+    expect(line).toEqual([
+      { row: 2, col: 4 },
+      { row: 3, col: 3 },
+      { row: 4, col: 2 },
+      { row: 5, col: 1 },
+    ]);
+  });
+
+  test("3-in-a-row is NOT a win", () => {
+    const board = emptyBoard();
+    board[5]![1] = "0";
+    board[5]![2] = "0";
+    board[5]![3] = "0";
+    expect(findWinningLine(board, 5, 2)).toBeNull();
+  });
+
+  test("returns null when (r, c) is empty", () => {
+    const board = emptyBoard();
+    expect(findWinningLine(board, 5, 0)).toBeNull();
+  });
+
+  test("does not span across mismatched marks", () => {
+    const board = emptyBoard();
+    board[5]![0] = "0";
+    board[5]![1] = "0";
+    board[5]![2] = "1";
+    board[5]![3] = "0";
+    board[5]![4] = "0";
+    board[5]![5] = "0";
+    expect(findWinningLine(board, 5, 0)).toBeNull();
+  });
+});

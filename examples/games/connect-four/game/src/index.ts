@@ -5,4 +5,5 @@ export type Board = Cell[][];
 export const ROWS = 6;
 export const COLS = 7;
 
-export { lowestEmptyRow, withDisc } from "./board";
+export { lowestEmptyRow, withDisc, findWinningLine } from "./board";
+export type { CellRef } from "./board";
