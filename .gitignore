@@ -19,3 +19,6 @@ coverage
 
 # Claude scheduled tasks runtime lock
 .claude/scheduled_tasks.lock
+
+# Superpowers brainstorm/plan artifacts
+.superpowers/

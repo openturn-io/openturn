@@ -1,0 +1,34 @@
+{
+  "name": "@openturn/example-connect-four-app",
+  "private": true,
+  "type": "module",
+  "openturn": {
+    "runtime": "browser"
+  },
+  "scripts": {
+    "build": "bun run ../../../../packages/cli/src/index.ts build .",
+    "deploy": "bun run ../../../../packages/cli/src/index.ts deploy . --project connect-four --name \"Connect Four\"",
+    "dev": "bun run ../../../../packages/cli/src/index.ts dev . --port 3009",
+    "start": "bun run ../../../../packages/cli/src/index.ts start . --port 3009",
+    "typecheck": "bun x tsc -p tsconfig.json --pretty false"
+  },
+  "dependencies": {
+    "@openturn/example-connect-four-bots": "workspace:*",
+    "@openturn/example-connect-four-game": "workspace:*",
+    "@openturn/lobby": "workspace:*",
+    "@openturn/react": "workspace:*",
+    "@openturn/server": "workspace:*",
+    "clsx": "^2.1.1",
+    "framer-motion": "^11.18.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "tailwind-merge": "^3.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.2.2",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^6.0.2"
+  }
+}

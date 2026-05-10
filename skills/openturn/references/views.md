@@ -72,6 +72,24 @@ views: {
 }
 ```
 
+## Anti-pattern: reading `derived` inside views
+
+View contexts expose computed values as **`C`**, not `derived`. The `derived` field exists on rule contexts (`legalActions`, `phases.activePlayers`, etc.) and on raw snapshots — it is **not** available inside `views.public` or `views.player`. This trips up authors who copy a `derived.X` reference from a rule context into a view, since the symbol is named differently in each layer.
+
+```ts
+// ❌ Throws "Cannot read property X of undefined" at view evaluation time.
+views: {
+  public: ({ G, derived }) => ({ winner: derived.winner }),
+}
+
+// ✅ Use C inside views.
+views: {
+  public: ({ G, C }) => ({ winner: C.winner }),
+}
+```
+
+If you want a value from `legalActions` to appear in a view, recompute it inside the `computed` block and read it via `C`. The two layers are intentionally separated: rule contexts can read `derived` (which includes machine-state introspection like `activePlayers`); views can only read author-defined `computed` outputs.
+
 ## Anti-pattern: shaping views inside moves
 
 Do not strip hidden info inside a move and re-store the stripped version in `G`. Keep `G` as the full ground truth and let views project. A move that writes "what the opponent should see" into `G` conflates authoritative state with rendering — replays break, undo breaks, and any future view that needs the hidden field is now impossible to write. Authoritative state and rendering are different layers.
