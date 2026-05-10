@@ -96,6 +96,8 @@ Use `--template multiplayer` to scaffold a hosted-multiplayer starter instead of
 
 - **Bots as first-class players.** Drop a `decide` function into any seat — random, heuristic, minimax, or MCTS. Bots read the same player view as humans and dispatch through the same local or hosted path.
 
+- **Lobby, profiles, and plugins.** Hosted rooms include lobby handoff and bot seat selection. Profiles let games commit replay-safe progression between matches. Plugins can add namespaced state and moves for shared abstractions like chat.
+
 </details>
 
 ## Design Philosophy
