@@ -1,11 +1,13 @@
+<p align="center">
+  <img src="docs/assets/hero.gif" alt="An openturn game being played" width="720" />
+</p>
+
 # Openturn
 
 > [!WARNING]
 > Openturn is currently in an early alpha stage. APIs may change quickly, behavior may shift between releases, and the platform should be expected to be unstable while the core framework and hosted services are still evolving.
 
-Openturn is a TypeScript framework for turn-based and board games.
-
-You create a simple game definition with functions to describe game states, player moves and views. And Openturn converts it to a complete playable game that can be hosted with zero infrastructure setup. The same definition powers a local React app, a CLI, a hosted multiplayer server, and a debug inspector — no per-surface rewiring.
+**Openturn is a TypeScript framework for turn-based and board games.** Define your rules in one file. Get a hosted multiplayer URL with rooms, auth, and persistence — no infrastructure to run. The same definition also drives a local React app, a CLI, replays, bots, and the inspector.
 
 Check out this ready-to-play Splendor board game example: https://openturn.io/games/james/splendor
 
@@ -33,55 +35,6 @@ export const game = defineGame({
   },
 });
 ```
-
-## Why Openturn
-
-- **One game definition, every runtime.** Author the rules once with `defineGame(...)`. The same value drives local play, React apps, CLI simulations, hosted multiplayer, replays, bots, and the inspector.
-
-- **Authoritative state without server plumbing.** Your game owns the plain JSON state `G`; Openturn handles dispatch, validation, realtime sync, room state, and hosted storage around it. Deploy to Openturn Cloud when you want Cloudflare Workers and Durable Objects without provisioning infrastructure.
-
-- **Pure reducers over declared game flow.** Moves, phases, active players, and transitions are explicit and replay-safe. That makes games easier to debug, easier for coding agents to reason about, and strict enough to validate before and during play.
-
-- **Server-authoritative hidden information.** Model hands, fog of war, sealed bids, and private choices inside `G`; `views.public` and `views.player` decide what each audience receives, so opponents never get secrets they should not see.
-
-- **Game phases and turn control.** Use gamekit phases for planning, bidding, battle, cleanup, or simultaneous action windows. Use round-robin turns for classic games, or drop to core when the state graph needs full custom control.
-
-- **Replays, inspector, and prototyping.** Every match can emit a JSON action log. Re-dispatch it to reproduce the exact state, scrub frames in the inspector, or simulate candidate moves before the UI is finished.
-
-- **Bots as first-class players.** Drop a `decide` function into any seat — random, heuristic, minimax, or MCTS. Bots read the same player view as humans and dispatch through the same local or hosted path.
-
-- **Lobby, profiles, and plugins.** Hosted rooms include lobby handoff and bot seat selection. Profiles let games commit replay-safe progression between matches. Plugins can add namespaced state and moves for shared abstractions like chat.
-
-- **Open source with a cloud path.** Run locally, self-host the worker runtime, or publish public games to Openturn Cloud for free. The framework stays plain TypeScript, so the rules are not locked to a view layer or deployment target.
-  - Auth
-  - Serverless game rooms
-  - CDN, storage and db
-  - All handled by cloud with zero infra setup for developers.
-
-## Design Philosophy
-
-Openturn has follow design philosophy in mind:
-
-- determinism
-- inspectability
-- serializability
-- graphability
-- validation
-- worker-safe execution
-
-And our APIs and typescript typing systems are keep evolving and are being consolidated, still at its early stages.
-
-## Comparisons to boardgame.io
-
-Openturn takes inspirations from boardgame.io and boardgamearena.com (no direct code copy though)
-
-But these frameworks are built many years ago using old web standards like redux, plain js, php etc.
-
-Openturn instead:
-
-- Built with typescript from day one
-- An opinionated stricter model that is more coding agents friendly - enabling massive vibe coded games potentials.
-- Clean boundary between different runtimes on different envs: bun/node, browser, cloudflare worker - yes Openturn supports serverless deployment of games on Cloudflare, and Openturn Cloud is built on top of that, making free public games scaling problem easy to manage. You don't need to host a forever running server for one game to handle websocket connections for multiplayer for example.
 
 ## Quickstart
 
@@ -118,28 +71,57 @@ Use `--template multiplayer` to scaffold a hosted-multiplayer starter instead of
 - `package.json` — scripts and Openturn/React dependencies.
 - `tsconfig.json` — TypeScript settings for the scaffolded app.
 
-A game in 20 lines:
+## Why Openturn
 
-```ts
-import { defineGame, move } from "@openturn/gamekit";
+- **One game definition, every runtime.** Author the rules once with `defineGame(...)`. The same value drives local play, React apps, CLI simulations, hosted multiplayer, replays, bots, and the inspector.
 
-export const game = defineGame({
-  maxPlayers: 2,
-  setup: () => ({ value: 0 }),
-  moves: {
-    increment: move({
-      run({ G, move, player }) {
-        const value = G.value + 1;
-        if (value >= 5) return move.finish({ winner: player.id }, { value });
-        return move.endTurn({ value });
-      },
-    }),
-  },
-  views: {
-    public: ({ G, turn }) => ({ value: G.value, currentPlayer: turn.currentPlayer }),
-  },
-});
-```
+- **Authoritative state without server plumbing.** Your game owns the plain JSON state `G`; Openturn handles dispatch, validation, realtime sync, room state, and hosted storage around it. Deploy to Openturn Cloud when you want Cloudflare Workers and Durable Objects without provisioning infrastructure.
+
+- **Server-authoritative hidden information.** Model hands, fog of war, sealed bids, and private choices inside `G`; `views.public` and `views.player` decide what each audience receives, so opponents never get secrets they should not see.
+
+- **Open source with a cloud path.** Run locally, self-host the worker runtime, or publish public games to Openturn Cloud for free. The framework stays plain TypeScript, so the rules are not locked to a view layer or deployment target.
+  - Auth
+  - Serverless game rooms
+  - CDN, storage and db
+  - All handled by cloud with zero infra setup for developers.
+
+<details>
+<summary>More capabilities</summary>
+
+- **Pure reducers over declared game flow.** Moves, phases, active players, and transitions are explicit and replay-safe. That makes games easier to debug, easier for coding agents to reason about, and strict enough to validate before and during play.
+
+- **Game phases and turn control.** Use gamekit phases for planning, bidding, battle, cleanup, or simultaneous action windows. Use round-robin turns for classic games, or drop to core when the state graph needs full custom control.
+
+- **Replays, inspector, and prototyping.** Every match can emit a JSON action log. Re-dispatch it to reproduce the exact state, scrub frames in the inspector, or simulate candidate moves before the UI is finished.
+
+- **Bots as first-class players.** Drop a `decide` function into any seat — random, heuristic, minimax, or MCTS. Bots read the same player view as humans and dispatch through the same local or hosted path.
+
+</details>
+
+## Design Philosophy
+
+Openturn has follow design philosophy in mind:
+
+- determinism
+- inspectability
+- serializability
+- graphability
+- validation
+- worker-safe execution
+
+And our APIs and typescript typing systems are keep evolving and are being consolidated, still at its early stages.
+
+## Comparisons to boardgame.io
+
+Openturn takes inspirations from boardgame.io and boardgamearena.com (no direct code copy though)
+
+But these frameworks are built many years ago using old web standards like redux, plain js, php etc.
+
+Openturn instead:
+
+- Built with typescript from day one
+- An opinionated stricter model that is more coding agents friendly - enabling massive vibe coded games potentials.
+- Clean boundary between different runtimes on different envs: bun/node, browser, cloudflare worker - yes Openturn supports serverless deployment of games on Cloudflare, and Openturn Cloud is built on top of that, making free public games scaling problem easy to manage. You don't need to host a forever running server for one game to handle websocket connections for multiplayer for example.
 
 ## Authoring with AI agents
 
