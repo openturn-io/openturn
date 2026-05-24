@@ -5,6 +5,8 @@ import {
   type PaintingCard as PaintingCardData,
 } from "@openturn/example-modern-art-game";
 
+import { Tip } from "./ui/tip";
+
 const AUCTION_LABELS = {
   double: "Double",
   fixed: "Fixed",
@@ -26,10 +28,11 @@ interface PaintingCardProps {
   disabled?: boolean;
   onClick?: () => void;
   selected?: boolean;
+  /** Optional tutorial-tip content. When omitted the card has no tooltip. */
+  tip?: React.ReactNode | null | false;
 }
 
-export function PaintingCard({ card, disabled = false, onClick, selected = false }: PaintingCardProps) {
-  const interactive = onClick !== undefined && !disabled;
+export function PaintingCard({ card, disabled = false, onClick, selected = false, tip }: PaintingCardProps) {
   const body = (
     <>
       <div className={`artwork ${ARTIST_CLASS[card.artist]}`}>
@@ -42,18 +45,20 @@ export function PaintingCard({ card, disabled = false, onClick, selected = false
     </>
   );
 
-  if (onClick === undefined) {
-    return <div className={`painting-card ${selected ? "selected" : ""}`}>{body}</div>;
-  }
+  const element =
+    onClick === undefined ? (
+      <div className={`painting-card ${selected ? "selected" : ""}`}>{body}</div>
+    ) : (
+      <button
+        type="button"
+        className={`painting-card button-card ${selected ? "selected" : ""}`}
+        disabled={disabled}
+        onClick={onClick}
+      >
+        {body}
+      </button>
+    );
 
-  return (
-    <button
-      type="button"
-      className={`painting-card button-card ${selected ? "selected" : ""}`}
-      disabled={disabled}
-      onClick={onClick}
-    >
-      {body}
-    </button>
-  );
+  if (tip === undefined || tip === null || tip === false) return element;
+  return <Tip content={tip}>{element}</Tip>;
 }

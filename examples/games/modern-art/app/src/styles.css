@@ -481,6 +481,90 @@ body {
   gap: 6px;
 }
 
+.ma-tip {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  box-sizing: border-box;
+  /* Override the global `body > div { height: 100% }` rule that otherwise
+     stretches the portal'd tooltip to fill the viewport. */
+  height: auto;
+  min-height: 0;
+  max-height: calc(100vh - 16px);
+  border-radius: 8px;
+  border: 1px solid rgba(214, 161, 82, 0.42);
+  background: rgba(15, 12, 10, 0.96);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+  padding: 10px 12px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #f6efe2;
+  white-space: normal;
+  word-break: break-word;
+  backdrop-filter: blur(6px);
+}
+
+.ma-tip p {
+  margin: 0;
+}
+
+.ma-tip .tip-title {
+  margin: 0 0 4px;
+  color: #f0c478;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.ma-tip .tip-body {
+  margin: 0;
+  color: #f6efe2;
+}
+
+.ma-tip .tip-body + .tip-body {
+  margin-top: 4px;
+}
+
+.ma-tip .tip-em {
+  color: #f0c478;
+}
+
+.ma-tip .tip-warn {
+  color: #f0a0a0;
+}
+
+.tips-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(246, 239, 226, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #f6efe2;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.tips-toggle.on {
+  border-color: rgba(214, 161, 82, 0.55);
+  background: rgba(214, 161, 82, 0.22);
+  color: #f9e2bc;
+}
+
+.tips-toggle .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(246, 239, 226, 0.32);
+}
+
+.tips-toggle.on .dot {
+  background: #f0c478;
+  box-shadow: 0 0 8px #f0c478;
+}
+
 @media (max-width: 980px) {
   .modern-art-shell {
     overflow: auto;
