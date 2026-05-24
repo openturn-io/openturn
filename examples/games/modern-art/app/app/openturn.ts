@@ -1,6 +1,8 @@
-import { modernArtWithBots } from "@openturn/example-modern-art-bots";
-import { createOpenturnBindings } from "@openturn/react";
-
-export const modernArtBindings = createOpenturnBindings(modernArtWithBots, {
+export const metadata = {
+  name: "Modern Art",
   runtime: "multiplayer",
-});
+  multiplayer: {
+    gameKey: "modern-art",
+    schemaVersion: "1",
+  },
+};
