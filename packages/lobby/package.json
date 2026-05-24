@@ -1,6 +1,6 @@
 {
   "name": "@openturn/lobby",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "type": "module",
   "openturn": {
     "runtime": "browser"
@@ -22,17 +22,17 @@
     "prepack": "node ../../scripts/prepack.mjs"
   },
   "dependencies": {
-    "@openturn/bot": "^0.8.2",
-    "@openturn/client": "^0.8.2",
-    "@openturn/core": "^0.8.2",
-    "@openturn/protocol": "^0.8.2",
-    "@openturn/server": "^0.8.2"
+    "@openturn/bot": "^0.8.3",
+    "@openturn/client": "^0.8.3",
+    "@openturn/core": "^0.8.3",
+    "@openturn/protocol": "^0.8.3",
+    "@openturn/server": "^0.8.3"
   },
   "peerDependencies": {
     "react": "^19.2.0"
   },
   "devDependencies": {
-    "@openturn/gamekit": "^0.8.2",
+    "@openturn/gamekit": "^0.8.3",
     "@testing-library/react": "^16.3.0",
     "@types/react": "^19.2.0",
     "jsdom": "^29.0.1",

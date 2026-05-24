@@ -1,6 +1,6 @@
 {
   "name": "@openturn/bot",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "type": "module",
   "openturn": {
     "runtime": "worker"
@@ -17,12 +17,12 @@
     "prepack": "node ../../scripts/prepack.mjs"
   },
   "dependencies": {
-    "@openturn/client": "^0.8.2",
-    "@openturn/core": "^0.8.2",
-    "@openturn/json": "^0.8.2"
+    "@openturn/client": "^0.8.3",
+    "@openturn/core": "^0.8.3",
+    "@openturn/json": "^0.8.3"
   },
   "devDependencies": {
-    "@openturn/gamekit": "^0.8.2"
+    "@openturn/gamekit": "^0.8.3"
   },
   "license": "Apache-2.0",
   "repository": {
