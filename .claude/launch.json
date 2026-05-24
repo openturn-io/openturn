@@ -36,6 +36,12 @@
       "runtimeExecutable": "bun",
       "runtimeArgs": ["run", "--filter", "@openturn/example-splendor-app", "dev"],
       "port": 3008
+    },
+    {
+      "name": "modern-art-dev",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "--filter", "@openturn/example-modern-art-app", "dev"],
+      "port": 3009
     }
   ]
 }
