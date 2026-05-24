@@ -1,5 +1,19 @@
 # @openturn/cli
 
+## 0.8.3
+
+### Patch Changes
+
+- 2d72083: Restructure README: hero visual, tightened pitch, quickstart promoted above the "Why" list, capability list trimmed to four with the rest behind a details block.
+  - @openturn/bridge@0.8.3
+  - @openturn/core@0.8.3
+  - @openturn/deploy@0.8.3
+  - @openturn/inspector-ui@0.8.3
+  - @openturn/json@0.8.3
+  - @openturn/protocol@0.8.3
+  - @openturn/react@0.8.3
+  - @openturn/server@0.8.3
+
 ## 0.8.2
 
 ### Patch Changes
