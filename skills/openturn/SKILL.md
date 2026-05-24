@@ -142,7 +142,7 @@ export { yourGameWithBots as game } from "@openturn/example-your-game-bots";
 // Or if no bots:
 // export { yourGame as game } from "@openturn/example-your-game-game";
 
-// app/app/openturn.ts — metadata.
+// app/app/openturn.ts — metadata, AND ONLY metadata. The CLI's only metadata source.
 export const metadata = {
   name: "Your Game",
   runtime: "multiplayer",   // or "local"
@@ -155,6 +155,17 @@ export default function Page() { return <YourExperience />; }
 ```
 
 Without `app/app/game.ts`, `openturn dev` hard-fails at startup: `Missing app/game.ts. Openturn deployments require a canonical game entry that exports "game"`. The contract is enforced by the CLI, not documented anywhere else.
+
+**Two silent failures on this contract — both ship with a wrong deployed name:**
+
+- The CLI reads `metadata` **only** from `app/app/openturn.ts`. If you export `metadata` from `app/app/game.ts` instead, it is silently ignored and the deployed game name falls back to the project directory basename (typically `"app"`) in both `<title>` and the lobby header. No warning.
+- Do not put React bindings (`createOpenturnBindings(...)`) in `app/app/openturn.ts`. Bindings live in `src/bindings.ts` (see splendor and modern-art). If bindings replace the `metadata` export, you hit the same `"app"` fallback symptom.
+
+Quick post-`openturn dev` check that the metadata is found:
+```bash
+curl -s http://localhost:PORT/ | grep -oE 'gameName":"[^"]+'
+# Expect your title. If you see "app", metadata isn't loading from app/app/openturn.ts.
+```
 
 ### React reactivity contract
 
@@ -210,6 +221,7 @@ When something breaks, search this table by error message or visible symptom —
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | `Missing app/game.ts. Openturn deployments require…` at dev start | No `app/app/game.ts` re-export | Add the one-line `export { withBots as game } from "...-bots"` |
+| Deployed gameName shows as `"app"` (or project directory basename) in `<title>` and the lobby header; no warning | `metadata` exported from `app/app/game.ts`, or `createOpenturnBindings(...)` placed in `app/app/openturn.ts` so the `metadata` export is missing | Move `metadata` to `app/app/openturn.ts` (and only there); move bindings to `src/bindings.ts`. Verify with `curl -s http://localhost:PORT/ \| grep gameName`. |
 | `Failed to run dependency scan… @/lib/* could not be resolved` | Used `@/*` import alias | Switch all imports to relative paths (`../lib/utils`) |
 | Clicking the board does nothing; state doesn't update | Raw `createLocalSession` instead of bindings | Switch to `createOpenturnBindings` + `useMatch()` |
 | Bot moves never appear after lobby start | Same root cause as above; or missing `useBotDriver` | Use `createOpenturnBindings` + a `useBotDriver` `useEffect` keyed on `snapshot` |
