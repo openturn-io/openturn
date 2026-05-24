@@ -1,5 +1,19 @@
 # @openturn/cli
 
+## 0.8.2
+
+### Patch Changes
+
+- ceff10a: Fix `openturn create` to scaffold new projects with a concrete `^x.y.z` semver range (matching the CLI's own published version) for `@openturn/core`, `@openturn/gamekit`, `@openturn/react`, and `@openturn/cli` instead of `workspace:*`. Previously, running `bunx @openturn/cli create <name>` from inside the openturn monorepo tree stamped `workspace:*` into the new project's `package.json`, so `bun install` failed with `Workspace dependency "@openturn/cli" not found`. Scaffolded projects are now portable regardless of where the CLI is invoked from.
+  - @openturn/bridge@0.8.2
+  - @openturn/core@0.8.2
+  - @openturn/deploy@0.8.2
+  - @openturn/inspector-ui@0.8.2
+  - @openturn/json@0.8.2
+  - @openturn/protocol@0.8.2
+  - @openturn/react@0.8.2
+  - @openturn/server@0.8.2
+
 ## 0.8.1
 
 ### Patch Changes
