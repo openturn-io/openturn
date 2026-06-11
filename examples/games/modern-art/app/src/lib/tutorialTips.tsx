@@ -22,11 +22,11 @@ const AUCTION_RULES: Record<AuctionType, string> = {
   open:
     "Ascending bids. Players raise around the table until everyone but the high bidder passes. Highest bidder pays the auctioneer and keeps the painting.",
   oneOffer:
-    "Each opponent in turn (left of auctioneer) makes a single bid or passes. The auctioneer then either matches the highest bid to keep the painting, or sells to the high bidder.",
+    "Each player in turn (left of auctioneer) makes a single bid or passes; every bid must beat the last. The auctioneer goes last and must outbid the high offer to keep the painting — otherwise it sells to the high bidder.",
   hidden:
-    "Everyone (including the auctioneer) secretly chooses a bid amount. Highest sealed bid wins and pays the auctioneer. Ties go to the player closest to the auctioneer's left.",
+    "Everyone (including the auctioneer) secretly chooses a bid amount. Highest sealed bid wins and pays the auctioneer (the auctioneer pays the bank if they win their own lot). Ties go to the player closest to the auctioneer's left.",
   fixed:
-    "The auctioneer names a price. Each opponent in turn either buys at that price (and keeps it) or passes. If everyone passes, the auctioneer pays themselves and keeps the painting.",
+    "The auctioneer names a price. Each opponent in turn either buys at that price (and keeps it) or passes. If everyone passes, the auctioneer must buy it themselves — paying the asking price to the bank.",
   double:
     "Pair two paintings of the same artist into a single lot. The auctioneer plays one Double card, then any one player (going around the table) may add a matching painting and become the new auctioneer. The lot is then sold using the second card's auction type.",
 };
@@ -39,10 +39,9 @@ const ARTIST_NAME: Record<ArtistID, string> = {
   krypto: "Krypto",
 };
 
-const PLAYER_NAMES = ["North", "East", "South", "West", "Center"];
-
+// Must match the engine's playerLabel() so tips agree with the action log.
 function playerName(id: ModernArtPlayerID): string {
-  return PLAYER_NAMES[Number.parseInt(id, 10)] ?? `P${Number.parseInt(id, 10) + 1}`;
+  return `Curator ${Number.parseInt(id, 10) + 1}`;
 }
 
 function TipTitle({ children }: { children: React.ReactNode }) {
@@ -465,7 +464,7 @@ export function hiddenBidTip({ view, amount, myMoney, disabled }: ActionButtonTi
       <TipTitle>Submit sealed bid (${amount})</TipTitle>
       <TipBody>{AUCTION_RULES.hidden}</TipBody>
       <TipBody>
-        Tip: the auctioneer also bids — they pay themselves if they win, so big bids are free for them (other than missing the painting's round value).
+        Tip: the auctioneer bids too — but if they win their own lot they pay the bank, so overbidding to keep a painting still costs real money.
       </TipBody>
     </>
   );
@@ -523,7 +522,7 @@ export function fixedPassTip(view: ModernArtPlayerView): React.ReactNode {
       <TipBody>
         Decline the asking price. {remaining > 0
           ? `The next player (${remaining} after them) gets the same offer.`
-          : "If everyone passes, the auctioneer pays themselves and keeps the painting."}
+          : "If everyone passes, the auctioneer must buy it at the asking price (paid to the bank)."}
       </TipBody>
     </>
   );
@@ -535,7 +534,7 @@ export function offerDoublePassTip(view: ModernArtPlayerView): React.ReactNode {
     <>
       <TipTitle>Don't double</TipTitle>
       <TipBody>
-        Skip — keep your matching painting for later and let the offer pass to the next player. If everyone passes, the original auctioneer runs the Double card on its own (the second card is drawn from the deck).
+        Skip — keep your matching painting for later and let the offer pass to the next player. If everyone passes, the original auctioneer keeps the Double card for free (it still counts toward the artist's round tally).
       </TipBody>
     </>
   );
