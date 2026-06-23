@@ -47,6 +47,7 @@ export type GameValidationCode =
   | "state_derivation_failed"
   | "structurally_ambiguous_family"
   | "suspicious_initial_activity"
+  | "suspicious_player_view_identity"
   | "suspicious_terminal_leaf"
   | "unexpected_config"
   | "unknown_config_key"
@@ -715,6 +716,27 @@ function evaluateStateDerivations(
         hint: "Player views must derive replay-safe values from snapshot data plus recorded @openturn/runtime inputs only.",
         message: `State "${stateName}" derives a non-serializable player view.`,
         severity: "error",
+        state: stateName,
+      });
+    }
+
+    // Identity check: a player view that doesn't echo the viewer's seat as
+    // `myPlayerID` produces a silently-frozen hosted UI (the board renders but
+    // no "your turn" prompt, no enabled controls). This is a warning, not an
+    // error: games whose UI keys off `match.canAct` / `activePlayers` instead
+    // of `view.myPlayerID` can legitimately omit it. The hint names both paths
+    // so authors can decide. See the openturn skill's views reference.
+    if (
+      playerView !== undefined &&
+      typeof playerView === "object" &&
+      playerView !== null &&
+      (playerView as Record<string, unknown>).myPlayerID !== context.match.players[0]
+    ) {
+      pushDiagnostic({
+        code: "suspicious_player_view_identity",
+        hint: "If your UI checks `view.myPlayerID === view.currentTurn` to decide whose turn it is, set `myPlayerID` to the viewer's seat in views.player (leave it null in views.public). If your UI uses match.canAct / activePlayers instead, this warning is safe to ignore.",
+        message: `State "${stateName}" player view does not echo the viewer's seat as myPlayerID — a common cause of a frozen hosted UI.`,
+        severity: "warning",
         state: stateName,
       });
     }
