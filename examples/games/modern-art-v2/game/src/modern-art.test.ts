@@ -366,3 +366,139 @@ describe("full game termination", () => {
     }
   }, 20_000);
 });
+
+describe("turn timeout (onTimeout)", () => {
+  /** Fire the deadline + 1ms so `fireTimeout` agrees the clock has elapsed. */
+  function elapse(session: Session): void {
+    const deadline = session.getNextDeadline();
+    if (deadline === null) throw new Error("no deadline set");
+    session.fireTimeout(deadline + 1);
+  }
+
+  test("no auction in flight: timeout dispatches a real move for the auctioneer", () => {
+    const session = fresh(3, "timeout-no-auction");
+    const before = view(session, "0");
+    expect(before.currentTurn).toBe("0");
+    expect(before.auction).toBeNull();
+
+    elapse(session);
+
+    // The auctioneer's only legal moves are startAuction / skipTurn; either
+    // advances state. A previously-broken onTimeout dispatched as the wrong
+    // seat and returned invalid_event, leaving state untouched.
+    const after = view(session, "0");
+    expect(after.currentTurn).not.toBe("0");
+  });
+
+  /** Find a seed that deals P0 a card of the given auction type. */
+  function seedWithCardType(want: "open" | "once" | "sealed" | "fixed" | "double", max = 200): string {
+    for (let i = 0; i < max; i += 1) {
+      const s = fresh(3, `scan-${want}-${i}`);
+      for (const id of view(s, "0").myHand) {
+        if (getPainting(id).auction === want) return `scan-${want}-${i}`;
+      }
+    }
+    throw new Error(`no seed dealt P0 a ${want} card`);
+  }
+
+  test("open auction in flight: timeout auto-passes the head bidder, not the auctioneer", () => {
+    const session = fresh(3, seedWithCardType("open"));
+    session.applyEvent("0", "startAuction", { paintingId: handCard(session, "0", "open") });
+    // Head bidder is P1 (left of auctioneer P0). Auction still open.
+    expect(view(session, "0").auction!.pendingBidders[0]).toBe("1");
+
+    elapse(session);
+
+    const v = view(session, "0");
+    // P1 was auto-passed; if the auction is still open, P1 must no longer be
+    // the head bidder; if it resolved, the auction is null. Either way, P1 is
+    // not still blocking as head.
+    if (v.auction !== null) {
+      expect(v.auction!.pendingBidders[0]).not.toBe("1");
+    } else {
+      expect(v.auction).toBeNull();
+    }
+  });
+
+  test("once-around auction: timeout advances the once-ring without invalid_event", () => {
+    const session = fresh(3, seedWithCardType("once"));
+    session.applyEvent("0", "startAuction", { paintingId: handCard(session, "0", "once") });
+    expect(view(session, "0").auction!.type).toBe("once");
+
+    elapse(session);
+
+    // No throw, no invalid_event stall: the auction either advanced past the
+    // head bidder or resolved.
+    const v = view(session, "0");
+    expect(v.lastAction).not.toBeNull();
+  });
+
+  test("sealed auction: timeout submits a null bid for the stalled seat", () => {
+    const session = fresh(3, seedWithCardType("sealed"));
+    session.applyEvent("0", "startAuction", { paintingId: handCard(session, "0", "sealed") });
+    expect(view(session, "0").auction!.type).toBe("sealed");
+
+    // Burn through each sealed seat via timeout. Re-arming the clock between
+    // fires mirrors how the host re-schedules after each event.
+    let guard = 0;
+    while (view(session, "0").auction !== null && guard < 10) {
+      guard += 1;
+      elapse(session);
+    }
+
+    const v = view(session, "0");
+    expect(v.auction).toBeNull(); // sealed auction fully resolved via timeouts
+  });
+
+  test("fixed auction, price set: timeout declines for the stalled buyer", () => {
+    const session = fresh(3, seedWithCardType("fixed"));
+    session.applyEvent("0", "startAuction", { paintingId: handCard(session, "0", "fixed") });
+    session.applyEvent("0", "setFixedPrice", { price: 30 });
+    // P1 is now the head buyer.
+    expect(view(session, "0").auction!.pendingBidders[0]).toBe("1");
+
+    elapse(session);
+
+    const v = view(session, "0");
+    // P1 declined; the auction either moved to P2 or resolved (auctioneer
+    // buys). P1 must not still be head.
+    if (v.auction !== null) {
+      expect(v.auction!.pendingBidders[0]).not.toBe("1");
+    } else {
+      expect(v.auction).toBeNull();
+    }
+  });
+
+  test("fixed auction, price unset: timeout forces price 0 and resolves cleanly", () => {
+    const session = fresh(3, seedWithCardType("fixed"));
+    session.applyEvent("0", "startAuction", { paintingId: handCard(session, "0", "fixed") });
+    // Auctioneer (P0) hasn't set a price yet — they're the stalled head.
+    expect(view(session, "0").auction!.fixedPrice).toBeNull();
+
+    elapse(session);
+
+    // The forced-price-0 path resolves without throwing or stalling.
+    const v = view(session, "0");
+    expect(v.auction).toBeNull();
+  });
+
+  test("timeout-driven full game terminates (regression: no invalid_event stall)", () => {
+    // Replay the termination loop but advance *only* via fireTimeout. Before
+    // the fix, any timeout that fired mid-auction returned invalid_event and
+    // the loop spun forever against an unchanged snapshot.
+    const session = fresh(3, "timeout-full");
+    let guard = 0;
+    while (session.getState().meta.result === null && guard < 2000) {
+      guard += 1;
+      const deadline = session.getNextDeadline();
+      if (deadline === null) break;
+      const batch = session.fireTimeout(deadline + 1);
+      if (batch === null) {
+        // Should not happen while the game is unfinished — surface it loudly.
+        throw new Error("fireTimeout returned null mid-game");
+      }
+    }
+    const result = session.getState().meta.result;
+    expect(result).not.toBeNull();
+  }, 20_000);
+});

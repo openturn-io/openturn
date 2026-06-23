@@ -122,6 +122,202 @@ interface Resolution {
   finish: { winner: ModernArtPlayerID } | null;
 }
 
+/**
+ * Auto-pass the stalled seat at the head of `pendingBidders`. Used by the
+ * phase `onTimeout` to advance the game when the turn deadline elapses mid-
+ * auction: the framework dispatches timeout moves as the round-robin
+ * auctioneer (`ctx.player.id`), which is the wrong seat whenever a bid is in
+ * flight, so we bypass the player-bound move path and replay the head
+ * bidder's "pass" decision directly. Mirrors the per-type branches in
+ * `passBid` / `declineFixed` / `continueSealed` — keep them in sync.
+ */
+function autoPassHeadBidder(G: ModernArtState, turnNumber: number): Resolution {
+  const auction = G.currentAuction!;
+  const head = auction.pendingBidders[0]!;
+
+  // Fixed-price auction. The auctioneer must set the price before anyone can
+  // buy/decline; if the stalled seat is the auctioneer, force the price to 0
+  // so the auction resolves with no sale (auctioneer keeps it free). A buyer
+  // head simply declines, falling through to runDeclineFixed.
+  if (auction.type === "fixed") {
+    if (auction.fixedPrice === null) {
+      const priced: AuctionState = { ...auction, fixedPrice: 0, pendingBidders: [] };
+      const action = log(
+        "startAuction",
+        head,
+        `P${Number.parseInt(head, 10) + 1} fixed ${auction.artist} @ $0 (timeout)`,
+        turnNumber,
+      );
+      const pricedState: ModernArtState = { ...G, currentAuction: priced, lastAction: action };
+      return runDeclineFixed(pricedState, priced, auction.auctioneer, turnNumber);
+    }
+    return runDeclineFixed(G, auction, head, turnNumber);
+  }
+
+  // Sealed auction: the head bidder submits a null bid (pass).
+  if (auction.type === "sealed") {
+    const sealedBids: Record<ModernArtPlayerID, number | null> = {
+      ...auction.sealedBids,
+      [head]: null,
+    };
+    const remaining = auction.pendingBidders.slice(1);
+    return continueSealedState(G, auction, sealedBids, remaining, head, turnNumber);
+  }
+
+  // Open / once-around auction.
+  const passed = [...auction.passed, head];
+  if (auction.type === "once") {
+    const pendingBidders = auction.pendingBidders.slice(1);
+    const updatedAuction: AuctionState = { ...auction, pendingBidders, passed };
+    if (pendingBidders.length === 0) {
+      return resolveOutcomeState(G, updatedAuction, turnNumber);
+    }
+    const working: ModernArtState = {
+      ...G,
+      currentAuction: updatedAuction,
+      lastAction: log("pass", head, `P${Number.parseInt(head, 10) + 1} passed (timeout)`, turnNumber),
+    };
+    return { state: working, finish: null };
+  }
+
+  // Open: resolve when nobody but the high bidder (or nobody) can still raise.
+  const ring = biddingRing(G.seatOrder, auction.auctioneer).filter((id) => !passed.includes(id));
+  const canStillRaise = ring.filter((id) => id !== auction.highBidder);
+  if (canStillRaise.length === 0) {
+    const updatedAuction: AuctionState = { ...auction, pendingBidders: [], passed };
+    return resolveOutcomeState(G, updatedAuction, turnNumber);
+  }
+  const updatedAuction: AuctionState = { ...auction, pendingBidders: canStillRaise, passed };
+  const working: ModernArtState = {
+    ...G,
+    currentAuction: updatedAuction,
+    lastAction: log("pass", head, `P${Number.parseInt(head, 10) + 1} passed (timeout)`, turnNumber),
+  };
+  return { state: working, finish: null };
+}
+
+/**
+ * Pure variant of `runDecline` that returns a `Resolution` instead of a
+ * MoveOutcome, so it can be called from both move handlers and the timeout
+ * auto-pass path.
+ */
+function runDeclineFixed(
+  state: ModernArtState,
+  auction: AuctionState,
+  playerID: ModernArtPlayerID,
+  turnNumber: number,
+): Resolution {
+  const remaining = auction.pendingBidders.slice(1);
+  if (remaining.length > 0) {
+    const updatedAuction: AuctionState = { ...auction, pendingBidders: remaining };
+    const working: ModernArtState = {
+      ...state,
+      currentAuction: updatedAuction,
+      lastAction: log("declineFixed", playerID, `P${Number.parseInt(playerID, 10) + 1} declined (timeout)`, turnNumber),
+    };
+    return { state: working, finish: null };
+  }
+  // Nobody bought at the fixed price → auctioneer buys it at the fixed price
+  // (or keeps it free if they can't afford their own price).
+  const price = auction.fixedPrice ?? 0;
+  const seller = state.players[auction.auctioneer]!;
+  if (seller.money < price) {
+    const action = log(
+      "noBids",
+      auction.auctioneer,
+      `nobody bought ${auction.artist}; auctioneer keeps free`,
+      turnNumber,
+    );
+    const working: ModernArtState = {
+      ...state,
+      currentAuction: { ...auction, highBid: 0, highBidder: null, pendingBidders: [] },
+      lastAction: action,
+    };
+    return resolveAuction(working, action);
+  }
+  const action = log(
+    "buyFixed",
+    auction.auctioneer,
+    `nobody bought; auctioneer pays $${price}`,
+    turnNumber,
+  );
+  const working: ModernArtState = {
+    ...state,
+    currentAuction: { ...auction, highBid: price, highBidder: auction.auctioneer, pendingBidders: [] },
+    lastAction: action,
+  };
+  return resolveAuction(working, action);
+}
+
+/**
+ * Pure variant of `continueSealed` that returns a `Resolution`.
+ */
+function continueSealedState(
+  state: ModernArtState,
+  auction: AuctionState,
+  sealedBids: Record<ModernArtPlayerID, number | null>,
+  remaining: ModernArtPlayerID[],
+  playerID: ModernArtPlayerID,
+  turnNumber: number,
+): Resolution {
+  if (remaining.length > 0) {
+    const updatedAuction: AuctionState = { ...auction, sealedBids, pendingBidders: remaining };
+    const working: ModernArtState = {
+      ...state,
+      currentAuction: updatedAuction,
+      lastAction: log("seal", playerID, `P${Number.parseInt(playerID, 10) + 1} passed (timeout)`, turnNumber),
+    };
+    return { state: working, finish: null };
+  }
+  // All sealed bids in: reveal. Highest wins (ties → first in seat order).
+  let winner: ModernArtPlayerID | null = null;
+  let best = -1;
+  for (const id of biddingRing(state.seatOrder, auction.auctioneer)) {
+    const b = sealedBids[id] ?? null;
+    if (b !== null && b > best) {
+      best = b;
+      winner = id;
+    }
+  }
+  const highBid = winner === null ? 0 : best;
+  const updatedAuction: AuctionState = {
+    ...auction,
+    sealedBids,
+    highBid,
+    highBidder: winner,
+    pendingBidders: [],
+  };
+  const action = log(
+    "seal",
+    playerID,
+    winner === null ? "sealed: all passed" : `sealed: P${Number.parseInt(winner, 10) + 1} wins $${highBid}`,
+    turnNumber,
+  );
+  const working: ModernArtState = { ...state, currentAuction: updatedAuction, lastAction: action };
+  return resolveAuction(working, action);
+}
+
+/**
+ * Pure variant of `resolveOutcome` that returns a `Resolution`.
+ */
+function resolveOutcomeState(
+  state: ModernArtState,
+  auction: AuctionState,
+  turnNumber: number,
+): Resolution {
+  const action =
+    auction.highBidder === null
+      ? log("noBids", auction.auctioneer, `no bids on ${auction.artist}`, turnNumber)
+      : log(
+          "won",
+          auction.highBidder,
+          `P${Number.parseInt(auction.highBidder, 10) + 1} wins ${auction.artist} for $${auction.highBid}`,
+          turnNumber,
+        );
+  const working: ModernArtState = { ...state, currentAuction: auction, lastAction: action };
+  return resolveAuction(working, action);
+}
+
 function resolveAuction(
   preState: ModernArtState,
   action: ActionLog,
@@ -405,8 +601,31 @@ export const modernArt = defineGame({
       deadline: (ctx) => deadline.after(ctx, 60_000),
       onTimeout: (ctx, moves) => {
         const G = ctx.G as ModernArtState;
-        const playerID = activePlayerFor(G, ctx.turn.index);
-        const legal = enumerateModernArtLegalActions(G, playerID, ctx.turn.index);
+        // The framework binds the timeout-dispatched move to ctx.player.id,
+        // which is the round-robin auctioneer (turn.roundRobin()). When an
+        // auction is in flight, the seat that actually needs to act is
+        // pendingBidders[0] — frequently a *different* seat — so dispatching
+        // any move as the auctioneer is guaranteed to hit the
+        // `not_your_bid`/`not_your_turn_to_pass` guard and return
+        // `invalid_event`, stalling the game (see the warn emitted by core's
+        // fireTimeout). In that case we don't go through a player-bound move at
+        // all; we auto-pass the stalled bidder directly via a raw MoveOutcome.
+        if (G.currentAuction !== null) {
+          const resolved = autoPassHeadBidder(G, ctx.turn.turn);
+          if (resolved.finish !== null) return { kind: "finish", patch: resolved.state, result: resolved.finish };
+          // The auction may still be in flight (other bidders can still raise)
+          // or resolved (currentAuction === null). Only advance the turn when
+          // the auction actually closed; staying keeps the same auctioneer's
+          // turn so the next pending bidder gets the clock.
+          return resolved.state.currentAuction === null
+            ? { kind: "endTurn", patch: resolved.state }
+            : { kind: "stay", patch: resolved.state };
+        }
+
+        // No auction: the active seat IS the auctioneer, which matches
+        // ctx.player.id. Safe to enumerate + dispatch a real move for them.
+        const auctioneer = ctx.player.id as ModernArtPlayerID;
+        const legal = enumerateModernArtLegalActions(G, auctioneer, ctx.turn.index);
         if (legal.length === 0) return null;
         const pick = ctx.rng.pick(legal);
         // Inline `phases:` shape can't propagate `TMoves` through to onTimeout
