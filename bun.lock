@@ -82,6 +82,47 @@
         "@openturn/gamekit": "workspace:*",
       },
     },
+    "examples/games/modern-art-v2/app": {
+      "name": "@openturn/example-modern-art-v2-app",
+      "dependencies": {
+        "@openturn/example-modern-art-v2-bots": "workspace:*",
+        "@openturn/example-modern-art-v2-game": "workspace:*",
+        "@openturn/lobby": "workspace:*",
+        "@openturn/react": "workspace:*",
+        "@openturn/server": "workspace:*",
+        "class-variance-authority": "^0.7.1",
+        "clsx": "^2.1.1",
+        "framer-motion": "^11.18.0",
+        "react": "^19.2.0",
+        "react-dom": "^19.2.0",
+        "tailwind-merge": "^3.0.0",
+      },
+      "devDependencies": {
+        "@tailwindcss/vite": "^4.2.2",
+        "@types/react": "^19.2.0",
+        "@types/react-dom": "^19.2.0",
+        "tailwindcss": "^4.2.2",
+        "tw-animate-css": "^1.0.0",
+        "typescript": "^6.0.2",
+      },
+    },
+    "examples/games/modern-art-v2/bots": {
+      "name": "@openturn/example-modern-art-v2-bots",
+      "dependencies": {
+        "@openturn/bot": "workspace:*",
+        "@openturn/core": "workspace:*",
+        "@openturn/example-modern-art-v2-game": "workspace:*",
+        "@openturn/lobby": "workspace:*",
+      },
+    },
+    "examples/games/modern-art-v2/game": {
+      "name": "@openturn/example-modern-art-v2-game",
+      "version": "0.0.0",
+      "dependencies": {
+        "@openturn/core": "workspace:*",
+        "@openturn/gamekit": "workspace:*",
+      },
+    },
     "examples/games/modern-art/app": {
       "name": "@openturn/example-modern-art-app",
       "dependencies": {
@@ -1015,6 +1056,12 @@
     "@openturn/example-modern-art-bots": ["@openturn/example-modern-art-bots@workspace:examples/games/modern-art/bots"],
 
     "@openturn/example-modern-art-game": ["@openturn/example-modern-art-game@workspace:examples/games/modern-art/game"],
+
+    "@openturn/example-modern-art-v2-app": ["@openturn/example-modern-art-v2-app@workspace:examples/games/modern-art-v2/app"],
+
+    "@openturn/example-modern-art-v2-bots": ["@openturn/example-modern-art-v2-bots@workspace:examples/games/modern-art-v2/bots"],
+
+    "@openturn/example-modern-art-v2-game": ["@openturn/example-modern-art-v2-game@workspace:examples/games/modern-art-v2/game"],
 
     "@openturn/example-paper-scissors-rock-app": ["@openturn/example-paper-scissors-rock-app@workspace:examples/simultaneous-moves/paper-scissors-rock/app"],
 
