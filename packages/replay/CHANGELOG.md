@@ -1,5 +1,13 @@
 # @openturn/replay
 
+## 0.9.0
+
+### Patch Changes
+
+- Updated dependencies [56b512e]
+  - @openturn/core@0.9.0
+  - @openturn/json@0.9.0
+
 ## 0.8.3
 
 ### Patch Changes

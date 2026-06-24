@@ -1,5 +1,16 @@
 # @openturn/inspector-ui
 
+## 0.9.0
+
+### Patch Changes
+
+- Updated dependencies [56b512e]
+  - @openturn/core@0.9.0
+  - @openturn/inspector@0.9.0
+  - @openturn/react@0.9.0
+  - @openturn/replay@0.9.0
+  - @openturn/bridge@0.9.0
+
 ## 0.8.3
 
 ### Patch Changes
