@@ -1,6 +1,6 @@
 {
   "name": "@openturn/client",
-  "version": "0.8.3",
+  "version": "0.9.0",
   "type": "module",
   "openturn": {
     "runtime": "worker"
@@ -17,8 +17,8 @@
     "prepack": "node ../../scripts/prepack.mjs"
   },
   "dependencies": {
-    "@openturn/json": "^0.8.3",
-    "@openturn/protocol": "^0.8.3"
+    "@openturn/json": "^0.9.0",
+    "@openturn/protocol": "^0.9.0"
   },
   "license": "Apache-2.0",
   "repository": {
