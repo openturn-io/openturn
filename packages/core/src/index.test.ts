@@ -512,6 +512,62 @@ describe("@openturn/core", () => {
     );
   });
 
+  test("warns when a player view omits the viewer's myPlayerID", () => {
+    // A player view that forgets myPlayerID freezes the hosted UI silently.
+    // The validator emits a warning (not an error — games using match.canAct
+    // can legitimately omit it). See openturn skill views reference.
+    const report = getGameValidationReport(defineGame({
+      playerIDs: match.players,
+      events: { play: undefined },
+      initial: "idle",
+      setup: () => ({ count: 0 }),
+      states: {
+        idle: {
+          activePlayers: ({ match: nextMatch }) => [nextMatch.players[0]],
+        },
+      },
+      transitions: [],
+      views: {
+        player: () => ({ score: 0 }),
+        public: () => ({ score: 0 }),
+      },
+    }), { match, now: 12, seed: "id" });
+
+    // ok stays true (warnings don't block), but the diagnostic is present.
+    expect(report.ok).toBe(true);
+    expect(report.diagnostics.map((d) => d.code)).toEqual(
+      expect.arrayContaining(["suspicious_player_view_identity"]),
+    );
+    const diag = report.diagnostics.find((d) => d.code === "suspicious_player_view_identity")!;
+    expect(diag.severity).toBe("warning");
+  });
+
+  test("does not warn when a player view echoes the viewer's myPlayerID", () => {
+    const report = getGameValidationReport(defineGame({
+      playerIDs: match.players,
+      events: { play: undefined },
+      initial: "idle",
+      setup: () => ({ count: 0 }),
+      states: {
+        idle: {
+          activePlayers: ({ match: nextMatch }) => [nextMatch.players[0]],
+        },
+      },
+      transitions: [],
+      views: {
+        // The validator invokes the player view with players[0] as the second
+        // arg (a raw playerID string), so echoing it satisfies the identity
+        // check.
+        player: (_ctx, playerID) => ({ myPlayerID: playerID, score: 0 }),
+        public: () => ({ score: 0 }),
+      },
+    }), { match, now: 12, seed: "id2" });
+
+    expect(report.diagnostics.map((d) => d.code)).not.toEqual(
+      expect.arrayContaining(["suspicious_player_view_identity"]),
+    );
+  });
+
   test("rejects non-json match data during session creation", () => {
     expect(() => createLocalSession(defineGame({
       playerIDs: match.players,
